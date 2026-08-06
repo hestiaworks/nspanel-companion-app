@@ -100,6 +100,12 @@ data class DashboardWidget(
     val icon: String = "auto",
     val showTimer: Boolean = true,
     val cardTap: Boolean? = null,
+    val streamBaseUrl: String? = null,
+    val streamName: String? = null,
+    val talkbackUrl: String? = null,
+    val talkbackKey: String? = null,
+    val incomingAudio: Boolean = false,
+    val tapAction: String = "fullscreen",
 ) {
     fun toJson(): JSONObject = JSONObject().put("type", type).apply {
         entityId?.let { put("entity_id", it) }
@@ -110,10 +116,15 @@ data class DashboardWidget(
             put("show_timer", showTimer)
             cardTap?.let { put("card_tap", it) }
         }
+        if (type == "camera") {
+            streamBaseUrl?.let { put("stream_base_url", it) }; streamName?.let { put("stream_name", it) }
+            talkbackUrl?.let { put("talkback_url", it) }; talkbackKey?.let { put("talkback_key", it) }
+            put("incoming_audio", incomingAudio); put("tap_action", tapAction)
+        }
     }
 
     companion object {
-        val SUPPORTED_TYPES = setOf("thermostat", "weather", "controls", "entity_button", "sensor")
+        val SUPPORTED_TYPES = setOf("thermostat", "weather", "controls", "entity_button", "sensor", "camera")
 
         fun parse(json: JSONObject): DashboardWidget {
             val type = json.optString("type").trim()
@@ -130,7 +141,17 @@ data class DashboardWidget(
             require(type != "entity_button" || icon in CONTROL_ICONS) { "Invalid control icon" }
             val showTimer = json.optBoolean("show_timer", true)
             val cardTap = if (json.has("card_tap")) json.optBoolean("card_tap") else null
-            return DashboardWidget(type, entityId, label, forecastDays, icon, showTimer, cardTap)
+            val streamBaseUrl = json.optString("stream_base_url").takeIf(String::isNotBlank)
+            val streamName = json.optString("stream_name").takeIf(String::isNotBlank)
+            val talkbackUrl = json.optString("talkback_url").takeIf(String::isNotBlank)
+            val talkbackKey = json.optString("talkback_key").takeIf(String::isNotBlank)
+            val incomingAudio = json.optBoolean("incoming_audio", false)
+            val tapAction = json.optString("tap_action", "fullscreen")
+            require(type != "camera" || tapAction in setOf("none", "fullscreen", "intercom")) { "Invalid camera tap action" }
+            require(type != "camera" || streamBaseUrl == null || streamBaseUrl.startsWith("rtsp://") ||
+                streamBaseUrl.startsWith("rtsps://") || streamBaseUrl.startsWith("http://") ||
+                streamBaseUrl.startsWith("https://")) { "Invalid camera stream URL" }
+            return DashboardWidget(type, entityId, label, forecastDays, icon, showTimer, cardTap, streamBaseUrl, streamName, talkbackUrl, talkbackKey, incomingAudio, tapAction)
         }
 
         val CONTROL_ICONS = setOf(

@@ -161,6 +161,7 @@ class MainActivity : Activity() {
                     ?: (haClient?.callService(domain, service, entityId, data) == true)
             },
             ::showAdminDialog,
+            ::showCamera,
         )
         if (previewUnconfigured) {
             applyKeepScreenOn(false)
@@ -737,6 +738,19 @@ class MainActivity : Activity() {
 
     private fun showDoorbell() {
         startActivity(doorbellIntent())
+    }
+
+    private fun showCamera(widget: DashboardWidget) {
+        val intent = rtspDoorbellIntent()
+            .putExtra(DoorbellActivity.EXTRA_AUTO_CLOSE_MS, 0L)
+            .putExtra(DoorbellActivity.EXTRA_QUIET_MODE, !widget.incomingAudio)
+        widget.streamBaseUrl?.let { intent.putExtra(DoorbellActivity.EXTRA_STREAM_BASE_URL, it) }
+        widget.streamName?.let { intent.putExtra(DoorbellActivity.EXTRA_STREAM_NAME, it) }
+        if (widget.tapAction == "intercom") {
+            widget.talkbackUrl?.let { intent.putExtra(DoorbellActivity.EXTRA_TALKBACK_URL, it) }
+            widget.talkbackKey?.let { intent.putExtra(DoorbellActivity.EXTRA_TALKBACK_KEY, it) }
+        }
+        startActivity(intent)
     }
 
     private fun showDoorbellEvent(event: DoorbellEvent) {
