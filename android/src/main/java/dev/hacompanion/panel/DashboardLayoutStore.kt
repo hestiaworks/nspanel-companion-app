@@ -8,6 +8,8 @@ class DashboardLayoutStore(context: Context) {
 
     fun load(): DashboardLayout = store.load() ?: DashboardLayout.default()
 
+    fun loadOrNull(): DashboardLayout? = store.load()
+
     fun save(layout: DashboardLayout) = store.save(layout)
 }
 

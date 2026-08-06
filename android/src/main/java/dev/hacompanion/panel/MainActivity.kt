@@ -156,10 +156,22 @@ class MainActivity : Activity() {
             },
             ::showAdminDialog,
         )
-        val activeLayout = layoutStore.load()
-        applyKeepScreenOn(activeLayout.keepScreenOn)
-        dashboardView.setLayout(activeLayout)
-        dashboardView.setCachedWeather(weatherCacheStore.load(activeLayout.weatherCacheMaxAgeMinutes))
+        val activeLayout = layoutStore.loadOrNull()
+        val credentials = PanelProvisioningStore(this).load()
+        val previewUnconfigured = BuildConfig.DEBUG && intent.getBooleanExtra(EXTRA_PREVIEW_UNCONFIGURED, false)
+        if (previewUnconfigured) {
+            applyKeepScreenOn(false)
+            val deviceId = PanelIdentityStore(this).deviceId
+            dashboardView.showUnconfigured("Living Room NSPanel", deviceId)
+        } else if (activeLayout != null) {
+            applyKeepScreenOn(activeLayout.keepScreenOn)
+            dashboardView.setLayout(activeLayout)
+            dashboardView.setCachedWeather(weatherCacheStore.load(activeLayout.weatherCacheMaxAgeMinutes))
+        } else if (credentials != null) {
+            applyKeepScreenOn(false)
+            val defaultName = "NSPanel ${credentials.panelId.takeLast(4).uppercase()}"
+            dashboardView.showUnconfigured(defaultName, credentials.panelId)
+        }
         dashboardRoot.addView(
             dashboardView,
             LinearLayout.LayoutParams(
@@ -172,7 +184,7 @@ class MainActivity : Activity() {
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT,
         ))
-        if (PanelProvisioningStore(this).load() == null) {
+        if (credentials == null && !previewUnconfigured) {
             onboardingView = createPairingOnboarding().also {
                 root.addView(it, FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
@@ -677,9 +689,10 @@ class MainActivity : Activity() {
         val credentials = PanelProvisioningStore(this).load() ?: return
         panelSyncClient = PanelSyncClient(
             credentials,
-            currentRevision = { layoutStore.load().revision },
+            currentRevision = { layoutStore.loadOrNull()?.revision.orEmpty() },
             diagnostics = ::buildDiagnosticReport,
             onLayout = ::activateDashboardLayout,
+            onPanelIdentity = { name -> dashboardView.setPanelIdentity(name, credentials.panelId) },
             onAuthenticationFailed = {
                 handlePairingRevoked()
             },
@@ -921,6 +934,7 @@ class MainActivity : Activity() {
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object {
+        private const val EXTRA_PREVIEW_UNCONFIGURED = "dev.hacompanion.panel.PREVIEW_UNCONFIGURED"
         private const val MICROPHONE_REQUEST = 10
         private const val HOME_ROLE_REQUEST = 11
         private const val EXTRA_HA_URL = "dev.hacompanion.panel.HA_URL"
