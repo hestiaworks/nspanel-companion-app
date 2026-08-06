@@ -780,15 +780,18 @@ class PanelDashboardView(
         gravity = Gravity.BOTTOM
         addView(primaryText(position?.let { "Position · $it%" } ?: entity.state.replaceFirstChar { it.uppercase() }, 17f).apply { typeface = Typeface.DEFAULT_BOLD })
         addView(LinearLayout(context).apply {
-            addView(modalAction("Control") { showCoverDialog(entity, widget) }, LayoutParams(0, dp(42), 1f).apply { rightMargin = dp(3) })
-            addView(scheduleAction(entity, widget), LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(3) })
+            addView(modalAction("Control") { showCoverDialog(entity, widget) }, LayoutParams(0, dp(42), 1f).apply {
+                if (widget?.showSchedule != false) rightMargin = dp(3)
+            })
+            if (widget?.showSchedule != false) addView(scheduleAction(entity, widget), LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(3) })
         }, LayoutParams(LayoutParams.MATCH_PARENT, dp(42)).apply { topMargin = dp(6) })
     }
 
     private fun controlFooter(entity: EntityState, widget: DashboardWidget?): View = LinearLayout(context).apply {
         val timer = entity.domain in TIMER_DOMAINS && widget?.showTimer != false
+        val schedule = widget?.showSchedule != false
         if (timer) addView(timerAction(entity, widget?.timerPresets ?: listOf(5, 15, 30, 60)), LayoutParams(0, dp(42), 1f).apply { rightMargin = dp(3) })
-        addView(scheduleAction(entity, widget), LayoutParams(0, dp(42), 1f).apply { if (timer) leftMargin = dp(3) })
+        if (schedule) addView(scheduleAction(entity, widget), LayoutParams(0, dp(42), 1f).apply { if (timer) leftMargin = dp(3) })
     }
 
     private fun scheduleAction(entity: EntityState, widget: DashboardWidget?): View = modalAction(
@@ -821,9 +824,8 @@ class PanelDashboardView(
                 add("open" to "Open")
                 add("close" to "Close")
                 add("set_position" to "Set position")
-                if (widget?.gradualCoverScript != null) {
-                    add("gradual_open" to "Gradual open")
-                }
+                if (widget?.gradualOpenScript != null) add("gradual_open" to "Gradual open")
+                if (widget?.gradualCloseScript != null) add("gradual_close" to "Gradual close")
             }
             else -> listOf("turn_on" to "Turn on", "turn_off" to "Turn off", "toggle" to "Toggle")
         }
@@ -893,9 +895,15 @@ class PanelDashboardView(
                         return@modalAction
                     }
                     if (selectedDays.isEmpty()) return@modalAction
+                    val selectedAction = actions[action.selectedItemPosition].first
+                    val script = when (selectedAction) {
+                        "gradual_open" -> widget?.gradualOpenScript
+                        "gradual_close" -> widget?.gradualCloseScript
+                        else -> null
+                    }
                     upsertSchedule(ControlSchedule(existing?.id, entity.entityId, clock, WEEKDAY_IDS.filter(selectedDays::contains),
-                        actions[action.selectedItemPosition].first, position.text.toString().toIntOrNull()?.coerceIn(0, 100) ?: 100,
-                        widget?.gradualCoverScript, enabled.isChecked))
+                        selectedAction, position.text.toString().toIntOrNull()?.coerceIn(0, 100) ?: 100,
+                        script, enabled.isChecked))
                     dialog.dismiss()
                 }, LayoutParams(0, dp(48), 1f).apply { leftMargin = dp(4) })
             }, LayoutParams(LayoutParams.MATCH_PARENT, dp(48)).apply { topMargin = dp(7) })
@@ -1012,16 +1020,23 @@ class PanelDashboardView(
                         setTextColor(PanelTheme.ink)
                         setOnClickListener {
                             callService("cover", service, entity.entityId, JSONObject())
-                            if (service == "stop_cover" && widget?.gradualCoverScript != null) {
-                                callService("script", "turn_off", widget.gradualCoverScript, JSONObject())
+                            if (service == "stop_cover") {
+                                widget?.gradualOpenScript?.let { callService("script", "turn_off", it, JSONObject()) }
+                                widget?.gradualCloseScript?.let { callService("script", "turn_off", it, JSONObject()) }
                             }
                             if (service != "stop_cover") dialog.dismiss()
                         }
                     }, LayoutParams(0, dp(58), 1f).apply { setMargins(dp(3), dp(4), dp(3), 0) })
                 }
             })
-            widget?.gradualCoverScript?.let { script ->
+            widget?.gradualOpenScript?.let { script ->
                 addView(modalAction("Gradually open") {
+                    callService("script", "turn_on", script, JSONObject())
+                    dialog.dismiss()
+                }, LayoutParams(LayoutParams.MATCH_PARENT, dp(52)).apply { topMargin = dp(8) })
+            }
+            widget?.gradualCloseScript?.let { script ->
+                addView(modalAction("Gradually close") {
                     callService("script", "turn_on", script, JSONObject())
                     dialog.dismiss()
                 }, LayoutParams(LayoutParams.MATCH_PARENT, dp(52)).apply { topMargin = dp(8) })
