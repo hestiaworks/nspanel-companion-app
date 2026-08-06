@@ -31,6 +31,9 @@ class PanelDashboardView(
     private val pageHost = FrameLayout(context)
     private val pageLabel = TextView(context)
     private var layout = DashboardLayout.default()
+    private var configured = true
+    private var panelName = "NSPanel Pro"
+    private var panelId = ""
     private var pageIndex = 0
     private var online = false
     private var renderPending = false
@@ -87,9 +90,25 @@ class PanelDashboardView(
 
     fun setLayout(value: DashboardLayout) {
         removeCallbacks(returnToDefault)
+        configured = true
         layout = value
         pageIndex = value.pages.indexOfFirst { it.id == value.defaultPageId }.coerceAtLeast(0)
         scheduleRender()
+    }
+
+    fun showUnconfigured(name: String, deviceId: String) {
+        removeCallbacks(returnToDefault)
+        configured = false
+        panelName = name
+        panelId = deviceId
+        pageIndex = 0
+        scheduleRender()
+    }
+
+    fun setPanelIdentity(name: String, deviceId: String) {
+        panelName = name
+        panelId = deviceId
+        if (!configured) scheduleRender()
     }
 
     fun setOnline(value: Boolean) {
@@ -99,6 +118,7 @@ class PanelDashboardView(
     }
 
     fun setPage(index: Int) {
+        if (!configured) return
         pageIndex = index.coerceIn(0, layout.pages.lastIndex)
         scheduleRender()
         scheduleDefaultPageReturn()
@@ -155,7 +175,7 @@ class PanelDashboardView(
 
     private fun scheduleDefaultPageReturn() {
         removeCallbacks(returnToDefault)
-        if (!dashboardActive || interactionActive || layout.defaultPageReturnSeconds == 0) return
+        if (!configured || !dashboardActive || interactionActive || layout.defaultPageReturnSeconds == 0) return
         val defaultIndex = layout.pages.indexOfFirst { it.id == layout.defaultPageId }.coerceAtLeast(0)
         if (pageIndex == defaultIndex) return
         postDelayed(returnToDefault, layout.defaultPageReturnSeconds * 1_000L)
@@ -167,6 +187,11 @@ class PanelDashboardView(
         entityBindings.clear()
         dirtyEntityIds.clear()
         pageHost.removeAllViews()
+        if (!configured) {
+            pageHost.addView(unconfiguredPage())
+            pageLabel.text = ""
+            return
+        }
         val definition = layout.pages[pageIndex.coerceIn(0, layout.pages.lastIndex)]
         val page = renderPage(definition)
         pageHost.addView(page)
@@ -892,6 +917,40 @@ class PanelDashboardView(
                 secondaryText(message).apply { gravity = Gravity.CENTER },
                 LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f),
             )
+        }
+
+    private fun unconfiguredPage(): View =
+        LinearLayout(context).apply {
+            orientation = VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(30), dp(24), dp(30), dp(24))
+            addView(eyebrow("NSPanel Companion"))
+            addView(primaryText(panelName, 28f).apply {
+                gravity = Gravity.CENTER
+                typeface = Typeface.DEFAULT_BOLD
+                setPadding(0, dp(10), 0, dp(8))
+            })
+            addView(secondaryText("Dashboard not configured").apply {
+                gravity = Gravity.CENTER
+                textSize = 18f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(PanelTheme.ink)
+            })
+            addView(secondaryText("Open Home Assistant → NSPanel Companion, select this panel, and create its pages.").apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(16), dp(10), dp(16), dp(18))
+            })
+            addView(secondaryText(panelId).apply {
+                gravity = Gravity.CENTER
+                textSize = 11f
+                typeface = Typeface.MONOSPACE
+                setTextIsSelectable(true)
+                contentDescription = "Panel ID $panelId. Long press for administrator controls"
+                setOnLongClickListener {
+                    openAdmin()
+                    true
+                }
+            })
         }
 
     private fun primaryText(value: String, size: Float): TextView =

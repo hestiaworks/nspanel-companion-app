@@ -18,6 +18,7 @@ class PanelSyncClient(
     private val currentRevision: () -> String,
     private val diagnostics: () -> String = { "" },
     private val onLayout: (DashboardLayout) -> Unit,
+    private val onPanelIdentity: (String) -> Unit = {},
     private val onAuthenticationFailed: () -> Unit = {},
     private val onHealth: (String) -> Unit = {},
 ) {
@@ -52,6 +53,7 @@ class PanelSyncClient(
                     if (status == 401) { stopped = true; onAuthenticationFailed(); return@post }
                     if (status in 200..299) onHealth("Heartbeat online")
                     else onHealth("Heartbeat HTTP $status")
+                    result?.optString("panel_name")?.takeIf(String::isNotBlank)?.let(onPanelIdentity)
                     result?.optJSONObject("layout")?.let { layout ->
                         runCatching { DashboardLayout.parse(layout) }.onSuccess(onLayout)
                     }
