@@ -5,6 +5,9 @@ import android.graphics.Color
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 import android.view.Gravity
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -18,6 +21,7 @@ class CameraPageView(
     private val openFullscreen: (DashboardWidget) -> Unit,
 ) : FrameLayout(context), SurfaceHolder.Callback {
     private val surface = SurfaceView(context)
+    private val handler = Handler(Looper.getMainLooper())
     private val status = TextView(context).apply {
         setTextColor(Color.WHITE)
         textSize = 12f
@@ -26,6 +30,15 @@ class CameraPageView(
         text = if (widget.streamBaseUrl.isNullOrBlank()) "Camera not configured" else "Connecting…"
     }
     private var player: MediaPlayer? = null
+    private var attached = false
+    private val connectTimeout = Runnable {
+        if (attached && player != null) {
+            status.alpha = 1f
+            status.text = "Camera reconnecting…"
+            releasePlayer()
+            if (surface.holder.surface.isValid) handler.postDelayed({ startPlayer(surface.holder) }, 600)
+        }
+    }
 
     init {
         setBackgroundColor(Color.BLACK)
@@ -39,14 +52,26 @@ class CameraPageView(
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
     override fun surfaceDestroyed(holder: SurfaceHolder) = releasePlayer()
 
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        attached = true
+        // Some NSPanel firmware creates the Surface before delivering callbacks
+        // registered by a dynamically inserted page. Cover that race explicitly.
+        if (surface.holder.surface.isValid) post { startPlayer(surface.holder) }
+    }
+
     override fun onDetachedFromWindow() {
+        attached = false
+        handler.removeCallbacksAndMessages(null)
         releasePlayer()
         super.onDetachedFromWindow()
     }
 
     private fun startPlayer(holder: SurfaceHolder) {
         val source = widget.streamBaseUrl?.takeIf(String::isNotBlank) ?: return
+        if (player != null || !holder.surface.isValid) return
         releasePlayer()
+        Log.i(TAG, "Starting camera stream ${Uri.parse(source).host}:${Uri.parse(source).port}")
         status.alpha = 1f
         status.text = "Connecting to Scrypted prebuffer…"
         player = MediaPlayer().apply {
@@ -55,6 +80,7 @@ class CameraPageView(
             setVolume(if (widget.incomingAudio) 1f else 0f, if (widget.incomingAudio) 1f else 0f)
             setDataSource(context, rtspUrl(source))
             setOnPreparedListener {
+                handler.removeCallbacks(connectTimeout)
                 it.start()
                 status.text = "Live"
                 status.postDelayed({ status.alpha = 0f }, 1_200)
@@ -70,12 +96,15 @@ class CameraPageView(
                 false
             }
             setOnErrorListener { _, what, extra ->
+                handler.removeCallbacks(connectTimeout)
+                Log.w(TAG, "Camera stream failed: $what/$extra")
                 status.alpha = 1f
                 status.text = "Stream unavailable · $what/$extra"
                 true
             }
             prepareAsync()
         }
+        handler.postDelayed(connectTimeout, CONNECT_TIMEOUT_MS)
     }
 
     private fun rtspUrl(source: String): Uri {
@@ -93,10 +122,16 @@ class CameraPageView(
     }
 
     private fun releasePlayer() {
+        handler.removeCallbacks(connectTimeout)
         player?.runCatching { stop() }
         player?.release()
         player = null
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+
+    companion object {
+        private const val TAG = "NSPanelCamera"
+        private const val CONNECT_TIMEOUT_MS = 12_000L
+    }
 }

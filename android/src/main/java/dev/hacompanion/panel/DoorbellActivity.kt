@@ -62,6 +62,9 @@ class DoorbellActivity : Activity() {
             DEFAULT_AUTO_CLOSE_MS
         }
     }
+    private val talkExtendMs: Long by lazy {
+        intent.getLongExtra(EXTRA_TALK_EXTEND_MS, DEFAULT_TALK_EXTEND_MS).coerceIn(0L, 60_000L)
+    }
     private val autoClose = Runnable { finish() }
     private val countdownTick = object : Runnable {
         override fun run() {
@@ -479,11 +482,13 @@ class DoorbellActivity : Activity() {
 
     private fun setTalking(enabled: Boolean) {
         if (!::talkButton.isInitialized || !::session.isInitialized) return
+        val wasTalking = talking
         val accepted = session.setTalkEnabled(enabled)
         talking = enabled && accepted
         talkButton.text = if (talking) "Speaking…" else "Hold to talk"
         talkStatus.text = if (talking) "Microphone is live" else "Press and hold to speak"
-        if (talking) pauseAutoClose() else resumeAutoClose()
+        if (talking && !wasTalking) pauseAutoClose()
+        else if (!talking && wasTalking) resumeAutoClose(withConversationGrace = true)
     }
 
     private fun resetAutoClose() {
@@ -501,9 +506,12 @@ class DoorbellActivity : Activity() {
         updateCountdown()
     }
 
-    private fun resumeAutoClose() {
+    private fun resumeAutoClose(withConversationGrace: Boolean = false) {
         if (autoCloseMs == 0L || talking) return
-        scheduleAutoClose(pausedCloseRemainingMs.coerceAtLeast(1_000L))
+        val grace = if (withConversationGrace) talkExtendMs else 0L
+        scheduleAutoClose(
+            (pausedCloseRemainingMs + grace).coerceIn(1_000L, MAX_AUTO_CLOSE_MS),
+        )
     }
 
     private fun scheduleAutoClose(delayMs: Long) {
@@ -563,11 +571,14 @@ class DoorbellActivity : Activity() {
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object {
+        private const val MAX_AUTO_CLOSE_MS = 300_000L
+        private const val DEFAULT_TALK_EXTEND_MS = 15_000L
         const val EXTRA_STREAM_BASE_URL = "dev.hacompanion.panel.DOORBELL_BASE_URL"
         const val EXTRA_STREAM_NAME = "dev.hacompanion.panel.DOORBELL_STREAM"
         const val EXTRA_START_TALKING = "dev.hacompanion.panel.DOORBELL_START_TALKING"
         const val EXTRA_USE_WEBVIEW = "dev.hacompanion.panel.DOORBELL_USE_WEBVIEW"
         const val EXTRA_AUTO_CLOSE_MS = "dev.hacompanion.panel.DOORBELL_AUTO_CLOSE_MS"
+        const val EXTRA_TALK_EXTEND_MS = "dev.hacompanion.panel.DOORBELL_TALK_EXTEND_MS"
         const val EXTRA_QUIET_MODE = "dev.hacompanion.panel.DOORBELL_QUIET_MODE"
         const val EXTRA_TALKBACK_TEST_URL = "dev.hacompanion.panel.DOORBELL_TALKBACK_TEST_URL"
         const val EXTRA_TALKBACK_URL = "dev.hacompanion.panel.DOORBELL_TALKBACK_URL"

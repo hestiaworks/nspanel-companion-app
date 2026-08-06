@@ -29,6 +29,9 @@ class RtspDoorbellActivity : Activity(), SurfaceHolder.Callback {
     private var muted = false
     private var talkback: PcmTalkbackStreamer? = null
     private lateinit var talkButton: Button
+    private val autoClose = Runnable { finish() }
+    private var closeDeadline = 0L
+    private var pausedCloseRemainingMs = 0L
 
     private val baseUrl by lazy {
         intent.getStringExtra(DoorbellActivity.EXTRA_STREAM_BASE_URL)
@@ -40,6 +43,9 @@ class RtspDoorbellActivity : Activity(), SurfaceHolder.Callback {
     }
     private val autoCloseMs by lazy {
         intent.getLongExtra(DoorbellActivity.EXTRA_AUTO_CLOSE_MS, 60_000L)
+    }
+    private val talkExtendMs by lazy {
+        intent.getLongExtra(DoorbellActivity.EXTRA_TALK_EXTEND_MS, 15_000L).coerceIn(0L, 60_000L)
     }
     private val talkbackUrl by lazy {
         intent.getStringExtra(DoorbellActivity.EXTRA_TALKBACK_URL)?.trim()
@@ -57,7 +63,7 @@ class RtspDoorbellActivity : Activity(), SurfaceHolder.Callback {
         muted = intent.getBooleanExtra(DoorbellActivity.EXTRA_QUIET_MODE, false)
         surface.holder.addCallback(this)
         prepareTalkback()
-        if (autoCloseMs > 0) handler.postDelayed({ finish() }, autoCloseMs)
+        if (autoCloseMs > 0) scheduleAutoClose(autoCloseMs)
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) = startPlayer(holder)
@@ -192,12 +198,34 @@ class RtspDoorbellActivity : Activity(), SurfaceHolder.Callback {
         }
         prepareTalkback()
         talkback?.setTalking(true)
+        pauseAutoClose()
         talkButton.text = "Talking · release to stop"
     }
 
     private fun stopTalking() {
         talkback?.setTalking(false)
+        resumeAutoCloseWithGrace()
         talkButton.text = "Hold to talk"
+    }
+
+    private fun pauseAutoClose() {
+        if (autoCloseMs == 0L) return
+        pausedCloseRemainingMs =
+            (closeDeadline - android.os.SystemClock.elapsedRealtime()).coerceAtLeast(1_000L)
+        handler.removeCallbacks(autoClose)
+    }
+
+    private fun resumeAutoCloseWithGrace() {
+        if (autoCloseMs == 0L) return
+        scheduleAutoClose(
+            (pausedCloseRemainingMs + talkExtendMs).coerceAtMost(MAX_AUTO_CLOSE_MS),
+        )
+    }
+
+    private fun scheduleAutoClose(delayMs: Long) {
+        handler.removeCallbacks(autoClose)
+        closeDeadline = android.os.SystemClock.elapsedRealtime() + delayMs
+        handler.postDelayed(autoClose, delayMs)
     }
 
     private fun prepareTalkback() {
@@ -220,5 +248,6 @@ class RtspDoorbellActivity : Activity(), SurfaceHolder.Callback {
 
     companion object {
         private const val MICROPHONE_PERMISSION_REQUEST = 73
+        private const val MAX_AUTO_CLOSE_MS = 300_000L
     }
 }
