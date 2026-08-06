@@ -202,6 +202,9 @@ class PanelDashboardView(
 
     private fun renderPage(page: DashboardPage): View {
         val only = page.widgets.singleOrNull()
+        if (page.widgets.isNotEmpty() && page.widgets.all { it.type in setOf("controls", "entity_button") }) {
+            return controlsPage(page)
+        }
         return when (only?.type) {
             "thermostat" -> boundEntityView(resolveEntity(only, "climate")) {
                 thermostatPage(page.title, only)
@@ -455,7 +458,7 @@ class PanelDashboardView(
         val temperature = weather.numberAttribute("temperature")
         val humidity = weather.numberAttribute("humidity")
         val unit = weather.attributes.optString("temperature_unit", "°")
-        val forecastDays = weather.attributes.optInt("forecast_days", 5).coerceIn(0, 5)
+        val forecastDays = widget.forecastDays
         val daily = forecastPeriods(weather, "forecast").take(forecastDays)
         val hourly = forecastPeriods(weather, "hourly_forecast").take(6)
 
