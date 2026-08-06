@@ -1,6 +1,7 @@
 package dev.hacompanion.panel
 
 import android.content.Context
+import android.app.Dialog
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -9,9 +10,9 @@ import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.Window
 import android.widget.Button
 import android.widget.FrameLayout
-import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 import org.json.JSONObject
@@ -278,9 +279,9 @@ class PanelDashboardView(
         val climate = resolveEntity(widget, "climate")
             ?: return emptyPage(title, "No climate entity found")
         val current = climate.numberAttribute("current_temperature")
-        val target = climate.numberAttribute("temperature")
-        val low = climate.numberAttribute("target_temp_low")
-        val high = climate.numberAttribute("target_temp_high")
+        val target = climate.numberAttribute("temperature") ?: current ?: 20.0
+        val low = climate.numberAttribute("target_temp_low") ?: target
+        val high = climate.numberAttribute("target_temp_high") ?: target
         val unit = climate.attributes.optString("temperature_unit", "°")
         val action = climate.attributes.optString("hvac_action").ifBlank { climate.state }
 
@@ -291,12 +292,7 @@ class PanelDashboardView(
                     background = cardBackground(CARD)
                     setPadding(dp(14), dp(12), dp(14), dp(12))
                     addView(thermostatHeader(widget.label ?: climate.friendlyName, action, climate.state != "off"))
-                    val content = if (low != null && high != null) {
-                        dualThermostatContent(climate, current, low, high, unit)
-                    } else {
-                        singleThermostatContent(climate, current, target, unit)
-                    }
-                    addView(content, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
+                    addView(unifiedThermostatContent(climate, current, target, low, high, unit, action), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
                     addView(thermostatModes(climate))
                 },
                 LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f),
@@ -328,86 +324,49 @@ class PanelDashboardView(
             })
         }
 
-    private fun singleThermostatContent(
+    private fun unifiedThermostatContent(
         climate: EntityState,
         current: Double?,
-        target: Double?,
-        unit: String,
-    ): View = LinearLayout(context).apply {
-        orientation = VERTICAL
-        gravity = Gravity.CENTER
-        addView(eyebrow("ACTUAL"))
-        addView(primaryText(current?.let { "${format(it)}$unit" } ?: "—", 29f).apply {
-            gravity = Gravity.CENTER
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(MUTED)
-        })
-        addView(eyebrow("DESIRED").apply { setPadding(0, dp(4), 0, 0) })
-        addView(
-            LinearLayout(context).apply {
-                gravity = Gravity.CENTER
-                val base = target ?: current ?: 20.0
-                addView(roundActionButton("−") {
-                    changeTemperature(climate, base - temperatureStep(climate))
-                })
-                addView(primaryText(target?.let { "${format(it)}$unit" } ?: "—", 48f).apply {
-                    gravity = Gravity.CENTER
-                    typeface = Typeface.DEFAULT_BOLD
-                }, LayoutParams(dp(116), LayoutParams.WRAP_CONTENT))
-                addView(roundActionButton("+") {
-                    changeTemperature(climate, base + temperatureStep(climate))
-                })
-            },
-        )
-    }
-
-    private fun dualThermostatContent(
-        climate: EntityState,
-        current: Double?,
+        target: Double,
         low: Double,
         high: Double,
         unit: String,
+        action: String,
     ): View = LinearLayout(context).apply {
         orientation = VERTICAL
         gravity = Gravity.CENTER
-        val selected = selectedClimateTarget.getOrPut(climate.entityId) { "heat" }
+        val dual = climate.state == "heat_cool"
+        val selected = selectedClimateTarget.getOrPut(climate.entityId) {
+            if (climate.state == "cool") "cool" else "heat"
+        }
         addView(DualThermostatDialView(
             context,
-            current?.let { "${format(it)}$unit" } ?: "—",
-            "${format(low)}$unit",
-            "${format(high)}$unit",
-        ), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
-        addView(
-            LinearLayout(context).apply {
-                orientation = HORIZONTAL
-                addView(
-                    targetSelector("HEAT BELOW", low, unit, selected == "heat", Color.rgb(196, 93, 39)) {
-                        selectedClimateTarget[climate.entityId] = "heat"
-                        scheduleEntityRefresh(climate.entityId)
-                    }, LayoutParams(0, dp(55), 1f).apply { rightMargin = dp(3) },
-                )
-                addView(
-                    targetSelector("COOL ABOVE", high, unit, selected == "cool", Color.rgb(45, 139, 208)) {
-                        selectedClimateTarget[climate.entityId] = "cool"
-                        scheduleEntityRefresh(climate.entityId)
-                    }, LayoutParams(0, dp(55), 1f).apply { leftMargin = dp(3) },
-                )
+            mode = climate.state,
+            action = action.replace('_', ' ').replaceFirstChar { it.uppercase() },
+            current = current?.let { "${format(it)}$unit" } ?: "—",
+            heat = if (dual) "${format(low)}$unit" else "${format(target)}$unit",
+            cool = if (dual) "${format(high)}$unit" else "${format(target)}$unit",
+            selectedTarget = selected,
+            onTargetSelected = {
+                selectedClimateTarget[climate.entityId] = it
+                scheduleEntityRefresh(climate.entityId)
             },
-            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { topMargin = dp(2) },
-        )
+        ), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
         addView(LinearLayout(context).apply {
             gravity = Gravity.CENTER
             val step = temperatureStep(climate)
             addView(roundActionButton("−", 42) {
-                if (selected == "heat") changeTemperatureRange(climate, low - step, high)
+                if (!dual) changeTemperature(climate, target - step)
+                else if (selected == "heat") changeTemperatureRange(climate, low - step, high)
                 else changeTemperatureRange(climate, low, (high - step).coerceAtLeast(low + step))
             })
-            addView(secondaryText("Adjust ${if (selected == "heat") "heat" else "cool"} target").apply {
+            addView(secondaryText(if (dual) "Tap a temperature, then adjust" else "Adjust target temperature").apply {
                 gravity = Gravity.CENTER
-                textSize = 10f
-            }, LayoutParams(dp(130), LayoutParams.WRAP_CONTENT))
+                textSize = 11f
+            }, LayoutParams(dp(170), LayoutParams.WRAP_CONTENT))
             addView(roundActionButton("+", 42) {
-                if (selected == "heat") changeTemperatureRange(climate, (low + step).coerceAtMost(high - step), high)
+                if (!dual) changeTemperature(climate, target + step)
+                else if (selected == "heat") changeTemperatureRange(climate, (low + step).coerceAtMost(high - step), high)
                 else changeTemperatureRange(climate, low, high + step)
             })
         }, LayoutParams(LayoutParams.MATCH_PARENT, dp(44)))
@@ -510,7 +469,7 @@ class PanelDashboardView(
             ?: return emptyPage(title, "No weather entity found")
         val temperature = weather.numberAttribute("temperature")
         val humidity = weather.numberAttribute("humidity")
-        val unit = weather.attributes.optString("temperature_unit", "°")
+        val unit = weather.attributes.optString("temperature_unit", "°").let { if (it.contains('°')) "°" else it }
         val forecastDays = widget.forecastDays
         val daily = forecastPeriods(weather, "forecast").take(forecastDays)
         val hourly = forecastPeriods(weather, "hourly_forecast").take(6)
@@ -519,81 +478,49 @@ class PanelDashboardView(
             addView(
                 LinearLayout(context).apply {
                     orientation = HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    background = cardBackground(CARD, CARD_EDGE, 20)
-                    setPadding(dp(14), dp(8), dp(14), dp(8))
-                    addView(primaryText(weatherSymbol(weather.state), 42f).apply { gravity = Gravity.CENTER }, LayoutParams(dp(68), LayoutParams.MATCH_PARENT))
+                    addView(LinearLayout(context).apply {
+                        orientation = VERTICAL
+                        gravity = Gravity.CENTER_HORIZONTAL
+                        background = cardBackground(CARD, CARD_EDGE, 20)
+                        setPadding(dp(12), dp(10), dp(12), dp(10))
+                        addView(primaryText(weatherSymbol(weather.state), 50f).apply { gravity = Gravity.CENTER })
+                        addView(primaryText(temperature?.let { "${format(it)}$unit" } ?: "—", 48f).apply {
+                            typeface = Typeface.DEFAULT_BOLD
+                            gravity = Gravity.CENTER
+                        })
+                        addView(primaryText(weather.state.replace('-', ' ').replaceFirstChar { it.uppercase() }, 18f).apply {
+                            typeface = Typeface.DEFAULT_BOLD
+                            gravity = Gravity.CENTER
+                            maxLines = 1
+                            ellipsize = TextUtils.TruncateAt.END
+                        })
+                        addView(secondaryText(buildString {
+                            append("Feels like ")
+                            append(weather.numberAttribute("apparent_temperature")?.let(::format) ?: temperature?.let(::format) ?: "—")
+                            append(unit)
+                            humidity?.let { append(" · ${format(it)}%") }
+                        }).apply {
+                            textSize = 13f
+                            gravity = Gravity.CENTER
+                            maxLines = 2
+                        })
+                    }, LayoutParams(0, LayoutParams.MATCH_PARENT, if (forecastDays == 1) 1.15f else 1f).apply { rightMargin = dp(4) })
                     addView(
                         LinearLayout(context).apply {
                             orientation = VERTICAL
-                            gravity = Gravity.CENTER_VERTICAL
-                            addView(LinearLayout(context).apply {
-                                gravity = Gravity.BOTTOM
-                                addView(primaryText(temperature?.let { "${format(it)}$unit" } ?: "—", 38f).apply {
-                                    typeface = Typeface.DEFAULT_BOLD
+                            daily.forEach { period ->
+                                addView(dailyForecastRow(period, unit), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f).apply {
+                                    bottomMargin = dp(4)
                                 })
-                                addView(primaryText(weather.state.replace('-', ' ').replaceFirstChar { it.uppercase() }, 15f).apply {
-                                    typeface = Typeface.DEFAULT_BOLD
-                                    setPadding(dp(10), 0, 0, dp(5))
-                                })
-                            })
-                            addView(secondaryText(buildString {
-                                append("Feels like ")
-                                append(weather.numberAttribute("apparent_temperature")?.let(::format) ?: temperature?.let(::format) ?: "—")
-                                append(unit)
-                                humidity?.let { append(" · Humidity ${format(it)}%") }
-                                weather.numberAttribute("wind_speed")?.let { append(" · Wind ${format(it)} m/s") }
-                            }).apply {
-                                textSize = 10f
-                                maxLines = 1
-                                ellipsize = TextUtils.TruncateAt.END
-                            })
-                            if (!online) addView(secondaryText("Cached · ${weatherAge(weather.entityId)}").apply {
-                                textSize = 9f
-                                setTextColor(ACCENT)
-                            })
-                        }, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f),
+                            }
+                        }, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f).apply { leftMargin = dp(4) },
                     )
-                }, LayoutParams(LayoutParams.MATCH_PARENT, dp(96)),
+                }, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f),
             )
             if (widget.showHourly && hourly.isNotEmpty()) addView(
                 hourlyForecastCard(weather, hourly, unit),
-                LayoutParams(LayoutParams.MATCH_PARENT, dp(90)).apply { topMargin = dp(7) },
+                LayoutParams(LayoutParams.MATCH_PARENT, dp(104)).apply { topMargin = dp(7) },
             )
-            if (daily.isNotEmpty()) addView(
-                LinearLayout(context).apply {
-                    gravity = Gravity.CENTER
-                    background = cardBackground(CARD, CARD_EDGE, 19)
-                    setPadding(dp(7), dp(7), dp(7), dp(7))
-                    daily.forEach { period ->
-                        addView(LinearLayout(context).apply {
-                            orientation = VERTICAL
-                            gravity = Gravity.CENTER
-                            addView(primaryText(period.label, 10f).apply {
-                                typeface = Typeface.DEFAULT_BOLD
-                                gravity = Gravity.CENTER
-                                maxLines = 1
-                            })
-                            addView(primaryText(weatherSymbol(period.condition), 23f).apply { gravity = Gravity.CENTER })
-                            addView(LinearLayout(context).apply {
-                                gravity = Gravity.CENTER
-                                addView(secondaryText(period.low?.let { "${format(it)}$unit" } ?: "—").apply {
-                                    textSize = 10f
-                                    gravity = Gravity.CENTER
-                                })
-                                addView(primaryText(period.high?.let { "${format(it)}$unit" } ?: "—", 12f).apply {
-                                    typeface = Typeface.DEFAULT_BOLD
-                                    gravity = Gravity.CENTER
-                                    setPadding(dp(5), 0, 0, 0)
-                                })
-                            })
-                        }, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
-                    }
-                }, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f).apply { topMargin = dp(7) },
-            ) else addView(secondaryText("Forecast is not available yet").apply {
-                gravity = Gravity.CENTER
-                textSize = 11f
-            }, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
         }
     }
 
@@ -601,17 +528,17 @@ class PanelDashboardView(
         LinearLayout(context).apply {
             gravity = Gravity.CENTER_VERTICAL
             background = cardBackground(CARD, CARD_EDGE, 15)
-            setPadding(dp(8), dp(4), dp(8), dp(4))
-            addView(primaryText(period.label, 10f).apply { typeface = Typeface.DEFAULT_BOLD }, LayoutParams(dp(32), LayoutParams.WRAP_CONTENT))
-            addView(primaryText(weatherSymbol(period.condition), 17f).apply { gravity = Gravity.CENTER }, LayoutParams(dp(24), LayoutParams.WRAP_CONTENT))
+            setPadding(dp(9), dp(5), dp(9), dp(5))
+            addView(primaryText(period.label, 11f).apply { typeface = Typeface.DEFAULT_BOLD }, LayoutParams(dp(42), LayoutParams.WRAP_CONTENT))
+            addView(primaryText(weatherSymbol(period.condition), 19f).apply { gravity = Gravity.CENTER }, LayoutParams(dp(30), LayoutParams.WRAP_CONTENT))
             addView(secondaryText(period.low?.let { "${format(it)}$unit" } ?: "—").apply {
-                textSize = 10f
+                textSize = 14f
                 gravity = Gravity.END
             }, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
             addView(primaryText(period.high?.let { "${format(it)}$unit" } ?: "—", 13f).apply {
                 typeface = Typeface.DEFAULT_BOLD
                 gravity = Gravity.END
-            }, LayoutParams(dp(34), LayoutParams.WRAP_CONTENT))
+            }, LayoutParams(dp(38), LayoutParams.WRAP_CONTENT))
         }
 
     private fun hourlyForecastCard(
@@ -625,8 +552,8 @@ class PanelDashboardView(
         addView(secondaryText(weather.attributes.optString("forecast_summary").ifBlank {
             "${weather.state.replace('-', ' ').replaceFirstChar { it.uppercase() }} conditions continue."
         }).apply {
-            textSize = 9f
-            maxLines = 1
+            textSize = 14f
+            maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
         })
         addView(LinearLayout(context).apply {
@@ -634,9 +561,9 @@ class PanelDashboardView(
                 addView(LinearLayout(context).apply {
                     orientation = VERTICAL
                     gravity = Gravity.CENTER
-                    addView(secondaryText(period.label).apply { textSize = 8f; gravity = Gravity.CENTER })
-                    addView(primaryText(weatherSymbol(period.condition), 15f).apply { gravity = Gravity.CENTER })
-                    addView(primaryText(period.high?.let { "${format(it)}$unit" } ?: "—", 12f).apply {
+                    addView(secondaryText(period.label).apply { textSize = 9f; gravity = Gravity.CENTER })
+                    addView(primaryText(weatherSymbol(period.condition), 18f).apply { gravity = Gravity.CENTER })
+                    addView(primaryText(period.high?.let { "${format(it)}$unit" } ?: "—", 13f).apply {
                         typeface = Typeface.DEFAULT_BOLD
                         gravity = Gravity.CENTER
                     })
@@ -729,7 +656,7 @@ class PanelDashboardView(
                 else -> addView(binaryBody(entity, dense), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
             }
             if (entity.domain in TIMER_DOMAINS && widget?.showTimer != false) {
-                addView(timerPresetRow(entity, widget?.timerPresets ?: listOf(5, 15, 30, 60)))
+                addView(timerAction(entity, widget?.timerPresets ?: listOf(5, 15, 30, 60)))
             }
             if (widget?.cardTap ?: !complex) {
                 setOnClickListener { toggleEntity(entity) }
@@ -751,20 +678,21 @@ class PanelDashboardView(
                     ellipsize = TextUtils.TruncateAt.END
                 }, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)) else addView(View(context), LayoutParams(0, 1, 1f))
                 addView(Button(context).apply {
-                    text = if (active) "●" else "○"
-                    textSize = 13f
+                    text = if (active) "ON" else "OFF"
+                    textSize = 11f
+                    typeface = Typeface.DEFAULT_BOLD
                     isAllCaps = false
                     minWidth = 0
                     minimumWidth = 0
-                    setPadding(0, 0, 0, 0)
+                    setPadding(dp(5), 0, dp(5), 0)
                     setTextColor(if (active) Color.WHITE else MUTED)
                     background = PanelTheme.pill(context, if (active) ACCENT else PanelTheme.panel)
                     isEnabled = online
                     setOnClickListener { toggleEntity(entity) }
-                }, LayoutParams(dp(42), dp(34)))
+                }, LayoutParams(dp(62), dp(42)))
             })
             if (!dense) addView(secondaryText(deviceTypeLabel(entity)).apply {
-                textSize = 9f
+                textSize = 12f
                 maxLines = 1
                 ellipsize = TextUtils.TruncateAt.END
                 setPadding(0, dp(2), 0, 0)
@@ -781,7 +709,7 @@ class PanelDashboardView(
             includeFontPadding = false
         }, LayoutParams(LayoutParams.MATCH_PARENT, dp(34)))
         addView(secondaryText(deviceTypeLabel(entity)).apply {
-            textSize = 8f
+            textSize = 11f
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
         })
@@ -882,35 +810,65 @@ class PanelDashboardView(
             setOnClickListener { action() }
         }
 
-    private fun timerPresetRow(entity: EntityState, presets: List<Int>): View = LinearLayout(context).apply {
-        gravity = Gravity.CENTER_VERTICAL
-        setPadding(0, dp(5), 0, 0)
-        addView(secondaryText("Timer").apply { textSize = 9f }, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-            rightMargin = dp(5)
-        })
-        addView(HorizontalScrollView(context).apply {
-            isHorizontalScrollBarEnabled = false
-            overScrollMode = View.OVER_SCROLL_NEVER
-            setOnTouchListener { view, event ->
-                view.parent?.requestDisallowInterceptTouchEvent(event.actionMasked != MotionEvent.ACTION_UP && event.actionMasked != MotionEvent.ACTION_CANCEL)
-                false
+    private fun timerAction(entity: EntityState, presets: List<Int>): View = TextView(context).apply {
+        val activeMinutes = timerMinutes[entity.entityId]?.takeIf { it > 0 }
+        text = activeMinutes?.let { "◷  Timer · ${it} min" } ?: "◷  Set timer"
+        textSize = 12f
+        typeface = Typeface.DEFAULT_BOLD
+        gravity = Gravity.CENTER
+        setTextColor(if (activeMinutes != null) Color.WHITE else PanelTheme.ink)
+        background = cardBackground(if (activeMinutes != null) ACCENT else PanelTheme.panel, PanelTheme.line, 13)
+        isClickable = true
+        isFocusable = true
+        setOnClickListener { showTimerDialog(entity, presets) }
+        layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(42)).apply { topMargin = dp(5) }
+    }
+
+    private fun showTimerDialog(entity: EntityState, presets: List<Int>) {
+        val dialog = Dialog(context)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(LinearLayout(context).apply {
+            orientation = VERTICAL
+            setPadding(dp(20), dp(18), dp(20), dp(18))
+            background = cardBackground(CARD, CARD_EDGE, 24)
+            addView(primaryText("Timer", 24f).apply { typeface = Typeface.DEFAULT_BOLD })
+            addView(secondaryText(entity.friendlyName).apply { textSize = 13f; setPadding(0, dp(3), 0, dp(14)) })
+            presets.distinct().chunked(2).forEach { row ->
+                addView(LinearLayout(context).apply {
+                    row.forEach { minutes ->
+                        val selected = timerMinutes[entity.entityId] == minutes
+                        addView(TextView(context).apply {
+                            text = "$minutes min"
+                            textSize = 17f
+                            typeface = Typeface.DEFAULT_BOLD
+                            gravity = Gravity.CENTER
+                            setTextColor(if (selected) Color.WHITE else PanelTheme.ink)
+                            background = cardBackground(if (selected) ACCENT else PanelTheme.panel, if (selected) ACCENT else PanelTheme.line, 16)
+                            setOnClickListener { setTimer(entity, minutes); dialog.dismiss() }
+                        }, LayoutParams(0, dp(58), 1f).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) })
+                    }
+                    if (row.size == 1) addView(View(context), LayoutParams(0, dp(58), 1f))
+                })
             }
-            addView(LinearLayout(context).apply {
-                gravity = Gravity.CENTER_VERTICAL
-                presets.forEach { minutes ->
-                    val selected = timerMinutes[entity.entityId] == minutes
-                    addView(compactAction("${minutes}m") { setTimer(entity, minutes) }.apply {
-                        if (selected) {
-                            setTextColor(Color.WHITE)
-                            background = PanelTheme.pill(context, ACCENT)
-                        }
-                    }, LayoutParams(dp(45), dp(32)).apply { rightMargin = dp(4) })
-                }
-                timerMinutes[entity.entityId]?.takeIf { it > 0 }?.let {
-                    addView(compactAction("×") { setTimer(entity, 0) }, LayoutParams(dp(34), dp(32)))
-                }
-            })
-        }, LayoutParams(0, dp(34), 1f))
+            timerMinutes[entity.entityId]?.takeIf { it > 0 }?.let {
+                addView(TextView(context).apply {
+                    text = "Cancel timer"
+                    textSize = 15f
+                    gravity = Gravity.CENTER
+                    setTextColor(Color.rgb(210, 74, 63))
+                    background = cardBackground(PanelTheme.panel, PanelTheme.line, 15)
+                    setOnClickListener { setTimer(entity, 0); dialog.dismiss() }
+                }, LayoutParams(LayoutParams.MATCH_PARENT, dp(50)).apply { topMargin = dp(9) })
+            }
+        })
+        dialog.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+            setDimAmount(.65f)
+            addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            setLayout((resources.displayMetrics.widthPixels * .86f).roundToInt(), android.view.WindowManager.LayoutParams.WRAP_CONTENT)
+        }
+        dialog.show()
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels * .86f).roundToInt(), android.view.WindowManager.LayoutParams.WRAP_CONTENT)
     }
 
     private fun setTimer(entity: EntityState, minutes: Int) {
