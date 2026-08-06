@@ -123,6 +123,7 @@ class HomeAssistantProtocolTest {
                   "stream_name": "native_test",
                   "quiet_mode": true,
                   "auto_close_ms": 30000,
+                  "talk_extend_ms": 20000,
                   "talkback_test_url": "http://10.0.2.2:8124/api/talkback"
                 }
               }
@@ -134,6 +135,7 @@ class HomeAssistantProtocolTest {
         assertEquals("native_test", event?.streamName)
         assertEquals(true, event?.quietMode)
         assertEquals(30_000L, event?.autoCloseMs)
+        assertEquals(20_000L, event?.talkExtendMs)
         assertEquals("http://10.0.2.2:8124/api/talkback", event?.talkbackTestUrl)
     }
 

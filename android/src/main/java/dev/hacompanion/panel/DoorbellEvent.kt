@@ -7,5 +7,6 @@ data class DoorbellEvent(
     val talkbackKey: String? = null,
     val quietMode: Boolean = false,
     val autoCloseMs: Long? = null,
+    val talkExtendMs: Long = 15_000L,
     val talkbackTestUrl: String? = null,
 )

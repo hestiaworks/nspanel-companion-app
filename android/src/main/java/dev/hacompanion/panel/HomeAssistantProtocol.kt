@@ -109,6 +109,7 @@ object HomeAssistantProtocol {
             talkbackKey = data.optString("talkback_key").takeIf(String::isNotBlank),
             quietMode = data.optBoolean("quiet_mode", false),
             autoCloseMs = data.optLong("auto_close_ms").takeIf { it > 0L },
+            talkExtendMs = data.optLong("talk_extend_ms", 15_000L).coerceIn(0L, 60_000L),
             talkbackTestUrl = data.optString("talkback_test_url").takeIf(String::isNotBlank),
         )
     }

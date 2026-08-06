@@ -774,6 +774,7 @@ class MainActivity : Activity() {
         event.autoCloseMs?.let {
             intent.putExtra(DoorbellActivity.EXTRA_AUTO_CLOSE_MS, it)
         }
+        intent.putExtra(DoorbellActivity.EXTRA_TALK_EXTEND_MS, event.talkExtendMs)
         startActivity(intent)
     }
 
@@ -804,6 +805,10 @@ class MainActivity : Activity() {
                 .putExtra(
                     DoorbellActivity.EXTRA_AUTO_CLOSE_MS,
                     intent.getLongExtra(DoorbellActivity.EXTRA_AUTO_CLOSE_MS, 60_000L),
+                )
+                .putExtra(
+                    DoorbellActivity.EXTRA_TALK_EXTEND_MS,
+                    intent.getLongExtra(DoorbellActivity.EXTRA_TALK_EXTEND_MS, 15_000L),
                 )
                 .putExtra(
                     DoorbellActivity.EXTRA_QUIET_MODE,
