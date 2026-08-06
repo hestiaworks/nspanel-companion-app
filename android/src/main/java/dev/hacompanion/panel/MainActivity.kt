@@ -162,6 +162,8 @@ class MainActivity : Activity() {
             },
             ::showAdminDialog,
             ::showCamera,
+            { schedule -> panelApiClient?.upsertSchedule(schedule) == true },
+            { scheduleId -> panelApiClient?.deleteSchedule(scheduleId) == true },
         )
         if (previewUnconfigured) {
             applyKeepScreenOn(false)
@@ -635,6 +637,7 @@ class MainActivity : Activity() {
                 onEntityChanged = ::activateEntityState,
                 onDoorbellEvent = ::showDoorbellEvent,
                 onWeatherForecast = dashboardView::updateWeatherForecast,
+                onSchedules = dashboardView::setSchedules,
             ).also { it.start() }
             return
         }
