@@ -94,6 +94,19 @@ class DashboardLayoutTest {
     }
 
     @Test
+    fun parsesAndValidatesWeatherForecastLength() {
+        val layout = DashboardLayout.parse(
+            """{"schema_version":1,"revision":"forecast","pages":[{"id":"weather","widgets":[{"type":"weather","entity_id":"weather.home","forecast_days":3}]}]}""",
+        )
+        assertEquals(3, layout.pages.single().widgets.single().forecastDays)
+        assertThrows(IllegalArgumentException::class.java) {
+            DashboardLayout.parse(
+                """{"schema_version":1,"revision":"forecast","pages":[{"id":"weather","widgets":[{"type":"weather","forecast_days":4}]}]}""",
+            )
+        }
+    }
+
+    @Test
     fun rejectsUnknownSchemaAndWidgets() {
         assertThrows(IllegalArgumentException::class.java) {
             DashboardLayout.parse(

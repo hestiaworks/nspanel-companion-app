@@ -96,10 +96,12 @@ data class DashboardWidget(
     val type: String,
     val entityId: String? = null,
     val label: String? = null,
+    val forecastDays: Int = 5,
 ) {
     fun toJson(): JSONObject = JSONObject().put("type", type).apply {
         entityId?.let { put("entity_id", it) }
         label?.let { put("label", it) }
+        if (type == "weather") put("forecast_days", forecastDays)
     }
 
     companion object {
@@ -114,7 +116,9 @@ data class DashboardWidget(
             }
             val label = json.optString("label").trim().takeIf(String::isNotEmpty)
             require(label == null || label.length <= 48) { "Widget label is too long" }
-            return DashboardWidget(type, entityId, label)
+            val forecastDays = json.optInt("forecast_days", 5)
+            require(type != "weather" || forecastDays in setOf(1, 3, 5)) { "Invalid weather forecast length" }
+            return DashboardWidget(type, entityId, label, forecastDays)
         }
     }
 }
