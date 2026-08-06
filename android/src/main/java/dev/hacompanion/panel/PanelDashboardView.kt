@@ -25,6 +25,7 @@ class PanelDashboardView(
         data: JSONObject,
     ) -> Boolean,
     private val openAdmin: () -> Unit = {},
+    private val openCamera: (DashboardWidget) -> Unit = {},
 ) : LinearLayout(context) {
     private val states = linkedMapOf<String, EntityState>()
     private val weatherUpdatedAt = mutableMapOf<String, Long>()
@@ -212,6 +213,7 @@ class PanelDashboardView(
             "weather" -> boundEntityView(resolveEntity(only, "weather")) {
                 weatherPage(page.title, only)
             }
+            "camera" -> CameraPageView(context, only, openCamera)
             "controls" -> controlsPage(page)
             else -> generalPage(page)
         }

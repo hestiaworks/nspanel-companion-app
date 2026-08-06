@@ -118,6 +118,19 @@ class DashboardLayoutTest {
     }
 
     @Test
+    fun parsesNativeCameraPage() {
+        val layout = DashboardLayout.parse(
+            """{"schema_version":1,"revision":"camera","pages":[{"id":"camera","widgets":[{"type":"camera","stream_base_url":"rtsp://192.0.2.76:46211/prebuffer","stream_name":"doorbell_sub","talkback_url":"http://192.0.2.76:11081/talk/44","talkback_key":"0123456789abcdef","incoming_audio":true,"tap_action":"intercom"}]}]}""",
+        )
+        val widget = layout.pages.single().widgets.single()
+        assertEquals("camera", widget.type)
+        assertEquals("rtsp://192.0.2.76:46211/prebuffer", widget.streamBaseUrl)
+        assertEquals(true, widget.incomingAudio)
+        assertEquals("intercom", widget.tapAction)
+        assertEquals(widget, DashboardWidget.parse(widget.toJson()))
+    }
+
+    @Test
     fun rejectsUnknownSchemaAndWidgets() {
         assertThrows(IllegalArgumentException::class.java) {
             DashboardLayout.parse(

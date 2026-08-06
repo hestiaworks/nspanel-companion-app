@@ -54,6 +54,7 @@ class RtspDoorbellActivity : Activity(), SurfaceHolder.Callback {
             View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
                 View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         setContentView(buildContent())
+        muted = intent.getBooleanExtra(DoorbellActivity.EXTRA_QUIET_MODE, false)
         surface.holder.addCallback(this)
         prepareTalkback()
         if (autoCloseMs > 0) handler.postDelayed({ finish() }, autoCloseMs)
@@ -87,6 +88,8 @@ class RtspDoorbellActivity : Activity(), SurfaceHolder.Callback {
         player = MediaPlayer().apply {
             setDisplay(holder)
             setAudioStreamType(AudioManager.STREAM_MUSIC)
+            val volume = if (muted) 0f else 1f
+            setVolume(volume, volume)
             setDataSource(this@RtspDoorbellActivity, rtspUrl())
             setOnPreparedListener {
                 it.start()
