@@ -102,6 +102,7 @@ data class DashboardWidget(
     val showTimer: Boolean = true,
     val timerPresets: List<Int> = listOf(5, 15, 30, 60),
     val cardTap: Boolean? = null,
+    val showFanSpeed: Boolean = false,
     val streamBaseUrl: String? = null,
     val streamName: String? = null,
     val talkbackUrl: String? = null,
@@ -121,6 +122,7 @@ data class DashboardWidget(
             put("show_timer", showTimer)
             put("timer_presets", JSONArray(timerPresets))
             cardTap?.let { put("card_tap", it) }
+            put("show_fan_speed", showFanSpeed)
         }
         if (type == "camera") {
             streamBaseUrl?.let { put("stream_base_url", it) }; streamName?.let { put("stream_name", it) }
@@ -155,6 +157,7 @@ data class DashboardWidget(
                 "Invalid timer presets"
             }
             val cardTap = if (json.has("card_tap")) json.optBoolean("card_tap") else null
+            val showFanSpeed = json.optBoolean("show_fan_speed", false)
             val streamBaseUrl = json.optString("stream_base_url").takeIf(String::isNotBlank)
             val streamName = json.optString("stream_name").takeIf(String::isNotBlank)
             val talkbackUrl = json.optString("talkback_url").takeIf(String::isNotBlank)
@@ -165,7 +168,7 @@ data class DashboardWidget(
             require(type != "camera" || streamBaseUrl == null || streamBaseUrl.startsWith("rtsp://") ||
                 streamBaseUrl.startsWith("rtsps://") || streamBaseUrl.startsWith("http://") ||
                 streamBaseUrl.startsWith("https://")) { "Invalid camera stream URL" }
-            return DashboardWidget(type, entityId, label, forecastDays, showHourly, icon, showTimer, timerPresets, cardTap, streamBaseUrl, streamName, talkbackUrl, talkbackKey, incomingAudio, tapAction)
+            return DashboardWidget(type, entityId, label, forecastDays, showHourly, icon, showTimer, timerPresets, cardTap, showFanSpeed, streamBaseUrl, streamName, talkbackUrl, talkbackKey, incomingAudio, tapAction)
         }
 
         val CONTROL_ICONS = setOf(

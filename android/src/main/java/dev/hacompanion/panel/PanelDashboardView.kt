@@ -635,9 +635,10 @@ class PanelDashboardView(
 
     private fun deviceControlCard(entity: EntityState, widget: DashboardWidget? = null, dense: Boolean = false): View {
         val active = entity.state in setOf("on", "open", "opening")
+        val fanHasSpeed = entity.domain == "fan" && widget?.showFanSpeed == true && entity.attributes.optInt("supported_features", 0) and 1 != 0
         val complex = when (entity.domain) {
             "light" -> entity.numberAttribute("brightness") != null
-            "fan" -> true
+            "fan" -> fanHasSpeed
             "cover" -> true
             else -> false
         }
@@ -645,13 +646,14 @@ class PanelDashboardView(
             orientation = VERTICAL
             setPadding(dp(12), dp(10), dp(12), dp(10))
             background = cardBackground(if (active) ACCENT_WASH else CARD, if (active) PanelTheme.accentWash else CARD_EDGE, 20)
-            addView(deviceCardHeader(entity, active, widget, dense))
-            if (dense) addView(denseControlIdentity(widget?.label ?: entity.friendlyName, entity))
+            addView(deviceCardHeader(entity, active, widget, dense, showPower = entity.domain != "cover"))
+            if (dense) addView(denseControlIdentity(widget?.label ?: entity.friendlyName, entity, widget))
             when (entity.domain) {
                 "light" -> if (entity.numberAttribute("brightness") != null) {
                     addView(dimmerBody(entity), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
                 } else addView(binaryBody(entity, dense), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
-                "fan" -> addView(fanBody(entity), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
+                "fan" -> if (fanHasSpeed) addView(fanBody(entity), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
+                    else addView(binaryBody(entity, dense), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
                 "cover" -> addView(coverBody(entity), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
                 else -> addView(binaryBody(entity, dense), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
             }
@@ -666,7 +668,7 @@ class PanelDashboardView(
         }
     }
 
-    private fun deviceCardHeader(entity: EntityState, active: Boolean, widget: DashboardWidget?, dense: Boolean): View =
+    private fun deviceCardHeader(entity: EntityState, active: Boolean, widget: DashboardWidget?, dense: Boolean, showPower: Boolean): View =
         LinearLayout(context).apply {
             orientation = VERTICAL
             addView(LinearLayout(context).apply {
@@ -677,7 +679,7 @@ class PanelDashboardView(
                     maxLines = 1
                     ellipsize = TextUtils.TruncateAt.END
                 }, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)) else addView(View(context), LayoutParams(0, 1, 1f))
-                addView(Button(context).apply {
+                if (showPower) addView(Button(context).apply {
                     text = if (active) "ON" else "OFF"
                     textSize = 11f
                     typeface = Typeface.DEFAULT_BOLD
@@ -691,7 +693,7 @@ class PanelDashboardView(
                     setOnClickListener { toggleEntity(entity) }
                 }, LayoutParams(dp(62), dp(42)))
             })
-            if (!dense) addView(secondaryText(deviceTypeLabel(entity)).apply {
+            if (!dense) addView(secondaryText(controlTypeLabel(entity, widget)).apply {
                 textSize = 12f
                 maxLines = 1
                 ellipsize = TextUtils.TruncateAt.END
@@ -699,7 +701,7 @@ class PanelDashboardView(
             })
         }
 
-    private fun denseControlIdentity(name: String, entity: EntityState): View = LinearLayout(context).apply {
+    private fun denseControlIdentity(name: String, entity: EntityState, widget: DashboardWidget?): View = LinearLayout(context).apply {
         orientation = VERTICAL
         setPadding(0, dp(5), 0, dp(2))
         addView(primaryText(name, if (name.length > 22) 12f else 14f).apply {
@@ -708,12 +710,15 @@ class PanelDashboardView(
             ellipsize = TextUtils.TruncateAt.END
             includeFontPadding = false
         }, LayoutParams(LayoutParams.MATCH_PARENT, dp(34)))
-        addView(secondaryText(deviceTypeLabel(entity)).apply {
+        addView(secondaryText(controlTypeLabel(entity, widget)).apply {
             textSize = 11f
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
         })
     }
+
+    private fun controlTypeLabel(entity: EntityState, widget: DashboardWidget?): String =
+        if (entity.domain == "fan" && widget?.showFanSpeed != true) "Fan" else deviceTypeLabel(entity)
 
     private fun controlIcon(entity: EntityState, configured: String): String {
         if (configured != "auto") return configured
@@ -754,31 +759,29 @@ class PanelDashboardView(
     private fun fanBody(entity: EntityState): View = LinearLayout(context).apply {
         orientation = VERTICAL
         val percent = entity.numberAttribute("percentage")?.roundToInt() ?: 0
-        addView(deviceSeekBar(percent) { value ->
-            callService("fan", "set_percentage", entity.entityId, JSONObject().put("percentage", value))
-        }, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
-        addView(LinearLayout(context).apply {
-            listOf(25 to "Low", 50 to "Med", 100 to "High").forEach { (value, label) ->
-                addView(compactAction(label) {
-                    callService("fan", "set_percentage", entity.entityId, JSONObject().put("percentage", value))
-                }, LayoutParams(0, dp(38), 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
-            }
-        })
+        gravity = Gravity.BOTTOM
+        addView(primaryText("Speed · $percent%", 17f).apply { typeface = Typeface.DEFAULT_BOLD })
+        addView(modalAction("Adjust speed") { showFanSpeedDialog(entity) }, LayoutParams(LayoutParams.MATCH_PARENT, dp(42)).apply { topMargin = dp(6) })
     }
 
     private fun coverBody(entity: EntityState): View = LinearLayout(context).apply {
         orientation = VERTICAL
-        val position = entity.numberAttribute("current_position")?.roundToInt() ?: 0
-        addView(deviceSeekBar(position) { value ->
-            callService("cover", "set_cover_position", entity.entityId, JSONObject().put("position", value))
-        }, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
-        addView(LinearLayout(context).apply {
-            listOf("Open" to "open_cover", "Stop" to "stop_cover", "Close" to "close_cover").forEach { (label, service) ->
-                addView(compactAction(label) {
-                    callService("cover", service, entity.entityId, JSONObject())
-                }, LayoutParams(0, dp(38), 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
-            }
-        })
+        val position = entity.numberAttribute("current_position")?.roundToInt()
+        gravity = Gravity.BOTTOM
+        addView(primaryText(position?.let { "Position · $it%" } ?: entity.state.replaceFirstChar { it.uppercase() }, 17f).apply { typeface = Typeface.DEFAULT_BOLD })
+        addView(modalAction("Control curtains") { showCoverDialog(entity) }, LayoutParams(LayoutParams.MATCH_PARENT, dp(42)).apply { topMargin = dp(6) })
+    }
+
+    private fun modalAction(label: String, action: () -> Unit): TextView = TextView(context).apply {
+        text = label
+        textSize = 12f
+        typeface = Typeface.DEFAULT_BOLD
+        gravity = Gravity.CENTER
+        setTextColor(PanelTheme.ink)
+        background = cardBackground(PanelTheme.panel, PanelTheme.line, 13)
+        isClickable = true
+        isFocusable = true
+        setOnClickListener { action() }
     }
 
     private fun sliderBody(label: String, value: Int, onChanged: (Int) -> Unit): View =
@@ -822,6 +825,81 @@ class PanelDashboardView(
         isFocusable = true
         setOnClickListener { showTimerDialog(entity, presets) }
         layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(42)).apply { topMargin = dp(5) }
+    }
+
+    private fun showFanSpeedDialog(entity: EntityState) {
+        val percent = entity.numberAttribute("percentage")?.roundToInt() ?: 0
+        showControlDialog("Fan speed", entity.friendlyName) { dialog ->
+            addView(primaryText("$percent%", 34f).apply { typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER })
+            addView(deviceSeekBar(percent) { value ->
+                callService("fan", "set_percentage", entity.entityId, JSONObject().put("percentage", value))
+            }, LayoutParams(LayoutParams.MATCH_PARENT, dp(64)))
+            addView(LinearLayout(context).apply {
+                listOf(25 to "Low", 50 to "Medium", 100 to "High").forEach { (value, label) ->
+                    addView(TextView(context).apply {
+                        text = label
+                        textSize = 14f
+                        typeface = Typeface.DEFAULT_BOLD
+                        gravity = Gravity.CENTER
+                        background = cardBackground(PanelTheme.panel, PanelTheme.line, 15)
+                        setTextColor(PanelTheme.ink)
+                        setOnClickListener {
+                            callService("fan", "set_percentage", entity.entityId, JSONObject().put("percentage", value))
+                            dialog.dismiss()
+                        }
+                    }, LayoutParams(0, dp(54), 1f).apply { setMargins(dp(3), dp(4), dp(3), 0) })
+                }
+            })
+        }
+    }
+
+    private fun showCoverDialog(entity: EntityState) {
+        val position = entity.numberAttribute("current_position")?.roundToInt() ?: 0
+        val canPosition = entity.attributes.optInt("supported_features", 0) and 4 != 0
+        showControlDialog("Curtains", entity.friendlyName) { dialog ->
+            if (canPosition) {
+                addView(primaryText("Position · $position%", 22f).apply { typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER })
+                addView(deviceSeekBar(position) { value ->
+                    callService("cover", "set_cover_position", entity.entityId, JSONObject().put("position", value))
+                }, LayoutParams(LayoutParams.MATCH_PARENT, dp(64)))
+            }
+            addView(LinearLayout(context).apply {
+                listOf("Open" to "open_cover", "Stop" to "stop_cover", "Close" to "close_cover").forEach { (label, service) ->
+                    addView(TextView(context).apply {
+                        text = label
+                        textSize = 15f
+                        typeface = Typeface.DEFAULT_BOLD
+                        gravity = Gravity.CENTER
+                        background = cardBackground(PanelTheme.panel, PanelTheme.line, 15)
+                        setTextColor(PanelTheme.ink)
+                        setOnClickListener {
+                            callService("cover", service, entity.entityId, JSONObject())
+                            if (service != "stop_cover") dialog.dismiss()
+                        }
+                    }, LayoutParams(0, dp(58), 1f).apply { setMargins(dp(3), dp(4), dp(3), 0) })
+                }
+            })
+        }
+    }
+
+    private fun showControlDialog(title: String, subtitle: String, content: LinearLayout.(Dialog) -> Unit) {
+        val dialog = Dialog(context)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(LinearLayout(context).apply {
+            orientation = VERTICAL
+            setPadding(dp(20), dp(18), dp(20), dp(18))
+            background = cardBackground(CARD, CARD_EDGE, 24)
+            addView(primaryText(title, 24f).apply { typeface = Typeface.DEFAULT_BOLD })
+            addView(secondaryText(subtitle).apply { textSize = 13f; setPadding(0, dp(3), 0, dp(14)) })
+            content(dialog)
+        })
+        dialog.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+            setDimAmount(.65f)
+            addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        }
+        dialog.show()
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels * .9f).roundToInt(), android.view.WindowManager.LayoutParams.WRAP_CONTENT)
     }
 
     private fun showTimerDialog(entity: EntityState, presets: List<Int>) {
