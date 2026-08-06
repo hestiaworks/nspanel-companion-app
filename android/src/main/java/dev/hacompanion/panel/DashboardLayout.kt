@@ -127,10 +127,17 @@ data class DashboardWidget(
             val forecastDays = json.optInt("forecast_days", 5)
             require(type != "weather" || forecastDays in setOf(1, 3, 5)) { "Invalid weather forecast length" }
             val icon = json.optString("icon", "auto")
-            require(type != "entity_button" || icon in setOf("auto", "light", "fan", "power", "cover", "plug")) { "Invalid control icon" }
+            require(type != "entity_button" || icon in CONTROL_ICONS) { "Invalid control icon" }
             val showTimer = json.optBoolean("show_timer", true)
             val cardTap = if (json.has("card_tap")) json.optBoolean("card_tap") else null
             return DashboardWidget(type, entityId, label, forecastDays, icon, showTimer, cardTap)
         }
+
+        val CONTROL_ICONS = setOf(
+            "auto", "light", "ceiling-light", "floor-lamp", "wall-light", "led-strip", "spotlight",
+            "fan", "ceiling-fan", "ventilation", "power", "switch", "plug", "socket", "curtains", "cover",
+            "blinds", "shutter", "garage", "radiator", "air-conditioner", "fireplace", "lock",
+            "gate", "pump", "vacuum", "speaker",
+        )
     }
 }

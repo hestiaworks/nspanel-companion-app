@@ -654,7 +654,7 @@ class PanelDashboardView(
             orientation = VERTICAL
             addView(LinearLayout(context).apply {
                 gravity = Gravity.CENTER_VERTICAL
-                addView(primaryText(controlIcon(entity, widget?.icon ?: "auto"), 17f), LayoutParams(dp(24), LayoutParams.WRAP_CONTENT))
+                addView(ControlIconView(context, controlIcon(entity, widget?.icon ?: "auto"), if (active) ACCENT_DARK else PanelTheme.ink), LayoutParams(dp(24), dp(24)).apply { rightMargin = dp(5) })
                 addView(primaryText(widget?.label ?: entity.friendlyName, 15f).apply {
                     typeface = Typeface.DEFAULT_BOLD
                     maxLines = 1
@@ -686,17 +686,24 @@ class PanelDashboardView(
             })
         }
 
-    private fun controlIcon(entity: EntityState, configured: String): String = when (configured) {
-        "light" -> "✦"
-        "fan" -> "⌁"
-        "power" -> "⏻"
-        "cover" -> "▥"
-        "plug" -> "⌑"
-        else -> when (entity.domain) {
-            "fan" -> "⌁"
-            "cover" -> "▥"
-            "switch", "input_boolean" -> "⏻"
-            else -> "✦"
+    private fun controlIcon(entity: EntityState, configured: String): String {
+        if (configured != "auto") return configured
+        val mdi = entity.attributes.optString("icon").removePrefix("mdi:")
+        val alias = mapOf(
+            "lightbulb" to "light", "ceiling-light" to "ceiling-light", "floor-lamp" to "floor-lamp",
+            "wall-sconce" to "wall-light", "led-strip-variant" to "led-strip", "spotlight" to "spotlight",
+            "fan" to "fan", "ceiling-fan" to "ceiling-fan", "hvac" to "ventilation",
+            "power" to "power", "toggle-switch" to "switch", "power-plug" to "plug", "power-socket" to "socket",
+            "curtains" to "curtains", "blinds" to "blinds", "window-shutter" to "shutter", "garage" to "garage",
+            "radiator" to "radiator", "air-conditioner" to "air-conditioner", "fireplace" to "fireplace",
+            "lock" to "lock", "gate" to "gate", "pump" to "pump", "robot-vacuum" to "vacuum", "speaker" to "speaker",
+        )[mdi]
+        if (alias != null) return alias
+        return when (entity.domain) {
+            "fan" -> "fan"
+            "cover" -> "curtains"
+            "switch", "input_boolean" -> "power"
+            else -> "light"
         }
     }
 
