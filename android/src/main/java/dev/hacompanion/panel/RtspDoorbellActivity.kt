@@ -56,6 +56,13 @@ class RtspDoorbellActivity : Activity(), SurfaceHolder.Callback {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // A ring usually arrives while the display has timed out. Without these the
+        // activity resumes behind a dark screen and the visitor is never seen.
+        window.addFlags(
+            android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON,
+        )
         window.decorView.systemUiVisibility =
             View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
                 View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
