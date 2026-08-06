@@ -138,6 +138,14 @@ data class DashboardWidget(
             "fan", "ceiling-fan", "ventilation", "power", "switch", "plug", "socket", "curtains", "cover",
             "blinds", "shutter", "garage", "radiator", "air-conditioner", "fireplace", "lock",
             "gate", "pump", "vacuum", "speaker",
+            "table-lamp", "chandelier", "pendant-light", "outdoor-light", "night-light", "desk-lamp",
+            "desk-fan", "air-purifier", "humidifier", "dehumidifier", "extractor-fan", "power-strip",
+            "battery", "solar", "energy", "meter", "ups", "awning", "window", "door", "skylight",
+            "thermostat", "heater", "boiler", "temperature", "snowflake", "unlock", "alarm", "shield",
+            "camera", "motion", "presence", "bell", "kitchen", "oven", "microwave", "fridge",
+            "dishwasher", "washing-machine", "dryer", "coffee", "kettle", "robot-vacuum", "broom",
+            "water", "faucet", "sprinkler", "pool", "shower", "television", "music", "radio",
+            "gamepad", "projector", "bedroom", "bathroom", "office", "garden", "balcony", "stairs",
         )
     }
 }
