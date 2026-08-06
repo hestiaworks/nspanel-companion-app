@@ -97,8 +97,10 @@ data class DashboardWidget(
     val entityId: String? = null,
     val label: String? = null,
     val forecastDays: Int = 5,
+    val showHourly: Boolean = true,
     val icon: String = "auto",
     val showTimer: Boolean = true,
+    val timerPresets: List<Int> = listOf(5, 15, 30, 60),
     val cardTap: Boolean? = null,
     val streamBaseUrl: String? = null,
     val streamName: String? = null,
@@ -110,10 +112,14 @@ data class DashboardWidget(
     fun toJson(): JSONObject = JSONObject().put("type", type).apply {
         entityId?.let { put("entity_id", it) }
         label?.let { put("label", it) }
-        if (type == "weather") put("forecast_days", forecastDays)
+        if (type == "weather") {
+            put("forecast_days", forecastDays)
+            put("show_hourly", showHourly)
+        }
         if (type == "entity_button") {
             put("icon", icon)
             put("show_timer", showTimer)
+            put("timer_presets", JSONArray(timerPresets))
             cardTap?.let { put("card_tap", it) }
         }
         if (type == "camera") {
@@ -137,9 +143,17 @@ data class DashboardWidget(
             require(label == null || label.length <= 48) { "Widget label is too long" }
             val forecastDays = json.optInt("forecast_days", 5)
             require(type != "weather" || forecastDays in setOf(1, 3, 5)) { "Invalid weather forecast length" }
+            val showHourly = json.optBoolean("show_hourly", true)
             val icon = json.optString("icon", "auto")
             require(type != "entity_button" || icon in CONTROL_ICONS) { "Invalid control icon" }
             val showTimer = json.optBoolean("show_timer", true)
+            val timerValues = json.optJSONArray("timer_presets")
+            val timerPresets = if (timerValues == null) listOf(5, 15, 30, 60) else buildList {
+                for (index in 0 until timerValues.length()) add(timerValues.getInt(index))
+            }
+            require(type != "entity_button" || timerPresets.size in 1..4 && timerPresets.all { it in 1..1_440 }) {
+                "Invalid timer presets"
+            }
             val cardTap = if (json.has("card_tap")) json.optBoolean("card_tap") else null
             val streamBaseUrl = json.optString("stream_base_url").takeIf(String::isNotBlank)
             val streamName = json.optString("stream_name").takeIf(String::isNotBlank)
@@ -151,7 +165,7 @@ data class DashboardWidget(
             require(type != "camera" || streamBaseUrl == null || streamBaseUrl.startsWith("rtsp://") ||
                 streamBaseUrl.startsWith("rtsps://") || streamBaseUrl.startsWith("http://") ||
                 streamBaseUrl.startsWith("https://")) { "Invalid camera stream URL" }
-            return DashboardWidget(type, entityId, label, forecastDays, icon, showTimer, cardTap, streamBaseUrl, streamName, talkbackUrl, talkbackKey, incomingAudio, tapAction)
+            return DashboardWidget(type, entityId, label, forecastDays, showHourly, icon, showTimer, timerPresets, cardTap, streamBaseUrl, streamName, talkbackUrl, talkbackKey, incomingAudio, tapAction)
         }
 
         val CONTROL_ICONS = setOf(

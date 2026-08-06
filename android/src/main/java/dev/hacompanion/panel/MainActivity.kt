@@ -634,6 +634,7 @@ class MainActivity : Activity() {
                 onInitialStates = ::activateInitialStates,
                 onEntityChanged = ::activateEntityState,
                 onDoorbellEvent = ::showDoorbellEvent,
+                onWeatherForecast = dashboardView::updateWeatherForecast,
             ).also { it.start() }
             return
         }
@@ -654,6 +655,7 @@ class MainActivity : Activity() {
             onEntityChanged = ::activateEntityState,
             onDoorbellEvent = ::showDoorbellEvent,
             onDashboardLayout = ::activateDashboardLayout,
+            onWeatherForecast = dashboardView::updateWeatherForecast,
         ).also { it.start() }
     }
 

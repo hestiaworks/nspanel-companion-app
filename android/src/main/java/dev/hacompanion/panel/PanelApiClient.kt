@@ -18,6 +18,7 @@ class PanelApiClient(
     private val onInitialStates: (List<EntityState>) -> Unit,
     private val onEntityChanged: (EntityState) -> Unit,
     private val onDoorbellEvent: (DoorbellEvent) -> Unit,
+    private val onWeatherForecast: (String, String, org.json.JSONArray) -> Unit = { _, _, _ -> },
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private val client = OkHttpClient.Builder().pingInterval(20, TimeUnit.SECONDS).connectTimeout(10, TimeUnit.SECONDS).build()
@@ -73,6 +74,14 @@ class PanelApiClient(
                     handler.post { onInitialStates(states) }
                 }
                 "state_changed" -> parseState(message.optJSONObject("state"))?.let { handler.post { onEntityChanged(it) } }
+                "weather_forecast" -> {
+                    val entityId = message.optString("entity_id")
+                    val forecastType = message.optString("forecast_type")
+                    val forecast = message.optJSONArray("forecast") ?: return
+                    if (entityId.startsWith("weather.") && forecastType in setOf("daily", "hourly")) {
+                        handler.post { onWeatherForecast(entityId, forecastType, forecast) }
+                    }
+                }
                 "doorbell" -> message.optJSONObject("data")?.let { data -> handler.post { onDoorbellEvent(DoorbellEvent(
                     streamBaseUrl = data.optString("stream_base_url").takeIf(String::isNotBlank),
                     streamName = data.optString("stream_name").takeIf(String::isNotBlank),
