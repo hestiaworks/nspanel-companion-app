@@ -109,7 +109,9 @@ data class DashboardWidget(
     val talkbackKey: String? = null,
     val incomingAudio: Boolean = false,
     val tapAction: String = "fullscreen",
-    val gradualCoverScript: String? = null,
+    val showSchedule: Boolean = true,
+    val gradualOpenScript: String? = null,
+    val gradualCloseScript: String? = null,
 ) {
     fun toJson(): JSONObject = JSONObject().put("type", type).apply {
         entityId?.let { put("entity_id", it) }
@@ -121,10 +123,12 @@ data class DashboardWidget(
         if (type == "entity_button") {
             put("icon", icon)
             put("show_timer", showTimer)
+            put("show_schedule", showSchedule)
             put("timer_presets", JSONArray(timerPresets))
             cardTap?.let { put("card_tap", it) }
             put("show_fan_speed", showFanSpeed)
-            gradualCoverScript?.let { put("gradual_cover_script", it) }
+            gradualOpenScript?.let { put("gradual_open_script", it) }
+            gradualCloseScript?.let { put("gradual_close_script", it) }
         }
         if (type == "camera") {
             streamBaseUrl?.let { put("stream_base_url", it) }; streamName?.let { put("stream_name", it) }
@@ -151,6 +155,7 @@ data class DashboardWidget(
             val icon = json.optString("icon", "auto")
             require(type != "entity_button" || icon in CONTROL_ICONS) { "Invalid control icon" }
             val showTimer = json.optBoolean("show_timer", true)
+            val showSchedule = json.optBoolean("show_schedule", true)
             val timerValues = json.optJSONArray("timer_presets")
             val timerPresets = if (timerValues == null) listOf(5, 15, 30, 60) else buildList {
                 for (index in 0 until timerValues.length()) add(timerValues.getInt(index))
@@ -160,7 +165,9 @@ data class DashboardWidget(
             }
             val cardTap = if (json.has("card_tap")) json.optBoolean("card_tap") else null
             val showFanSpeed = json.optBoolean("show_fan_speed", false)
-            val gradualCoverScript = json.optString("gradual_cover_script").takeIf { it.startsWith("script.") }
+            val legacyGradualScript = json.optString("gradual_cover_script").takeIf { it.startsWith("script.") }
+            val gradualOpenScript = json.optString("gradual_open_script").takeIf { it.startsWith("script.") } ?: legacyGradualScript
+            val gradualCloseScript = json.optString("gradual_close_script").takeIf { it.startsWith("script.") }
             val streamBaseUrl = json.optString("stream_base_url").takeIf(String::isNotBlank)
             val streamName = json.optString("stream_name").takeIf(String::isNotBlank)
             val talkbackUrl = json.optString("talkback_url").takeIf(String::isNotBlank)
@@ -171,7 +178,7 @@ data class DashboardWidget(
             require(type != "camera" || streamBaseUrl == null || streamBaseUrl.startsWith("rtsp://") ||
                 streamBaseUrl.startsWith("rtsps://") || streamBaseUrl.startsWith("http://") ||
                 streamBaseUrl.startsWith("https://")) { "Invalid camera stream URL" }
-            return DashboardWidget(type, entityId, label, forecastDays, showHourly, icon, showTimer, timerPresets, cardTap, showFanSpeed, streamBaseUrl, streamName, talkbackUrl, talkbackKey, incomingAudio, tapAction, gradualCoverScript)
+            return DashboardWidget(type, entityId, label, forecastDays, showHourly, icon, showTimer, timerPresets, cardTap, showFanSpeed, streamBaseUrl, streamName, talkbackUrl, talkbackKey, incomingAudio, tapAction, showSchedule, gradualOpenScript, gradualCloseScript)
         }
 
         val CONTROL_ICONS = setOf(
