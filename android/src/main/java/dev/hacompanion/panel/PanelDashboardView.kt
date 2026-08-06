@@ -90,6 +90,8 @@ class PanelDashboardView(
 
     fun setLayout(value: DashboardLayout) {
         removeCallbacks(returnToDefault)
+        PanelTheme.apply(value.themeMode, value.themeDark)
+        setBackgroundColor(PanelTheme.canvas)
         configured = true
         layout = value
         pageIndex = value.pages.indexOfFirst { it.id == value.defaultPageId }.coerceAtLeast(0)
@@ -1079,14 +1081,14 @@ class PanelDashboardView(
     companion object {
         private val CONTROL_DOMAINS = setOf("light", "switch", "input_boolean", "fan", "cover")
         private val TIMER_DOMAINS = setOf("light", "switch", "fan")
-        private val BACKGROUND = PanelTheme.canvas
-        private val CARD = PanelTheme.card
-        private val CARD_EDGE = PanelTheme.line
-        private val CONTROL = PanelTheme.cardSecondary
-        private val ACCENT = PanelTheme.accent
-        private val ACCENT_DARK = PanelTheme.accent
-        private val ACCENT_WASH = PanelTheme.accentWash
-        private val MUTED = PanelTheme.muted
+        private val BACKGROUND get() = PanelTheme.canvas
+        private val CARD get() = PanelTheme.card
+        private val CARD_EDGE get() = PanelTheme.line
+        private val CONTROL get() = PanelTheme.cardSecondary
+        private val ACCENT get() = PanelTheme.accent
+        private val ACCENT_DARK get() = PanelTheme.accent
+        private val ACCENT_WASH get() = PanelTheme.accentWash
+        private val MUTED get() = PanelTheme.muted
         private const val ENTITY_REFRESH_DELAY_MS = 50L
         private const val RENDER_LOG_TAG = "PanelRender"
     }

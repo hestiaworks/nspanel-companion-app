@@ -11,6 +11,8 @@ data class DashboardLayout(
     val defaultPageReturnSeconds: Int = 60,
     val weatherCacheMaxAgeMinutes: Int = 360,
     val keepScreenOn: Boolean = false,
+    val themeMode: String = "light",
+    val themeDark: Boolean = false,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("schema_version", schemaVersion)
@@ -19,6 +21,8 @@ data class DashboardLayout(
         .put("default_page_return_seconds", defaultPageReturnSeconds)
         .put("weather_cache_max_age_minutes", weatherCacheMaxAgeMinutes)
         .put("keep_screen_on", keepScreenOn)
+        .put("theme_mode", themeMode)
+        .put("theme_dark", themeDark)
         .put("pages", JSONArray().apply { pages.forEach { put(it.toJson()) } })
 
     companion object {
@@ -44,7 +48,10 @@ data class DashboardLayout(
             val cacheMinutes = json.optInt("weather_cache_max_age_minutes", 360)
             require(cacheMinutes in 0..10_080) { "Weather cache age must be 0–10080 minutes" }
             val keepScreenOn = json.optBoolean("keep_screen_on", false)
-            return DashboardLayout(version, revision, defaultPageId, pages, returnSeconds, cacheMinutes, keepScreenOn)
+            val themeMode = json.optString("theme_mode", "light")
+            require(themeMode in setOf("light", "dark", "inherit")) { "Invalid panel theme" }
+            val themeDark = json.optBoolean("theme_dark", false)
+            return DashboardLayout(version, revision, defaultPageId, pages, returnSeconds, cacheMinutes, keepScreenOn, themeMode, themeDark)
         }
 
         fun default(): DashboardLayout = DashboardLayout(
