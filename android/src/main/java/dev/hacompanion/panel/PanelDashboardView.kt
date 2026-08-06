@@ -43,6 +43,7 @@ class PanelDashboardView(
     private val weatherUpdatedAt = mutableMapOf<String, Long>()
     private val pageHost = FrameLayout(context)
     private val pageLabel = TextView(context)
+    private val panelStatus = PanelStatusView(context)
     private var layout = DashboardLayout.default()
     private var configured = true
     private var panelName = "NSPanel Pro"
@@ -124,8 +125,13 @@ class PanelDashboardView(
         setBackgroundColor(PanelTheme.canvas)
         configured = true
         layout = value
+        panelStatus.configure(value.showClock, value.showMicIndicator, value.micIndicatorLingerSeconds)
         pageIndex = value.pages.indexOfFirst { it.id == value.defaultPageId }.coerceAtLeast(0)
         scheduleRender()
+    }
+
+    fun synchronizeServerTime(serverTimeMs: Long, serverTimezone: String) {
+        panelStatus.synchronize(serverTimeMs, serverTimezone)
     }
 
     fun showUnconfigured(name: String, deviceId: String) {
@@ -227,6 +233,14 @@ class PanelDashboardView(
         val definition = layout.pages[pageIndex.coerceIn(0, layout.pages.lastIndex)]
         val page = renderPage(definition)
         pageHost.addView(page)
+        if (layout.showClock || layout.showMicIndicator) {
+            (panelStatus.parent as? android.view.ViewGroup)?.removeView(panelStatus)
+            pageHost.addView(panelStatus, FrameLayout.LayoutParams(
+                LayoutParams.WRAP_CONTENT,
+                LayoutParams.WRAP_CONTENT,
+                Gravity.TOP or Gravity.END,
+            ).apply { topMargin = dp(3); marginEnd = dp(6) })
+        }
         pageLabel.text = layout.pages.indices.joinToString(" ") { if (it == pageIndex) "●" else "○" }
     }
 

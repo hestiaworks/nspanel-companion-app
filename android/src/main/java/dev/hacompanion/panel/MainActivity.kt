@@ -51,6 +51,8 @@ class MainActivity : Activity() {
     private var connectionPhase = ConnectionPhase.NOT_CONFIGURED
     private var offlineSinceMs = 0L
     private var lastWatchdogRecoveryMs = 0L
+    private var serverTimeMs = System.currentTimeMillis()
+    private var serverTimezone = java.util.TimeZone.getDefault().id
     private val watchdog = object : Runnable {
         override fun run() {
             checkWatchdog()
@@ -638,6 +640,11 @@ class MainActivity : Activity() {
                 onDoorbellEvent = ::showDoorbellEvent,
                 onWeatherForecast = dashboardView::updateWeatherForecast,
                 onSchedules = dashboardView::setSchedules,
+                onServerTime = { millis, timezone ->
+                    serverTimeMs = millis
+                    serverTimezone = timezone
+                    dashboardView.synchronizeServerTime(millis, timezone)
+                },
             ).also { it.start() }
             return
         }
@@ -830,7 +837,14 @@ class MainActivity : Activity() {
     private fun rtspDoorbellIntent(): Intent =
         Intent(this, RtspDoorbellActivity::class.java).addFlags(
             Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP,
-        )
+        ).also { intent ->
+            val layout = layoutStore.loadOrNull() ?: DashboardLayout.default()
+            intent.putExtra(RtspDoorbellActivity.EXTRA_SHOW_CLOCK, layout.showClock)
+            intent.putExtra(RtspDoorbellActivity.EXTRA_SHOW_MIC_INDICATOR, layout.showMicIndicator)
+            intent.putExtra(RtspDoorbellActivity.EXTRA_MIC_LINGER_SECONDS, layout.micIndicatorLingerSeconds)
+            intent.putExtra(RtspDoorbellActivity.EXTRA_SERVER_TIME_MS, serverTimeMs)
+            intent.putExtra(RtspDoorbellActivity.EXTRA_SERVER_TIMEZONE, serverTimezone)
+        }
 
     /**
      * Lets developers configure a sideloaded debug APK over ADB without typing a

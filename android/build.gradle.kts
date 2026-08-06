@@ -15,8 +15,8 @@ android {
         applicationId = "dev.hacompanion.panel"
         minSdk = 26
         targetSdk = 28
-        versionCode = 6
-        versionName = "0.3.2-alpha"
+        versionCode = 7
+        versionName = "0.3.3-alpha"
         ndk {
             // The target NSPanel Pro and development emulator are both ARM64.
             // Avoid packaging three unused libwebrtc binaries.

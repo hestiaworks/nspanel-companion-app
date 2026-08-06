@@ -72,6 +72,7 @@ class RtspDoorbellActivity : Activity(), SurfaceHolder.Callback {
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        MicUsageTracker.setActive(this, false)
         talkback?.stop()
         releasePlayer()
         super.onDestroy()
@@ -179,6 +180,20 @@ class RtspDoorbellActivity : Activity(), SurfaceHolder.Callback {
             }
         }
         addView(talkButton, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+        addView(PanelStatusView(this@RtspDoorbellActivity).apply {
+            configure(
+                intent.getBooleanExtra(EXTRA_SHOW_CLOCK, true),
+                intent.getBooleanExtra(EXTRA_SHOW_MIC_INDICATOR, true),
+                intent.getIntExtra(EXTRA_MIC_LINGER_SECONDS, 15),
+            )
+            synchronize(
+                intent.getLongExtra(EXTRA_SERVER_TIME_MS, System.currentTimeMillis()),
+                intent.getStringExtra(EXTRA_SERVER_TIMEZONE) ?: java.util.TimeZone.getDefault().id,
+            )
+        }, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply {
+            topMargin = 76
+            marginEnd = 10
+        })
     }
 
     private fun releasePlayer() {
@@ -198,12 +213,14 @@ class RtspDoorbellActivity : Activity(), SurfaceHolder.Callback {
         }
         prepareTalkback()
         talkback?.setTalking(true)
+        MicUsageTracker.setActive(this, true)
         pauseAutoClose()
         talkButton.text = "Talking · release to stop"
     }
 
     private fun stopTalking() {
         talkback?.setTalking(false)
+        MicUsageTracker.setActive(this, false)
         resumeAutoCloseWithGrace()
         talkButton.text = "Hold to talk"
     }
@@ -247,6 +264,11 @@ class RtspDoorbellActivity : Activity(), SurfaceHolder.Callback {
     }
 
     companion object {
+        const val EXTRA_SHOW_CLOCK = "show_clock"
+        const val EXTRA_SHOW_MIC_INDICATOR = "show_mic_indicator"
+        const val EXTRA_MIC_LINGER_SECONDS = "mic_linger_seconds"
+        const val EXTRA_SERVER_TIME_MS = "server_time_ms"
+        const val EXTRA_SERVER_TIMEZONE = "server_timezone"
         private const val MICROPHONE_PERMISSION_REQUEST = 73
         private const val MAX_AUTO_CLOSE_MS = 300_000L
     }

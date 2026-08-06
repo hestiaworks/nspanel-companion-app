@@ -11,6 +11,9 @@ data class DashboardLayout(
     val defaultPageReturnSeconds: Int = 60,
     val weatherCacheMaxAgeMinutes: Int = 360,
     val keepScreenOn: Boolean = false,
+    val showClock: Boolean = true,
+    val showMicIndicator: Boolean = true,
+    val micIndicatorLingerSeconds: Int = 15,
     val themeMode: String = "light",
     val themeDark: Boolean = false,
 ) {
@@ -21,6 +24,9 @@ data class DashboardLayout(
         .put("default_page_return_seconds", defaultPageReturnSeconds)
         .put("weather_cache_max_age_minutes", weatherCacheMaxAgeMinutes)
         .put("keep_screen_on", keepScreenOn)
+        .put("show_clock", showClock)
+        .put("show_mic_indicator", showMicIndicator)
+        .put("mic_indicator_linger_seconds", micIndicatorLingerSeconds)
         .put("theme_mode", themeMode)
         .put("theme_dark", themeDark)
         .put("pages", JSONArray().apply { pages.forEach { put(it.toJson()) } })
@@ -48,10 +54,14 @@ data class DashboardLayout(
             val cacheMinutes = json.optInt("weather_cache_max_age_minutes", 360)
             require(cacheMinutes in 0..10_080) { "Weather cache age must be 0–10080 minutes" }
             val keepScreenOn = json.optBoolean("keep_screen_on", false)
+            val showClock = json.optBoolean("show_clock", true)
+            val showMicIndicator = json.optBoolean("show_mic_indicator", true)
+            val micIndicatorLingerSeconds = json.optInt("mic_indicator_linger_seconds", 15)
+            require(micIndicatorLingerSeconds in 0..60) { "Microphone indicator duration must be 0–60 seconds" }
             val themeMode = json.optString("theme_mode", "light")
             require(themeMode in setOf("light", "dark", "inherit")) { "Invalid panel theme" }
             val themeDark = json.optBoolean("theme_dark", false)
-            return DashboardLayout(version, revision, defaultPageId, pages, returnSeconds, cacheMinutes, keepScreenOn, themeMode, themeDark)
+            return DashboardLayout(version, revision, defaultPageId, pages, returnSeconds, cacheMinutes, keepScreenOn, showClock, showMicIndicator, micIndicatorLingerSeconds, themeMode, themeDark)
         }
 
         fun default(): DashboardLayout = DashboardLayout(
@@ -87,6 +97,9 @@ data class DashboardPage(
             val values = json.optJSONArray("widgets") ?: JSONArray()
             require(values.length() <= DashboardLayout.MAX_WIDGETS_PER_PAGE) { "Too many widgets" }
             val widgets = buildList { for (index in 0 until values.length()) add(DashboardWidget.parse(values.getJSONObject(index))) }
+            require(widgets.none { it.type in setOf("controls", "entity_button") } || widgets.size <= 4) {
+                "A controls page supports at most four controls"
+            }
             return DashboardPage(id, title, widgets)
         }
     }
