@@ -11,9 +11,14 @@ import android.view.MotionEvent
 import android.view.View
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 import org.json.JSONObject
+import org.json.JSONArray
+import java.time.OffsetDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlin.math.roundToInt
 
 class PanelDashboardView(
@@ -48,6 +53,7 @@ class PanelDashboardView(
     private var targetedRefreshBatchCount = 0
     private val timerMinutes = mutableMapOf<String, Int>()
     private val timerCallbacks = mutableMapOf<String, Runnable>()
+    private val selectedClimateTarget = mutableMapOf<String, String>()
     private val returnToDefault = Runnable {
         if (!interactionActive && dashboardActive) {
             val defaultIndex = layout.pages.indexOfFirst { it.id == layout.defaultPageId }.coerceAtLeast(0)
@@ -87,6 +93,16 @@ class PanelDashboardView(
         states[value.entityId] = value
         if (value.domain == "weather") weatherUpdatedAt[value.entityId] = System.currentTimeMillis()
         if (entityBindings.containsKey(value.entityId)) scheduleEntityRefresh(value.entityId)
+    }
+
+    fun updateWeatherForecast(entityId: String, forecastType: String, forecast: JSONArray) {
+        val existing = states[entityId] ?: return
+        val attributes = JSONObject(existing.attributes.toString())
+        attributes.put(if (forecastType == "hourly") "hourly_forecast" else "forecast", forecast)
+        val updated = existing.copy(attributes = attributes)
+        states[entityId] = updated
+        weatherUpdatedAt[entityId] = System.currentTimeMillis()
+        if (entityBindings.containsKey(entityId)) scheduleEntityRefresh(entityId)
     }
 
     fun setLayout(value: DashboardLayout) {
@@ -354,34 +370,68 @@ class PanelDashboardView(
     ): View = LinearLayout(context).apply {
         orientation = VERTICAL
         gravity = Gravity.CENTER
-        addView(eyebrow("ACTUAL"))
-        addView(primaryText(current?.let { "${format(it)}$unit" } ?: "—", 30f).apply {
-            gravity = Gravity.CENTER
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(MUTED)
-        })
+        val selected = selectedClimateTarget.getOrPut(climate.entityId) { "heat" }
+        addView(DualThermostatDialView(
+            context,
+            current?.let { "${format(it)}$unit" } ?: "—",
+            "${format(low)}$unit",
+            "${format(high)}$unit",
+        ), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
         addView(
             LinearLayout(context).apply {
                 orientation = HORIZONTAL
                 addView(
-                    dualSetpointCard("HEAT BELOW", low, unit, {
-                        changeTemperatureRange(climate, low - temperatureStep(climate), high)
-                    }, {
-                        changeTemperatureRange(climate, (low + temperatureStep(climate)).coerceAtMost(high - temperatureStep(climate)), high)
-                    }),
-                    LayoutParams(0, LayoutParams.MATCH_PARENT, 1f).apply { rightMargin = dp(3) },
+                    targetSelector("HEAT BELOW", low, unit, selected == "heat", Color.rgb(196, 93, 39)) {
+                        selectedClimateTarget[climate.entityId] = "heat"
+                        scheduleEntityRefresh(climate.entityId)
+                    }, LayoutParams(0, dp(55), 1f).apply { rightMargin = dp(3) },
                 )
                 addView(
-                    dualSetpointCard("COOL ABOVE", high, unit, {
-                        changeTemperatureRange(climate, low, (high - temperatureStep(climate)).coerceAtLeast(low + temperatureStep(climate)))
-                    }, {
-                        changeTemperatureRange(climate, low, high + temperatureStep(climate))
-                    }),
-                    LayoutParams(0, LayoutParams.MATCH_PARENT, 1f).apply { leftMargin = dp(3) },
+                    targetSelector("COOL ABOVE", high, unit, selected == "cool", Color.rgb(45, 139, 208)) {
+                        selectedClimateTarget[climate.entityId] = "cool"
+                        scheduleEntityRefresh(climate.entityId)
+                    }, LayoutParams(0, dp(55), 1f).apply { leftMargin = dp(3) },
                 )
             },
-            LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f).apply { topMargin = dp(5) },
+            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { topMargin = dp(2) },
         )
+        addView(LinearLayout(context).apply {
+            gravity = Gravity.CENTER
+            val step = temperatureStep(climate)
+            addView(roundActionButton("−", 42) {
+                if (selected == "heat") changeTemperatureRange(climate, low - step, high)
+                else changeTemperatureRange(climate, low, (high - step).coerceAtLeast(low + step))
+            })
+            addView(secondaryText("Adjust ${if (selected == "heat") "heat" else "cool"} target").apply {
+                gravity = Gravity.CENTER
+                textSize = 10f
+            }, LayoutParams(dp(130), LayoutParams.WRAP_CONTENT))
+            addView(roundActionButton("+", 42) {
+                if (selected == "heat") changeTemperatureRange(climate, (low + step).coerceAtMost(high - step), high)
+                else changeTemperatureRange(climate, low, high + step)
+            })
+        }, LayoutParams(LayoutParams.MATCH_PARENT, dp(44)))
+    }
+
+    private fun targetSelector(
+        label: String,
+        value: Double,
+        unit: String,
+        selected: Boolean,
+        color: Int,
+        action: () -> Unit,
+    ): View = LinearLayout(context).apply {
+        gravity = Gravity.CENTER_VERTICAL
+        background = cardBackground(if (selected) PanelTheme.accentWash else PanelTheme.panel, if (selected) color else PanelTheme.line, 14)
+        setPadding(dp(10), dp(5), dp(10), dp(5))
+        addView(eyebrow(label).apply { textSize = 8f }, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+        addView(primaryText("${format(value)}$unit", 24f).apply {
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(if (selected) color else PanelTheme.ink)
+        })
+        isClickable = true
+        isFocusable = true
+        setOnClickListener { action() }
     }
 
     private fun dualSetpointCard(
@@ -418,7 +468,7 @@ class PanelDashboardView(
         } else {
             listOf(climate.state, "off").distinct()
         }
-        val ordered = listOf("heat", "cool", "heat_cool", "dry", "off").filter(available::contains)
+        val ordered = listOf("heat", "cool", "heat_cool", "fan_only", "dry", "off").filter(available::contains)
         return LinearLayout(context).apply {
             gravity = Gravity.CENTER
             ordered.forEach { mode ->
@@ -428,6 +478,7 @@ class PanelDashboardView(
                         "heat" -> "☀\nHeat"
                         "cool" -> "❄\nCool"
                         "heat_cool" -> "↔\nAuto"
+                        "fan_only" -> "≋\nFan"
                         "dry" -> "◌\nDry"
                         else -> "○\nOff"
                     }
@@ -468,58 +519,81 @@ class PanelDashboardView(
             addView(
                 LinearLayout(context).apply {
                     orientation = HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    background = cardBackground(CARD, CARD_EDGE, 20)
+                    setPadding(dp(14), dp(8), dp(14), dp(8))
+                    addView(primaryText(weatherSymbol(weather.state), 42f).apply { gravity = Gravity.CENTER }, LayoutParams(dp(68), LayoutParams.MATCH_PARENT))
                     addView(
                         LinearLayout(context).apply {
                             orientation = VERTICAL
                             gravity = Gravity.CENTER_VERTICAL
-                            background = cardBackground(CARD, CARD_EDGE, 24)
-                            setPadding(dp(16), dp(13), dp(12), dp(13))
-                            addView(primaryText(weatherSymbol(weather.state), 48f))
-                            addView(primaryText(temperature?.let { "${format(it)}$unit" } ?: "—", 48f).apply {
-                                typeface = Typeface.DEFAULT_BOLD
-                            })
-                            addView(View(context), LayoutParams(1, 0, 1f))
-                            addView(primaryText(weather.state.replace('-', ' ').replaceFirstChar { it.uppercase() }, 16f).apply {
-                                typeface = Typeface.DEFAULT_BOLD
+                            addView(LinearLayout(context).apply {
+                                gravity = Gravity.BOTTOM
+                                addView(primaryText(temperature?.let { "${format(it)}$unit" } ?: "—", 38f).apply {
+                                    typeface = Typeface.DEFAULT_BOLD
+                                })
+                                addView(primaryText(weather.state.replace('-', ' ').replaceFirstChar { it.uppercase() }, 15f).apply {
+                                    typeface = Typeface.DEFAULT_BOLD
+                                    setPadding(dp(10), 0, 0, dp(5))
+                                })
                             })
                             addView(secondaryText(buildString {
                                 append("Feels like ")
                                 append(weather.numberAttribute("apparent_temperature")?.let(::format) ?: temperature?.let(::format) ?: "—")
                                 append(unit)
-                                humidity?.let { append(" · ${format(it)}%") }
-                                weather.numberAttribute("wind_speed")?.let { append(" · ${format(it)} m/s") }
-                            }).apply { textSize = 9f })
+                                humidity?.let { append(" · Humidity ${format(it)}%") }
+                                weather.numberAttribute("wind_speed")?.let { append(" · Wind ${format(it)} m/s") }
+                            }).apply {
+                                textSize = 10f
+                                maxLines = 1
+                                ellipsize = TextUtils.TruncateAt.END
+                            })
                             if (!online) addView(secondaryText("Cached · ${weatherAge(weather.entityId)}").apply {
                                 textSize = 9f
                                 setTextColor(ACCENT)
-                                setPadding(0, dp(3), 0, 0)
                             })
-                        },
-                        LayoutParams(0, LayoutParams.MATCH_PARENT, if (daily.isEmpty()) 1f else 1.05f).apply {
-                            if (daily.isNotEmpty()) rightMargin = dp(5)
-                        },
+                        }, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f),
                     )
-                    if (daily.isNotEmpty()) addView(
-                        LinearLayout(context).apply {
-                            orientation = VERTICAL
-                            daily.forEach { period ->
-                                addView(
-                                    dailyForecastRow(period, unit),
-                                    LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f).apply {
-                                        setMargins(0, dp(2), 0, dp(2))
-                                    },
-                                )
-                            }
-                        },
-                        LayoutParams(0, LayoutParams.MATCH_PARENT, .95f).apply { leftMargin = dp(5) },
-                    )
-                },
-                LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f),
+                }, LayoutParams(LayoutParams.MATCH_PARENT, dp(96)),
             )
-            if (hourly.isNotEmpty()) addView(hourlyForecastCard(weather, hourly, unit), LayoutParams(
-                LayoutParams.MATCH_PARENT,
-                dp(104),
-            ).apply { topMargin = dp(8) })
+            if (widget.showHourly && hourly.isNotEmpty()) addView(
+                hourlyForecastCard(weather, hourly, unit),
+                LayoutParams(LayoutParams.MATCH_PARENT, dp(90)).apply { topMargin = dp(7) },
+            )
+            if (daily.isNotEmpty()) addView(
+                LinearLayout(context).apply {
+                    gravity = Gravity.CENTER
+                    background = cardBackground(CARD, CARD_EDGE, 19)
+                    setPadding(dp(7), dp(7), dp(7), dp(7))
+                    daily.forEach { period ->
+                        addView(LinearLayout(context).apply {
+                            orientation = VERTICAL
+                            gravity = Gravity.CENTER
+                            addView(primaryText(period.label, 10f).apply {
+                                typeface = Typeface.DEFAULT_BOLD
+                                gravity = Gravity.CENTER
+                                maxLines = 1
+                            })
+                            addView(primaryText(weatherSymbol(period.condition), 23f).apply { gravity = Gravity.CENTER })
+                            addView(LinearLayout(context).apply {
+                                gravity = Gravity.CENTER
+                                addView(secondaryText(period.low?.let { "${format(it)}$unit" } ?: "—").apply {
+                                    textSize = 10f
+                                    gravity = Gravity.CENTER
+                                })
+                                addView(primaryText(period.high?.let { "${format(it)}$unit" } ?: "—", 12f).apply {
+                                    typeface = Typeface.DEFAULT_BOLD
+                                    gravity = Gravity.CENTER
+                                    setPadding(dp(5), 0, 0, 0)
+                                })
+                            })
+                        }, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
+                    }
+                }, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f).apply { topMargin = dp(7) },
+            ) else addView(secondaryText("Forecast is not available yet").apply {
+                gravity = Gravity.CENTER
+                textSize = 11f
+            }, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
         }
     }
 
@@ -577,7 +651,9 @@ class PanelDashboardView(
             for (index in 0 until values.length()) {
                 val item = values.optJSONObject(index) ?: continue
                 add(ForecastPeriod(
-                    label = item.optString("label").ifBlank { if (index == 0) "Now" else "+$index" },
+                    label = item.optString("label").ifBlank {
+                        forecastLabel(item.optString("datetime"), index, attribute == "hourly_forecast")
+                    },
                     condition = item.optString("condition", weather.state),
                     high = item.optDouble("temperature", Double.NaN).takeUnless(Double::isNaN),
                     low = item.optDouble("templow", Double.NaN).takeUnless(Double::isNaN),
@@ -585,6 +661,13 @@ class PanelDashboardView(
             }
         }
     }
+
+    private fun forecastLabel(datetime: String, index: Int, hourly: Boolean): String = runCatching {
+        val value = OffsetDateTime.parse(datetime)
+        if (hourly) {
+            if (index == 0) "Now" else value.format(DateTimeFormatter.ofPattern("HH", Locale.getDefault()))
+        } else if (index == 0) "Today" else value.format(DateTimeFormatter.ofPattern("EEE", Locale.getDefault()))
+    }.getOrElse { if (index == 0) if (hourly) "Now" else "Today" else "+$index" }
 
     private data class ForecastPeriod(
         val label: String,
@@ -603,13 +686,14 @@ class PanelDashboardView(
 
         return verticalPage(page.title).apply {
             val rows = controls.chunked(2)
+            val dense = controls.size > 2
             rows.forEach { rowItems ->
                 addView(
                     LinearLayout(context).apply {
                         orientation = HORIZONTAL
                         rowItems.forEach { (widget, entity) ->
                             addView(
-                                boundEntityView(entity) { deviceControlCard(states[entity.entityId] ?: entity, widget) },
+                                boundEntityView(entity) { deviceControlCard(states[entity.entityId] ?: entity, widget, dense) },
                                 LayoutParams(0, LayoutParams.MATCH_PARENT, 1f).apply {
                                     setMargins(dp(4), dp(4), dp(4), dp(4))
                                 },
@@ -622,7 +706,7 @@ class PanelDashboardView(
         }
     }
 
-    private fun deviceControlCard(entity: EntityState, widget: DashboardWidget? = null): View {
+    private fun deviceControlCard(entity: EntityState, widget: DashboardWidget? = null, dense: Boolean = false): View {
         val active = entity.state in setOf("on", "open", "opening")
         val complex = when (entity.domain) {
             "light" -> entity.numberAttribute("brightness") != null
@@ -634,14 +718,18 @@ class PanelDashboardView(
             orientation = VERTICAL
             setPadding(dp(12), dp(10), dp(12), dp(10))
             background = cardBackground(if (active) ACCENT_WASH else CARD, if (active) PanelTheme.accentWash else CARD_EDGE, 20)
-            addView(deviceCardHeader(entity, active, widget))
+            addView(deviceCardHeader(entity, active, widget, dense))
+            if (dense) addView(denseControlIdentity(widget?.label ?: entity.friendlyName, entity))
             when (entity.domain) {
                 "light" -> if (entity.numberAttribute("brightness") != null) {
                     addView(dimmerBody(entity), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
-                } else addView(binaryBody(entity), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
+                } else addView(binaryBody(entity, dense), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
                 "fan" -> addView(fanBody(entity), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
                 "cover" -> addView(coverBody(entity), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
-                else -> addView(binaryBody(entity), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
+                else -> addView(binaryBody(entity, dense), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
+            }
+            if (entity.domain in TIMER_DOMAINS && widget?.showTimer != false) {
+                addView(timerPresetRow(entity, widget?.timerPresets ?: listOf(5, 15, 30, 60)))
             }
             if (widget?.cardTap ?: !complex) {
                 setOnClickListener { toggleEntity(entity) }
@@ -651,28 +739,17 @@ class PanelDashboardView(
         }
     }
 
-    private fun deviceCardHeader(entity: EntityState, active: Boolean, widget: DashboardWidget?): View =
+    private fun deviceCardHeader(entity: EntityState, active: Boolean, widget: DashboardWidget?, dense: Boolean): View =
         LinearLayout(context).apply {
             orientation = VERTICAL
             addView(LinearLayout(context).apply {
                 gravity = Gravity.CENTER_VERTICAL
                 addView(ControlIconView(context, controlIcon(entity, widget?.icon ?: "auto"), if (active) ACCENT_DARK else PanelTheme.ink), LayoutParams(dp(24), dp(24)).apply { rightMargin = dp(5) })
-                addView(primaryText(widget?.label ?: entity.friendlyName, 15f).apply {
+                if (!dense) addView(primaryText(widget?.label ?: entity.friendlyName, 15f).apply {
                     typeface = Typeface.DEFAULT_BOLD
                     maxLines = 1
                     ellipsize = TextUtils.TruncateAt.END
-                }, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
-            })
-            addView(LinearLayout(context).apply {
-                gravity = Gravity.CENTER_VERTICAL
-                addView(secondaryText(deviceTypeLabel(entity)).apply {
-                    textSize = 8f
-                    maxLines = 1
-                    ellipsize = TextUtils.TruncateAt.END
-                }, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
-                if (entity.domain in TIMER_DOMAINS && widget?.showTimer != false) {
-                    addView(timerButton(entity), LayoutParams(dp(38), dp(34)).apply { rightMargin = dp(5) })
-                }
+                }, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)) else addView(View(context), LayoutParams(0, 1, 1f))
                 addView(Button(context).apply {
                     text = if (active) "●" else "○"
                     textSize = 13f
@@ -686,7 +763,29 @@ class PanelDashboardView(
                     setOnClickListener { toggleEntity(entity) }
                 }, LayoutParams(dp(42), dp(34)))
             })
+            if (!dense) addView(secondaryText(deviceTypeLabel(entity)).apply {
+                textSize = 9f
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+                setPadding(0, dp(2), 0, 0)
+            })
         }
+
+    private fun denseControlIdentity(name: String, entity: EntityState): View = LinearLayout(context).apply {
+        orientation = VERTICAL
+        setPadding(0, dp(5), 0, dp(2))
+        addView(primaryText(name, if (name.length > 22) 12f else 14f).apply {
+            typeface = Typeface.DEFAULT_BOLD
+            maxLines = 2
+            ellipsize = TextUtils.TruncateAt.END
+            includeFontPadding = false
+        }, LayoutParams(LayoutParams.MATCH_PARENT, dp(34)))
+        addView(secondaryText(deviceTypeLabel(entity)).apply {
+            textSize = 8f
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+        })
+    }
 
     private fun controlIcon(entity: EntityState, configured: String): String {
         if (configured != "auto") return configured
@@ -709,12 +808,12 @@ class PanelDashboardView(
         }
     }
 
-    private fun binaryBody(entity: EntityState): View =
+    private fun binaryBody(entity: EntityState, dense: Boolean = false): View =
         LinearLayout(context).apply {
             gravity = Gravity.BOTTOM
-            addView(primaryText(entity.state.replace('_', ' ').replaceFirstChar { it.uppercase() }, 22f).apply {
-                typeface = Typeface.DEFAULT_BOLD
-            })
+            if (!dense) addView(primaryText(entity.state.replace('_', ' ').replaceFirstChar { it.uppercase() }, 22f).apply {
+                    typeface = Typeface.DEFAULT_BOLD
+                })
         }
 
     private fun dimmerBody(entity: EntityState): View {
@@ -783,15 +882,41 @@ class PanelDashboardView(
             setOnClickListener { action() }
         }
 
-    private fun timerButton(entity: EntityState): TextView = compactAction(
-        timerMinutes[entity.entityId]?.takeIf { it > 0 }?.toString() ?: "Tm",
-    ) {
-        val values = listOf(0, 15, 30, 60)
-        val current = timerMinutes[entity.entityId] ?: 0
-        val next = values[(values.indexOf(current).coerceAtLeast(0) + 1) % values.size]
+    private fun timerPresetRow(entity: EntityState, presets: List<Int>): View = LinearLayout(context).apply {
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(0, dp(5), 0, 0)
+        addView(secondaryText("Timer").apply { textSize = 9f }, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
+            rightMargin = dp(5)
+        })
+        addView(HorizontalScrollView(context).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            setOnTouchListener { view, event ->
+                view.parent?.requestDisallowInterceptTouchEvent(event.actionMasked != MotionEvent.ACTION_UP && event.actionMasked != MotionEvent.ACTION_CANCEL)
+                false
+            }
+            addView(LinearLayout(context).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                presets.forEach { minutes ->
+                    val selected = timerMinutes[entity.entityId] == minutes
+                    addView(compactAction("${minutes}m") { setTimer(entity, minutes) }.apply {
+                        if (selected) {
+                            setTextColor(Color.WHITE)
+                            background = PanelTheme.pill(context, ACCENT)
+                        }
+                    }, LayoutParams(dp(45), dp(32)).apply { rightMargin = dp(4) })
+                }
+                timerMinutes[entity.entityId]?.takeIf { it > 0 }?.let {
+                    addView(compactAction("×") { setTimer(entity, 0) }, LayoutParams(dp(34), dp(32)))
+                }
+            })
+        }, LayoutParams(0, dp(34), 1f))
+    }
+
+    private fun setTimer(entity: EntityState, minutes: Int) {
         timerCallbacks.remove(entity.entityId)?.let(::removeCallbacks)
-        timerMinutes[entity.entityId] = next
-        if (next > 0) {
+        timerMinutes[entity.entityId] = minutes
+        if (minutes > 0) {
             val callback = Runnable {
                 callService(entity.domain, "turn_off", entity.entityId, JSONObject())
                 timerMinutes[entity.entityId] = 0
@@ -799,10 +924,10 @@ class PanelDashboardView(
                 scheduleEntityRefresh(entity.entityId)
             }
             timerCallbacks[entity.entityId] = callback
-            postDelayed(callback, next * 60_000L)
+            postDelayed(callback, minutes * 60_000L)
         }
         scheduleEntityRefresh(entity.entityId)
-    }.apply { contentDescription = "Set automatic shutoff timer" }
+    }
 
     private fun toggleEntity(entity: EntityState) {
         when (entity.domain) {

@@ -7,6 +7,16 @@ import org.junit.Test
 
 class HomeAssistantProtocolTest {
     @Test
+    fun parsesWeatherForecastSubscriptionEvent() {
+        val event = HomeAssistantProtocol.weatherForecastEvent(
+            """{"id":15,"type":"event","event":{"type":"hourly","forecast":[{"datetime":"2026-08-03T15:00:00+00:00","temperature":24}]}}""",
+            15,
+        )
+        assertEquals("hourly", event?.first)
+        assertEquals(24.0, event?.second?.getJSONObject(0)?.getDouble("temperature"))
+    }
+
+    @Test
     fun recognizesAuthenticationRequest() {
         assertEquals(
             "auth_required",

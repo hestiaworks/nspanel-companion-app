@@ -37,6 +37,27 @@ object HomeAssistantProtocol {
             .put("event_type", eventType)
             .toString()
 
+    fun subscribeToWeatherForecast(id: Int, entityId: String, forecastType: String): String =
+        JSONObject()
+            .put("id", id)
+            .put("type", "weather/subscribe_forecast")
+            .put("entity_id", entityId)
+            .put("forecast_type", forecastType)
+            .toString()
+
+    fun weatherForecastEvent(text: String, expectedId: Int): Pair<String, JSONArray>? {
+        return try {
+            val message = JSONObject(text)
+            if (message.optString("type") != "event" || message.optInt("id") != expectedId) return null
+            val event = message.optJSONObject("event") ?: return null
+            val type = event.optString("type")
+            val forecast = event.optJSONArray("forecast") ?: return null
+            if (type !in setOf("daily", "hourly", "twice_daily")) null else type to forecast
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     fun callService(
         id: Int,
         domain: String,

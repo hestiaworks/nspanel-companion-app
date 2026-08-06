@@ -20,6 +20,7 @@ class HomeAssistantClient(
     private val onEntityChanged: (EntityState) -> Unit = {},
     private val onDoorbellEvent: (DoorbellEvent) -> Unit = {},
     private val onDashboardLayout: (DashboardLayout) -> Unit = {},
+    private val onWeatherForecast: (String, String, org.json.JSONArray) -> Unit = { _, _, _ -> },
     private val retryPolicy: RetryPolicy = RetryPolicy(),
 ) {
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -35,6 +36,7 @@ class HomeAssistantClient(
     private var attempt = 0
     private val nextCommandId = AtomicInteger(10)
     @Volatile private var online = false
+    private val forecastSubscriptions = mutableMapOf<Int, Pair<String, String>>()
 
     fun start() {
         stopped = false
@@ -116,6 +118,7 @@ class HomeAssistantClient(
                 "auth_ok" -> {
                     attempt = 0
                     online = true
+                    forecastSubscriptions.clear()
                     emit(
                         ConnectionPhase.ONLINE,
                         "Connected to Home Assistant " +
@@ -138,9 +141,25 @@ class HomeAssistantClient(
                 }
                 "result" -> {
                     val states = HomeAssistantProtocol.statesFromResult(text)
-                    if (states.isNotEmpty()) mainHandler.post { onInitialStates(states) }
+                    if (states.isNotEmpty()) {
+                        mainHandler.post { onInitialStates(states) }
+                        states.filter { it.domain == "weather" }.forEach { state ->
+                            val features = state.attributes.optInt("supported_features", 0)
+                            if (features and 1 != 0) subscribeForecast(webSocket, state.entityId, "daily")
+                            else if (features and 4 != 0) subscribeForecast(webSocket, state.entityId, "twice_daily")
+                            if (features and 2 != 0) subscribeForecast(webSocket, state.entityId, "hourly")
+                        }
+                    }
                 }
                 "event" -> {
+                    val messageId = runCatching { JSONObject(text).optInt("id") }.getOrDefault(-1)
+                    forecastSubscriptions[messageId]?.let { (entityId, requestedType) ->
+                        HomeAssistantProtocol.weatherForecastEvent(text, messageId)?.let { (actualType, forecast) ->
+                            mainHandler.post {
+                                onWeatherForecast(entityId, if (requestedType == "twice_daily") "daily" else actualType, forecast)
+                            }
+                        }
+                    }
                     HomeAssistantProtocol.doorbellEvent(text, DOORBELL_EVENT)?.let { event ->
                         mainHandler.post { onDoorbellEvent(event) }
                     }
@@ -152,6 +171,12 @@ class HomeAssistantClient(
                     }
                 }
             }
+        }
+
+        private fun subscribeForecast(webSocket: WebSocket, entityId: String, forecastType: String) {
+            val id = nextCommandId.getAndIncrement()
+            forecastSubscriptions[id] = entityId to forecastType
+            webSocket.send(HomeAssistantProtocol.subscribeToWeatherForecast(id, entityId, forecastType))
         }
 
         override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {

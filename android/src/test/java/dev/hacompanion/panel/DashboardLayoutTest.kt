@@ -109,11 +109,12 @@ class DashboardLayoutTest {
     @Test
     fun parsesControlPresentationOptions() {
         val layout = DashboardLayout.parse(
-            """{"schema_version":1,"revision":"control-options","pages":[{"id":"controls","widgets":[{"type":"entity_button","entity_id":"switch.washer","icon":"washing-machine","show_timer":false,"card_tap":true}]}]}""",
+            """{"schema_version":1,"revision":"control-options","pages":[{"id":"controls","widgets":[{"type":"entity_button","entity_id":"switch.washer","icon":"washing-machine","show_timer":false,"timer_presets":[5,20,45],"card_tap":true}]}]}""",
         )
         val widget = layout.pages.single().widgets.single()
         assertEquals("washing-machine", widget.icon)
         assertEquals(false, widget.showTimer)
+        assertEquals(listOf(5, 20, 45), widget.timerPresets)
         assertEquals(true, widget.cardTap)
     }
 
