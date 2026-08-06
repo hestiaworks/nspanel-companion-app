@@ -1,0 +1,15 @@
+.gradle/
+.idea/
+local.properties
+**/build/
+*.iml
+captures/
+.DS_Store
+*.apk
+*.aab
+*.jks
+*.keystore
+release-output/
+release-signing/
+__pycache__/
+*.py[cod]
