@@ -693,7 +693,7 @@ class MainActivity : Activity() {
             applyKeepScreenOn(layout.keepScreenOn)
             dashboardView.setLayout(layout)
             if (PanelProvisioningStore(this).load() != null) connectWithSavedSettings()
-            Toast.makeText(this, "Layout ${layout.revision} activated", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Layout updated", Toast.LENGTH_SHORT).show()
         } catch (error: Exception) {
             Toast.makeText(this, error.message ?: "Layout update failed", Toast.LENGTH_LONG).show()
         }
