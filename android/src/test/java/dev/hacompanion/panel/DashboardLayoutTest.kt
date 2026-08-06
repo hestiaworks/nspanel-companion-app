@@ -8,6 +8,20 @@ import java.nio.file.Files
 
 class DashboardLayoutTest {
     @Test
+    fun parsesStatusSettingsAndLimitsControls() {
+        val parsed = DashboardLayout.parse(
+            """{"schema_version":1,"revision":"status","show_clock":false,"show_mic_indicator":true,"mic_indicator_linger_seconds":20,"pages":[{"id":"main","widgets":[]}]}""",
+        )
+        assertEquals(false, parsed.showClock)
+        assertEquals(true, parsed.showMicIndicator)
+        assertEquals(20, parsed.micIndicatorLingerSeconds)
+        val controls = (1..5).joinToString(",") { "{\"type\":\"entity_button\",\"entity_id\":\"switch.room_$it\"}" }
+        assertThrows(IllegalArgumentException::class.java) {
+            DashboardLayout.parse("""{"schema_version":1,"revision":"too-many","pages":[{"id":"main","widgets":[$controls]}]}""")
+        }
+    }
+
+    @Test
     fun defaultLayoutRoundTrips() {
         val original = DashboardLayout.default()
         val parsed = DashboardLayout.parse(original.toJson().toString())

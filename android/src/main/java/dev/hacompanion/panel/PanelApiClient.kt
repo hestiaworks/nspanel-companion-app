@@ -11,6 +11,7 @@ import okhttp3.WebSocketListener
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.TimeZone
 
 class PanelApiClient(
     private val credentials: PanelCredentials,
@@ -20,6 +21,7 @@ class PanelApiClient(
     private val onDoorbellEvent: (DoorbellEvent) -> Unit,
     private val onWeatherForecast: (String, String, org.json.JSONArray) -> Unit = { _, _, _ -> },
     private val onSchedules: (List<ControlSchedule>) -> Unit = {},
+    private val onServerTime: (Long, String) -> Unit = { _, _ -> },
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private val client = OkHttpClient.Builder().pingInterval(20, TimeUnit.SECONDS).connectTimeout(10, TimeUnit.SECONDS).build()
@@ -80,7 +82,9 @@ class PanelApiClient(
                 "initial_states" -> {
                     val values = message.optJSONArray("states") ?: return
                     val states = buildList { for (index in 0 until values.length()) parseState(values.optJSONObject(index))?.let(::add) }
-                    handler.post { onInitialStates(states) }
+                    val serverTime = message.optLong("server_time_ms", System.currentTimeMillis())
+                    val serverTimezone = message.optString("server_timezone", TimeZone.getDefault().id)
+                    handler.post { onServerTime(serverTime, serverTimezone); onInitialStates(states) }
                 }
                 "state_changed" -> parseState(message.optJSONObject("state"))?.let { handler.post { onEntityChanged(it) } }
                 "weather_forecast" -> {
