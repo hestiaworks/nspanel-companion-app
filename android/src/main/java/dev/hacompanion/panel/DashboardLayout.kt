@@ -97,11 +97,19 @@ data class DashboardWidget(
     val entityId: String? = null,
     val label: String? = null,
     val forecastDays: Int = 5,
+    val icon: String = "auto",
+    val showTimer: Boolean = true,
+    val cardTap: Boolean? = null,
 ) {
     fun toJson(): JSONObject = JSONObject().put("type", type).apply {
         entityId?.let { put("entity_id", it) }
         label?.let { put("label", it) }
         if (type == "weather") put("forecast_days", forecastDays)
+        if (type == "entity_button") {
+            put("icon", icon)
+            put("show_timer", showTimer)
+            cardTap?.let { put("card_tap", it) }
+        }
     }
 
     companion object {
@@ -118,7 +126,11 @@ data class DashboardWidget(
             require(label == null || label.length <= 48) { "Widget label is too long" }
             val forecastDays = json.optInt("forecast_days", 5)
             require(type != "weather" || forecastDays in setOf(1, 3, 5)) { "Invalid weather forecast length" }
-            return DashboardWidget(type, entityId, label, forecastDays)
+            val icon = json.optString("icon", "auto")
+            require(type != "entity_button" || icon in setOf("auto", "light", "fan", "power", "cover", "plug")) { "Invalid control icon" }
+            val showTimer = json.optBoolean("show_timer", true)
+            val cardTap = if (json.has("card_tap")) json.optBoolean("card_tap") else null
+            return DashboardWidget(type, entityId, label, forecastDays, icon, showTimer, cardTap)
         }
     }
 }

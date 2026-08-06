@@ -107,6 +107,17 @@ class DashboardLayoutTest {
     }
 
     @Test
+    fun parsesControlPresentationOptions() {
+        val layout = DashboardLayout.parse(
+            """{"schema_version":1,"revision":"control-options","pages":[{"id":"controls","widgets":[{"type":"entity_button","entity_id":"light.ceiling","icon":"light","show_timer":false,"card_tap":true}]}]}""",
+        )
+        val widget = layout.pages.single().widgets.single()
+        assertEquals("light", widget.icon)
+        assertEquals(false, widget.showTimer)
+        assertEquals(true, widget.cardTap)
+    }
+
+    @Test
     fun rejectsUnknownSchemaAndWidgets() {
         assertThrows(IllegalArgumentException::class.java) {
             DashboardLayout.parse(

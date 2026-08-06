@@ -592,9 +592,11 @@ class PanelDashboardView(
     )
 
     private fun controlsPage(page: DashboardPage): View {
-        val configured = page.widgets.mapNotNull(DashboardWidget::entityId)
-        val controls = if (configured.isNotEmpty()) configured.mapNotNull(states::get)
-        else states.values.filter { it.domain in CONTROL_DOMAINS }.take(4)
+        val configured = page.widgets.mapNotNull { widget ->
+            widget.entityId?.let(states::get)?.let { widget to it }
+        }
+        val controls = if (configured.isNotEmpty()) configured
+        else states.values.filter { it.domain in CONTROL_DOMAINS }.take(4).map { null to it }
         if (controls.isEmpty()) return emptyPage(page.title, "No supported controls found")
 
         return verticalPage(page.title).apply {
@@ -603,9 +605,9 @@ class PanelDashboardView(
                 addView(
                     LinearLayout(context).apply {
                         orientation = HORIZONTAL
-                        rowItems.forEach { entity ->
+                        rowItems.forEach { (widget, entity) ->
                             addView(
-                                boundEntityView(entity) { deviceControlCard(states[entity.entityId] ?: entity) },
+                                boundEntityView(entity) { deviceControlCard(states[entity.entityId] ?: entity, widget) },
                                 LayoutParams(0, LayoutParams.MATCH_PARENT, 1f).apply {
                                     setMargins(dp(4), dp(4), dp(4), dp(4))
                                 },
@@ -618,7 +620,7 @@ class PanelDashboardView(
         }
     }
 
-    private fun deviceControlCard(entity: EntityState): View {
+    private fun deviceControlCard(entity: EntityState, widget: DashboardWidget? = null): View {
         val active = entity.state in setOf("on", "open", "opening")
         val complex = when (entity.domain) {
             "light" -> entity.numberAttribute("brightness") != null
@@ -630,7 +632,7 @@ class PanelDashboardView(
             orientation = VERTICAL
             setPadding(dp(12), dp(10), dp(12), dp(10))
             background = cardBackground(if (active) ACCENT_WASH else CARD, if (active) PanelTheme.accentWash else CARD_EDGE, 20)
-            addView(deviceCardHeader(entity, active))
+            addView(deviceCardHeader(entity, active, widget))
             when (entity.domain) {
                 "light" -> if (entity.numberAttribute("brightness") != null) {
                     addView(dimmerBody(entity), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
@@ -639,7 +641,7 @@ class PanelDashboardView(
                 "cover" -> addView(coverBody(entity), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
                 else -> addView(binaryBody(entity), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
             }
-            if (!complex) {
+            if (widget?.cardTap ?: !complex) {
                 setOnClickListener { toggleEntity(entity) }
                 isClickable = online
             }
@@ -647,13 +649,17 @@ class PanelDashboardView(
         }
     }
 
-    private fun deviceCardHeader(entity: EntityState, active: Boolean): View =
+    private fun deviceCardHeader(entity: EntityState, active: Boolean, widget: DashboardWidget?): View =
         LinearLayout(context).apply {
             orientation = VERTICAL
-            addView(primaryText(entity.friendlyName, 15f).apply {
-                typeface = Typeface.DEFAULT_BOLD
-                maxLines = 1
-                ellipsize = TextUtils.TruncateAt.END
+            addView(LinearLayout(context).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                addView(primaryText(controlIcon(entity, widget?.icon ?: "auto"), 17f), LayoutParams(dp(24), LayoutParams.WRAP_CONTENT))
+                addView(primaryText(widget?.label ?: entity.friendlyName, 15f).apply {
+                    typeface = Typeface.DEFAULT_BOLD
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
+                }, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
             })
             addView(LinearLayout(context).apply {
                 gravity = Gravity.CENTER_VERTICAL
@@ -662,7 +668,7 @@ class PanelDashboardView(
                     maxLines = 1
                     ellipsize = TextUtils.TruncateAt.END
                 }, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
-                if (entity.domain in TIMER_DOMAINS) {
+                if (entity.domain in TIMER_DOMAINS && widget?.showTimer != false) {
                     addView(timerButton(entity), LayoutParams(dp(38), dp(34)).apply { rightMargin = dp(5) })
                 }
                 addView(Button(context).apply {
@@ -679,6 +685,20 @@ class PanelDashboardView(
                 }, LayoutParams(dp(42), dp(34)))
             })
         }
+
+    private fun controlIcon(entity: EntityState, configured: String): String = when (configured) {
+        "light" -> "✦"
+        "fan" -> "⌁"
+        "power" -> "⏻"
+        "cover" -> "▥"
+        "plug" -> "⌑"
+        else -> when (entity.domain) {
+            "fan" -> "⌁"
+            "cover" -> "▥"
+            "switch", "input_boolean" -> "⏻"
+            else -> "✦"
+        }
+    }
 
     private fun binaryBody(entity: EntityState): View =
         LinearLayout(context).apply {
