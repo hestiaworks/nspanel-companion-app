@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <style>
+        html, body, video {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            background: #000;
+            overflow: hidden;
+        }
+        video {
+            object-fit: contain;
+        }
+    </style>
+</head>
+<body>
+<video id="video" autoplay playsinline></video>
+<script>
+    window.doorbellState = "starting";
+    window.doorbellPeerConnection = null;
+    window.doorbellMicrophoneTrack = null;
+
+    window.setTalkEnabled = enabled => {
+        const track = window.doorbellMicrophoneTrack;
+        if (!track) return false;
+        track.enabled = Boolean(enabled);
+        window.doorbellState = enabled ? "talking" : "ready";
+        return true;
+    };
+
+    async function connect() {
+        const signalUrl = new URLSearchParams(location.search).get("signal");
+        if (!signalUrl) throw new Error("Missing signaling URL");
+
+        const pc = new RTCPeerConnection({
+            bundlePolicy: "max-bundle",
+            iceServers: [],
+        });
+        window.doorbellPeerConnection = pc;
+
+        const microphone = await navigator.mediaDevices.getUserMedia({
+            video: false,
+            audio: {
+                channelCount: 1,
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+            },
+        });
+        const microphoneTrack = microphone.getAudioTracks()[0];
+        microphoneTrack.enabled = false;
+        window.doorbellMicrophoneTrack = microphoneTrack;
+        pc.addTransceiver(microphoneTrack, {direction: "sendonly"});
+
+        const remoteStream = new MediaStream();
+        document.getElementById("video").srcObject = remoteStream;
+        pc.addEventListener("track", event => {
+            remoteStream.addTrack(event.track);
+            document.getElementById("video").play().catch(() => {});
+        });
+        pc.addTransceiver("video", {direction: "recvonly"});
+        pc.addTransceiver("audio", {direction: "recvonly"});
+
+        const ws = new WebSocket(signalUrl);
+        ws.addEventListener("open", async () => {
+            pc.addEventListener("icecandidate", event => {
+                if (!event.candidate) return;
+                ws.send(JSON.stringify({
+                    type: "webrtc/candidate",
+                    value: event.candidate.candidate,
+                }));
+            });
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            ws.send(JSON.stringify({
+                type: "webrtc/offer",
+                value: pc.localDescription.sdp,
+            }));
+        });
+        ws.addEventListener("message", async event => {
+            const message = JSON.parse(event.data);
+            if (message.type === "webrtc/candidate") {
+                await pc.addIceCandidate({candidate: message.value, sdpMid: "0"});
+            } else if (message.type === "webrtc/answer") {
+                await pc.setRemoteDescription({type: "answer", sdp: message.value});
+            }
+        });
+        ws.addEventListener("close", () => {
+            window.doorbellState = "disconnected";
+        });
+        pc.addEventListener("connectionstatechange", () => {
+            if (pc.connectionState === "connected") {
+                window.doorbellState = "ready";
+            } else if (pc.connectionState === "failed") {
+                window.doorbellState = "failed";
+            }
+        });
+    }
+
+    connect().catch(error => {
+        window.doorbellState = "error: " + error.message;
+    });
+</script>
+</body>
+</html>

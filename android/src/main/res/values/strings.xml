@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">HA Companion</string>
+    <string name="diagnostic_title">NSPanel Diagnostic</string>
+    <string name="refresh">Refresh</string>
+    <string name="copy_report">Copy report</string>
+    <string name="configure_ha">Configure HA</string>
+    <string name="request_microphone">Test microphone permission</string>
+    <string name="open_home_settings">Choose Home app</string>
+    <string name="admin_hint">Long-press the top-left status dot for admin controls.</string>
+</resources>
