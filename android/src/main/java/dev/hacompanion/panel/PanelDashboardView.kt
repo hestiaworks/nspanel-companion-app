@@ -12,8 +12,12 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.Window
 import android.widget.Button
+import android.widget.ArrayAdapter
+import android.widget.CheckBox
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.Spinner
 import android.widget.TextView
 import org.json.JSONObject
 import org.json.JSONArray
@@ -32,6 +36,8 @@ class PanelDashboardView(
     ) -> Boolean,
     private val openAdmin: () -> Unit = {},
     private val openCamera: (DashboardWidget) -> Unit = {},
+    private val upsertSchedule: (ControlSchedule) -> Boolean = { false },
+    private val deleteSchedule: (String) -> Boolean = { false },
 ) : LinearLayout(context) {
     private val states = linkedMapOf<String, EntityState>()
     private val weatherUpdatedAt = mutableMapOf<String, Long>()
@@ -55,6 +61,7 @@ class PanelDashboardView(
     private val timerMinutes = mutableMapOf<String, Int>()
     private val timerCallbacks = mutableMapOf<String, Runnable>()
     private val selectedClimateTarget = mutableMapOf<String, String>()
+    private var schedules = emptyList<ControlSchedule>()
     private val returnToDefault = Runnable {
         if (!interactionActive && dashboardActive) {
             val defaultIndex = layout.pages.indexOfFirst { it.id == layout.defaultPageId }.coerceAtLeast(0)
@@ -104,6 +111,11 @@ class PanelDashboardView(
         states[entityId] = updated
         weatherUpdatedAt[entityId] = System.currentTimeMillis()
         if (entityBindings.containsKey(entityId)) scheduleEntityRefresh(entityId)
+    }
+
+    fun setSchedules(values: List<ControlSchedule>) {
+        schedules = values
+        scheduleRender()
     }
 
     fun setLayout(value: DashboardLayout) {
@@ -654,12 +666,10 @@ class PanelDashboardView(
                 } else addView(binaryBody(entity, dense), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
                 "fan" -> if (fanHasSpeed) addView(fanBody(entity), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
                     else addView(binaryBody(entity, dense), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
-                "cover" -> addView(coverBody(entity), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
+                "cover" -> addView(coverBody(entity, widget), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
                 else -> addView(binaryBody(entity, dense), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
             }
-            if (entity.domain in TIMER_DOMAINS && widget?.showTimer != false) {
-                addView(timerAction(entity, widget?.timerPresets ?: listOf(5, 15, 30, 60)))
-            }
+            if (entity.domain != "cover") addView(controlFooter(entity, widget))
             if (widget?.cardTap ?: !complex) {
                 setOnClickListener { toggleEntity(entity) }
                 isClickable = online
@@ -764,12 +774,140 @@ class PanelDashboardView(
         addView(modalAction("Adjust speed") { showFanSpeedDialog(entity) }, LayoutParams(LayoutParams.MATCH_PARENT, dp(42)).apply { topMargin = dp(6) })
     }
 
-    private fun coverBody(entity: EntityState): View = LinearLayout(context).apply {
+    private fun coverBody(entity: EntityState, widget: DashboardWidget?): View = LinearLayout(context).apply {
         orientation = VERTICAL
         val position = entity.numberAttribute("current_position")?.roundToInt()
         gravity = Gravity.BOTTOM
         addView(primaryText(position?.let { "Position · $it%" } ?: entity.state.replaceFirstChar { it.uppercase() }, 17f).apply { typeface = Typeface.DEFAULT_BOLD })
-        addView(modalAction("Control curtains") { showCoverDialog(entity) }, LayoutParams(LayoutParams.MATCH_PARENT, dp(42)).apply { topMargin = dp(6) })
+        addView(LinearLayout(context).apply {
+            addView(modalAction("Control") { showCoverDialog(entity, widget) }, LayoutParams(0, dp(42), 1f).apply { rightMargin = dp(3) })
+            addView(scheduleAction(entity, widget), LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(3) })
+        }, LayoutParams(LayoutParams.MATCH_PARENT, dp(42)).apply { topMargin = dp(6) })
+    }
+
+    private fun controlFooter(entity: EntityState, widget: DashboardWidget?): View = LinearLayout(context).apply {
+        val timer = entity.domain in TIMER_DOMAINS && widget?.showTimer != false
+        if (timer) addView(timerAction(entity, widget?.timerPresets ?: listOf(5, 15, 30, 60)), LayoutParams(0, dp(42), 1f).apply { rightMargin = dp(3) })
+        addView(scheduleAction(entity, widget), LayoutParams(0, dp(42), 1f).apply { if (timer) leftMargin = dp(3) })
+    }
+
+    private fun scheduleAction(entity: EntityState, widget: DashboardWidget?): View = modalAction(
+        schedules.filter { it.entityId == entity.entityId }.let { values -> if (values.isEmpty()) "Schedule" else "Schedules · ${values.size}" }
+    ) { showScheduleListDialog(entity, widget) }
+
+    private fun showScheduleListDialog(entity: EntityState, widget: DashboardWidget?) {
+        val values = schedules.filter { it.entityId == entity.entityId }.sortedBy { it.time }
+        if (values.isEmpty()) {
+            showScheduleDialog(entity, widget, null)
+            return
+        }
+        showControlDialog("Schedules", entity.friendlyName) { dialog ->
+            values.forEach { schedule ->
+                addView(modalAction("${schedule.time}  ·  ${schedule.action.replace('_', ' ')}") {
+                    dialog.dismiss()
+                    showScheduleDialog(entity, widget, schedule)
+                }, LayoutParams(LayoutParams.MATCH_PARENT, dp(48)).apply { bottomMargin = dp(5) })
+            }
+            addView(modalAction("＋ Add schedule") {
+                dialog.dismiss()
+                showScheduleDialog(entity, widget, null)
+            }, LayoutParams(LayoutParams.MATCH_PARENT, dp(50)).apply { topMargin = dp(4) })
+        }
+    }
+
+    private fun showScheduleDialog(entity: EntityState, widget: DashboardWidget?, existing: ControlSchedule?) {
+        val actions = when (entity.domain) {
+            "cover" -> buildList {
+                add("open" to "Open")
+                add("close" to "Close")
+                add("set_position" to "Set position")
+                if (widget?.gradualCoverScript != null) {
+                    add("gradual_open" to "Gradual open")
+                }
+            }
+            else -> listOf("turn_on" to "Turn on", "turn_off" to "Turn off", "toggle" to "Toggle")
+        }
+        val time = EditText(context).apply {
+            hint = "07:00"
+            setText(existing?.time ?: "07:00")
+            textSize = 20f
+            setTextColor(PanelTheme.ink)
+            background = cardBackground(PanelTheme.panel, PanelTheme.line, 14)
+            setPadding(dp(14), 0, dp(14), 0)
+        }
+        val action = Spinner(context).apply {
+            adapter = ArrayAdapter(context, android.R.layout.simple_spinner_dropdown_item, actions.map { it.second })
+            setSelection(actions.indexOfFirst { it.first == existing?.action }.coerceAtLeast(0))
+            background = cardBackground(PanelTheme.panel, PanelTheme.line, 14)
+        }
+        val position = EditText(context).apply {
+            hint = "Position 0–100"
+            setText((existing?.position ?: 100).toString())
+            textSize = 16f
+            setTextColor(PanelTheme.ink)
+            background = cardBackground(PanelTheme.panel, PanelTheme.line, 14)
+            setPadding(dp(14), 0, dp(14), 0)
+            visibility = if (entity.domain == "cover") View.VISIBLE else View.GONE
+        }
+        val enabled = CheckBox(context).apply {
+            text = "Enabled"
+            textSize = 15f
+            setTextColor(PanelTheme.ink)
+            isChecked = existing?.enabled ?: true
+        }
+        val selectedDays = (existing?.weekdays ?: WEEKDAY_IDS).toMutableSet()
+        val dialog = Dialog(context)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(LinearLayout(context).apply {
+            orientation = VERTICAL
+            setPadding(dp(18), dp(16), dp(18), dp(16))
+            background = cardBackground(CARD, CARD_EDGE, 24)
+            addView(primaryText("Schedule", 23f).apply { typeface = Typeface.DEFAULT_BOLD })
+            addView(secondaryText(entity.friendlyName).apply { textSize = 12f; setPadding(0, 0, 0, dp(8)) })
+            addView(LinearLayout(context).apply {
+                addView(time, LayoutParams(0, dp(50), .8f).apply { rightMargin = dp(4) })
+                addView(action, LayoutParams(0, dp(50), 1.2f).apply { leftMargin = dp(4) })
+            })
+            if (entity.domain == "cover") addView(position, LayoutParams(LayoutParams.MATCH_PARENT, dp(46)).apply { topMargin = dp(7) })
+            addView(LinearLayout(context).apply {
+                WEEKDAY_IDS.forEach { day ->
+                    addView(CheckBox(context).apply {
+                        text = day.replaceFirstChar { it.uppercase() }
+                        textSize = 10f
+                        setTextColor(PanelTheme.ink)
+                        isChecked = day in selectedDays
+                        setOnCheckedChangeListener { _, checked -> if (checked) selectedDays.add(day) else selectedDays.remove(day) }
+                    }, LayoutParams(0, dp(42), 1f))
+                }
+            }, LayoutParams(LayoutParams.MATCH_PARENT, dp(42)).apply { topMargin = dp(5) })
+            addView(enabled)
+            addView(LinearLayout(context).apply {
+                if (existing?.id != null) addView(modalAction("Delete") {
+                    deleteSchedule(existing.id)
+                    dialog.dismiss()
+                }, LayoutParams(0, dp(48), 1f).apply { rightMargin = dp(4) })
+                addView(modalAction("Save") {
+                    val clock = time.text.toString().trim()
+                    if (!Regex("^(?:[01]\\d|2[0-3]):[0-5]\\d$").matches(clock)) {
+                        time.error = "Use HH:MM"
+                        return@modalAction
+                    }
+                    if (selectedDays.isEmpty()) return@modalAction
+                    upsertSchedule(ControlSchedule(existing?.id, entity.entityId, clock, WEEKDAY_IDS.filter(selectedDays::contains),
+                        actions[action.selectedItemPosition].first, position.text.toString().toIntOrNull()?.coerceIn(0, 100) ?: 100,
+                        widget?.gradualCoverScript, enabled.isChecked))
+                    dialog.dismiss()
+                }, LayoutParams(0, dp(48), 1f).apply { leftMargin = dp(4) })
+            }, LayoutParams(LayoutParams.MATCH_PARENT, dp(48)).apply { topMargin = dp(7) })
+        })
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.show()
+        dialog.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+            setDimAmount(.65f)
+            addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            setLayout((resources.displayMetrics.widthPixels * .94f).roundToInt(), android.view.WindowManager.LayoutParams.WRAP_CONTENT)
+        }
     }
 
     private fun modalAction(label: String, action: () -> Unit): TextView = TextView(context).apply {
@@ -853,7 +991,7 @@ class PanelDashboardView(
         }
     }
 
-    private fun showCoverDialog(entity: EntityState) {
+    private fun showCoverDialog(entity: EntityState, widget: DashboardWidget?) {
         val position = entity.numberAttribute("current_position")?.roundToInt() ?: 0
         val canPosition = entity.attributes.optInt("supported_features", 0) and 4 != 0
         showControlDialog("Curtains", entity.friendlyName) { dialog ->
@@ -874,11 +1012,20 @@ class PanelDashboardView(
                         setTextColor(PanelTheme.ink)
                         setOnClickListener {
                             callService("cover", service, entity.entityId, JSONObject())
+                            if (service == "stop_cover" && widget?.gradualCoverScript != null) {
+                                callService("script", "turn_off", widget.gradualCoverScript, JSONObject())
+                            }
                             if (service != "stop_cover") dialog.dismiss()
                         }
                     }, LayoutParams(0, dp(58), 1f).apply { setMargins(dp(3), dp(4), dp(3), 0) })
                 }
             })
+            widget?.gradualCoverScript?.let { script ->
+                addView(modalAction("Gradually open") {
+                    callService("script", "turn_on", script, JSONObject())
+                    dialog.dismiss()
+                }, LayoutParams(LayoutParams.MATCH_PARENT, dp(52)).apply { topMargin = dp(8) })
+            }
         }
     }
 
@@ -1274,6 +1421,7 @@ class PanelDashboardView(
     companion object {
         private val CONTROL_DOMAINS = setOf("light", "switch", "input_boolean", "fan", "cover")
         private val TIMER_DOMAINS = setOf("light", "switch", "fan")
+        private val WEEKDAY_IDS = listOf("mon", "tue", "wed", "thu", "fri", "sat", "sun")
         private val BACKGROUND get() = PanelTheme.canvas
         private val CARD get() = PanelTheme.card
         private val CARD_EDGE get() = PanelTheme.line

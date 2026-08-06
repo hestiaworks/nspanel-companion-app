@@ -19,6 +19,7 @@ class PanelApiClient(
     private val onEntityChanged: (EntityState) -> Unit,
     private val onDoorbellEvent: (DoorbellEvent) -> Unit,
     private val onWeatherForecast: (String, String, org.json.JSONArray) -> Unit = { _, _, _ -> },
+    private val onSchedules: (List<ControlSchedule>) -> Unit = {},
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private val client = OkHttpClient.Builder().pingInterval(20, TimeUnit.SECONDS).connectTimeout(10, TimeUnit.SECONDS).build()
@@ -40,6 +41,14 @@ class PanelApiClient(
         socket?.send(JSONObject().put("type", "call_service").put("id", ids.getAndIncrement())
             .put("domain", domain).put("service", service).put("entity_id", entityId)
             .put("service_data", data).toString()) == true
+
+    fun upsertSchedule(schedule: ControlSchedule): Boolean =
+        socket?.send(JSONObject().put("type", "schedule_upsert").put("id", ids.getAndIncrement())
+            .put("schedule", schedule.toJson()).toString()) == true
+
+    fun deleteSchedule(scheduleId: String): Boolean =
+        socket?.send(JSONObject().put("type", "schedule_delete").put("id", ids.getAndIncrement())
+            .put("schedule_id", scheduleId).toString()) == true
 
     private fun connect() {
         if (stopped) return
@@ -81,6 +90,11 @@ class PanelApiClient(
                     if (entityId.startsWith("weather.") && forecastType in setOf("daily", "hourly")) {
                         handler.post { onWeatherForecast(entityId, forecastType, forecast) }
                     }
+                }
+                "schedules" -> {
+                    val values = message.optJSONArray("schedules") ?: return
+                    val schedules = buildList { for (index in 0 until values.length()) runCatching { ControlSchedule.parse(values.getJSONObject(index)) }.getOrNull()?.let(::add) }
+                    handler.post { onSchedules(schedules) }
                 }
                 "doorbell" -> message.optJSONObject("data")?.let { data -> handler.post { onDoorbellEvent(DoorbellEvent(
                     streamBaseUrl = data.optString("stream_base_url").takeIf(String::isNotBlank),

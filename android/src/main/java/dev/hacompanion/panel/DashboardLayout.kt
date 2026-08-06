@@ -109,6 +109,7 @@ data class DashboardWidget(
     val talkbackKey: String? = null,
     val incomingAudio: Boolean = false,
     val tapAction: String = "fullscreen",
+    val gradualCoverScript: String? = null,
 ) {
     fun toJson(): JSONObject = JSONObject().put("type", type).apply {
         entityId?.let { put("entity_id", it) }
@@ -123,6 +124,7 @@ data class DashboardWidget(
             put("timer_presets", JSONArray(timerPresets))
             cardTap?.let { put("card_tap", it) }
             put("show_fan_speed", showFanSpeed)
+            gradualCoverScript?.let { put("gradual_cover_script", it) }
         }
         if (type == "camera") {
             streamBaseUrl?.let { put("stream_base_url", it) }; streamName?.let { put("stream_name", it) }
@@ -158,6 +160,7 @@ data class DashboardWidget(
             }
             val cardTap = if (json.has("card_tap")) json.optBoolean("card_tap") else null
             val showFanSpeed = json.optBoolean("show_fan_speed", false)
+            val gradualCoverScript = json.optString("gradual_cover_script").takeIf { it.startsWith("script.") }
             val streamBaseUrl = json.optString("stream_base_url").takeIf(String::isNotBlank)
             val streamName = json.optString("stream_name").takeIf(String::isNotBlank)
             val talkbackUrl = json.optString("talkback_url").takeIf(String::isNotBlank)
@@ -168,7 +171,7 @@ data class DashboardWidget(
             require(type != "camera" || streamBaseUrl == null || streamBaseUrl.startsWith("rtsp://") ||
                 streamBaseUrl.startsWith("rtsps://") || streamBaseUrl.startsWith("http://") ||
                 streamBaseUrl.startsWith("https://")) { "Invalid camera stream URL" }
-            return DashboardWidget(type, entityId, label, forecastDays, showHourly, icon, showTimer, timerPresets, cardTap, showFanSpeed, streamBaseUrl, streamName, talkbackUrl, talkbackKey, incomingAudio, tapAction)
+            return DashboardWidget(type, entityId, label, forecastDays, showHourly, icon, showTimer, timerPresets, cardTap, showFanSpeed, streamBaseUrl, streamName, talkbackUrl, talkbackKey, incomingAudio, tapAction, gradualCoverScript)
         }
 
         val CONTROL_ICONS = setOf(
