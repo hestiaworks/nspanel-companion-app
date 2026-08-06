@@ -128,6 +128,12 @@ class MainActivity : Activity() {
     }
 
     private fun createContent(): View {
+        val activeLayout = layoutStore.loadOrNull()
+        val credentials = PanelProvisioningStore(this).load()
+        val previewUnconfigured = BuildConfig.DEBUG && intent.getBooleanExtra(EXTRA_PREVIEW_UNCONFIGURED, false)
+        val previewTheme = if (BuildConfig.DEBUG) intent.getStringExtra(EXTRA_PREVIEW_THEME) else null
+        if (activeLayout != null) PanelTheme.apply(activeLayout.themeMode, activeLayout.themeDark)
+        else if (previewTheme != null) PanelTheme.apply(previewTheme, previewTheme == "dark")
         val root = FrameLayout(this).apply {
             setBackgroundColor(PanelTheme.canvas)
         }
@@ -156,9 +162,6 @@ class MainActivity : Activity() {
             },
             ::showAdminDialog,
         )
-        val activeLayout = layoutStore.loadOrNull()
-        val credentials = PanelProvisioningStore(this).load()
-        val previewUnconfigured = BuildConfig.DEBUG && intent.getBooleanExtra(EXTRA_PREVIEW_UNCONFIGURED, false)
         if (previewUnconfigured) {
             applyKeepScreenOn(false)
             val deviceId = PanelIdentityStore(this).deviceId
@@ -665,7 +668,15 @@ class MainActivity : Activity() {
 
     private fun activateDashboardLayout(layout: DashboardLayout) {
         try {
+            val previous = layoutStore.loadOrNull()
             layoutStore.save(layout)
+            if (previous == null || previous.themeMode != layout.themeMode || previous.themeDark != layout.themeDark) {
+                recreate()
+                return
+            }
+            PanelTheme.apply(layout.themeMode, layout.themeDark)
+            rootView.setBackgroundColor(PanelTheme.canvas)
+            (dashboardView.parent as? View)?.setBackgroundColor(PanelTheme.canvas)
             applyKeepScreenOn(layout.keepScreenOn)
             dashboardView.setLayout(layout)
             if (PanelProvisioningStore(this).load() != null) connectWithSavedSettings()
@@ -935,6 +946,7 @@ class MainActivity : Activity() {
 
     companion object {
         private const val EXTRA_PREVIEW_UNCONFIGURED = "dev.hacompanion.panel.PREVIEW_UNCONFIGURED"
+        private const val EXTRA_PREVIEW_THEME = "dev.hacompanion.panel.PREVIEW_THEME"
         private const val MICROPHONE_REQUEST = 10
         private const val HOME_ROLE_REQUEST = 11
         private const val EXTRA_HA_URL = "dev.hacompanion.panel.HA_URL"

@@ -30,6 +30,19 @@ class DashboardLayoutTest {
     }
 
     @Test
+    fun parsesPanelThemeAndPreservesLegacyLightDefault() {
+        val inherited = DashboardLayout.parse(
+            """{"schema_version":1,"revision":"theme","theme_mode":"inherit","theme_dark":true,"pages":[{"id":"main","widgets":[]}]}""",
+        )
+        assertEquals("inherit", inherited.themeMode)
+        assertEquals(true, inherited.themeDark)
+        val legacy = DashboardLayout.parse(
+            """{"schema_version":1,"revision":"legacy","pages":[{"id":"main","widgets":[]}]}""",
+        )
+        assertEquals("light", legacy.themeMode)
+    }
+
+    @Test
     fun validatesWeatherCacheAge() {
         val parsed = DashboardLayout.parse(
             """{"schema_version":1,"revision":"cache","weather_cache_max_age_minutes":720,"pages":[{"id":"main","widgets":[]}]}""",
