@@ -3,6 +3,17 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val releaseKeystorePath = providers.environmentVariable("NSPANEL_RELEASE_KEYSTORE").orNull
+val releaseKeyAlias = providers.environmentVariable("NSPANEL_RELEASE_KEY_ALIAS").orNull
+val releaseStorePassword = providers.environmentVariable("NSPANEL_RELEASE_STORE_PASSWORD").orNull
+val releaseKeyPassword = providers.environmentVariable("NSPANEL_RELEASE_KEY_PASSWORD").orNull
+val releaseSigningConfigured = listOf(
+    releaseKeystorePath,
+    releaseKeyAlias,
+    releaseStorePassword,
+    releaseKeyPassword,
+).all { !it.isNullOrBlank() }
+
 android {
     namespace = "dev.hacompanion.panel"
     compileSdk = 34
@@ -15,8 +26,8 @@ android {
         applicationId = "dev.hacompanion.panel"
         minSdk = 26
         targetSdk = 28
-        versionCode = 7
-        versionName = "0.3.3-alpha"
+        versionCode = providers.environmentVariable("NSPANEL_VERSION_CODE").orNull?.toInt() ?: 7
+        versionName = providers.environmentVariable("NSPANEL_VERSION_NAME").orNull ?: "0.3.3-alpha"
         ndk {
             // The target NSPanel Pro and development emulator are both ARM64.
             // Avoid packaging three unused libwebrtc binaries.
@@ -24,8 +35,22 @@ android {
         }
     }
 
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            create("release") {
+                storeFile = file(releaseKeystorePath!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+                enableV1Signing = true
+                enableV2Signing = true
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -49,6 +74,22 @@ android {
         // the legacy boot-launch behavior until it is validated on real hardware.
         disable += "ExpiredTargetSdkVersion"
     }
+}
+
+val verifyReleaseSigning by tasks.registering {
+    group = "verification"
+    description = "Fails release builds unless the permanent external signing credentials are configured."
+    doLast {
+        require(releaseSigningConfigured) {
+            "Release signing is not configured. Set NSPANEL_RELEASE_KEYSTORE, " +
+                "NSPANEL_RELEASE_KEY_ALIAS, NSPANEL_RELEASE_STORE_PASSWORD, and NSPANEL_RELEASE_KEY_PASSWORD."
+        }
+        require(file(releaseKeystorePath!!).isFile) { "Release keystore does not exist: $releaseKeystorePath" }
+    }
+}
+
+tasks.matching { it.name in setOf("assembleRelease", "bundleRelease") }.configureEach {
+    dependsOn(verifyReleaseSigning)
 }
 
 dependencies {
