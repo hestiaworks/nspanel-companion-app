@@ -16,6 +16,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.savedstate.SavedStateRegistry
+import androidx.savedstate.SavedStateRegistryController
+import androidx.savedstate.SavedStateRegistryOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -86,6 +94,37 @@ fun WeatherPage(weather: ComposeWeather) {
             }
         }
     }
+}
+
+/**
+ * ComposeView requires a ViewTreeLifecycleOwner and a ViewTreeSavedStateRegistryOwner,
+ * which a plain android.app.Activity never provides. Supplying a small owner here keeps
+ * MainActivity as it is, rather than reworking the kiosk Activity for a measurement.
+ */
+class ComposeHost : LifecycleOwner, SavedStateRegistryOwner {
+    private val registry = LifecycleRegistry(this)
+    private val savedState = SavedStateRegistryController.create(this)
+
+    override val lifecycle: Lifecycle get() = registry
+    override val savedStateRegistry: SavedStateRegistry get() = savedState.savedStateRegistry
+
+    fun resume() {
+        // Restoration has to happen before the lifecycle moves past INITIALIZED.
+        savedState.performRestore(null)
+        registry.currentState = Lifecycle.State.RESUMED
+    }
+}
+
+/**
+ * Compose creates its recomposer per window and resolves the lifecycle owner from
+ * the window's root view, so installing it on the ComposeView itself is too low in
+ * the tree. Called once from the Activity against its decor view.
+ */
+fun installComposeHost(root: View) {
+    val host = ComposeHost()
+    host.resume()
+    root.setViewTreeLifecycleOwner(host)
+    root.setViewTreeSavedStateRegistryOwner(host)
 }
 
 /** Returns the Compose weather page as a plain View, so it can slot into the pager. */
