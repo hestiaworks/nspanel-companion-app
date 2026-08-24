@@ -71,6 +71,8 @@ class MainActivity : Activity() {
         applyDebugProvisioning(intent)
         requestWindowFeature(Window.FEATURE_NO_TITLE)
         setContentView(createContent())
+        // SPIKE: Compose resolves its recomposer's lifecycle owner from the window root.
+        installComposeHost(window.decorView)
         startPairingAdvertisement()
         enterImmersiveMode()
         refreshReport()

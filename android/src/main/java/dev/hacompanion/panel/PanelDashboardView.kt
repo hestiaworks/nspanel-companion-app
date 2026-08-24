@@ -500,6 +500,29 @@ class PanelDashboardView(
         val daily = forecastPeriods(weather, "forecast").take(forecastDays)
         val hourly = forecastPeriods(weather, "hourly_forecast").take(6)
 
+        // SPIKE: render this page with Compose so its runtime cost is measurable.
+        // Replaces the hand-built tree below; revert with the branch.
+        return composeWeatherPage(context, ComposeWeather(
+            symbol = weatherSymbol(weather.state),
+            temperature = temperature?.let { "${format(it)}$unit" } ?: "—",
+            condition = weather.state.replace('-', ' ').replaceFirstChar { it.uppercase() },
+            detail = buildString {
+                append("Feels like ")
+                append(weather.numberAttribute("apparent_temperature")?.let(::format) ?: temperature?.let(::format) ?: "—")
+                append(unit)
+                humidity?.let { append(" · ${format(it)}%") }
+            },
+            daily = daily.map { period ->
+                ComposeForecast(
+                    label = period.label,
+                    symbol = weatherSymbol(period.condition),
+                    low = period.low?.let { "${format(it)}$unit" } ?: "—",
+                    high = period.high?.let { "${format(it)}$unit" } ?: "—",
+                )
+            },
+        ))
+
+        @Suppress("UNREACHABLE_CODE")
         return verticalPage(title).apply {
             addView(
                 LinearLayout(context).apply {
