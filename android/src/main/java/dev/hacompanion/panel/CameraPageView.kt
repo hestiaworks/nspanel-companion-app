@@ -48,6 +48,10 @@ class CameraPageView(
         text = if (widget.streamBaseUrl.isNullOrBlank()) "Camera not configured" else "Connecting…"
     }
     private var player: MediaPlayer? = null
+
+    // Phase timings, so the start-up cost can be attributed rather than guessed.
+    private var startedAt = 0L
+    private fun since() = android.os.SystemClock.elapsedRealtime() - startedAt
     private var attached = false
     private val connectTimeout = Runnable {
         if (attached && player != null) {
@@ -87,9 +91,12 @@ class CameraPageView(
 
     private fun startPlayer(holder: SurfaceHolder) {
         if (player != null || !holder.surface.isValid) return
+        startedAt = android.os.SystemClock.elapsedRealtime()
+        Log.i(TAG, "timing: surface ready, resolving source")
         status.alpha = 1f
         status.text = "Connecting to Scrypted prebuffer…"
         resolveSource { source ->
+            Log.i(TAG, "timing: source resolved at ${since()} ms")
             if (!attached || player != null || !holder.surface.isValid) return@resolveSource
             if (source.isBlank()) {
                 status.text = "Camera not configured"
@@ -136,12 +143,16 @@ class CameraPageView(
             setVolume(if (widget.incomingAudio) 1f else 0f, if (widget.incomingAudio) 1f else 0f)
             setDataSource(context, rtspUrl(source))
             setOnPreparedListener {
+                Log.i(TAG, "timing: prepared at ${since()} ms")
                 handler.removeCallbacks(connectTimeout)
                 it.start()
                 status.text = "Live"
                 status.postDelayed({ status.alpha = 0f }, 1_200)
             }
             setOnInfoListener { _, what, _ ->
+                if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
+                    Log.i(TAG, "timing: first frame at ${since()} ms")
+                }
                 if (what == MediaPlayer.MEDIA_INFO_BUFFERING_START) {
                     status.alpha = 1f
                     status.text = "Buffering…"
@@ -158,6 +169,7 @@ class CameraPageView(
                 status.text = "Stream unavailable · $what/$extra"
                 true
             }
+            Log.i(TAG, "timing: prepareAsync at ${since()} ms")
             prepareAsync()
         }
         handler.postDelayed(connectTimeout, CONNECT_TIMEOUT_MS)
