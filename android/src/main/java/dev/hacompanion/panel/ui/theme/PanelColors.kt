@@ -54,13 +54,27 @@ val darkPanelColors = PanelColors(
 val LocalPanelColors = staticCompositionLocalOf { lightPanelColors }
 
 /**
+ * Installs the whole design: colours plus the metric tokens. A restyle is a
+ * different set of values passed here, not an edit spread across the pages.
+ *
  * Named to avoid colliding with the existing `object PanelTheme`, which still
- * serves the view-based pages until they are converted.
+ * dresses the modal dialogs.
  */
 @Composable
-fun PanelThemeProvider(dark: Boolean, content: @Composable () -> Unit) {
+fun PanelThemeProvider(
+    dark: Boolean,
+    type: PanelType = PanelType(),
+    radius: PanelRadius = PanelRadius(),
+    space: PanelSpace = PanelSpace(),
+    size: PanelSize = PanelSize(),
+    content: @Composable () -> Unit,
+) {
     CompositionLocalProvider(
         LocalPanelColors provides if (dark) darkPanelColors else lightPanelColors,
+        LocalPanelType provides type,
+        LocalPanelRadius provides radius,
+        LocalPanelSpace provides space,
+        LocalPanelSize provides size,
         content = content,
     )
 }
