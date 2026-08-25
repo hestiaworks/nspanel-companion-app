@@ -1,6 +1,10 @@
 package dev.hacompanion.panel
 
+import dev.hacompanion.panel.ui.model.controlTile
+import dev.hacompanion.panel.ui.model.sensorTile
 import dev.hacompanion.panel.ui.model.weatherModel
+import dev.hacompanion.panel.ui.pages.PageTile
+import dev.hacompanion.panel.ui.pages.generalPageView
 import dev.hacompanion.panel.ui.pages.weatherPageView
 
 import android.content.Context
@@ -1044,60 +1048,31 @@ class PanelDashboardView(
 
     private fun generalPage(page: DashboardPage): View = verticalPage(page.title).apply {
         val compact = page.widgets.filter { it.type in setOf("entity_button", "sensor") }
-        compact.chunked(2).forEach { row ->
-            addView(LinearLayout(context).apply {
-                orientation = HORIZONTAL
-                row.forEach { widget ->
-                    val entity = resolveEntity(widget)
-                    val view = entity?.let { initial ->
-                        boundEntityView(initial) {
-                            val current = states[initial.entityId] ?: initial
-                            if (widget.type == "entity_button") entityButton(current, widget.label)
-                            else sensorCard(current, widget.label)
-                        }
-                    } ?: unavailableCard(widget.label ?: widget.entityId.orEmpty())
-                    addView(view, LayoutParams(0, dp(88), 1f).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) })
-                }
-                if (row.size == 1) addView(View(context), LayoutParams(0, dp(88), 1f))
-            })
+        val tiles = compact.map { widget ->
+            val entity = resolveEntity(widget)
+            when {
+                entity == null -> PageTile.Missing(widget.label ?: widget.entityId.orEmpty())
+                widget.type == "entity_button" -> PageTile.Control(controlTile(entity, widget.label))
+                else -> PageTile.Reading(sensorTile(entity, widget.label))
+            }
         }
+        addView(
+            generalPageView(context, tiles, online, PanelTheme.isDark) { entityId ->
+                states[entityId]?.let { callService(it.domain, "toggle", entityId, JSONObject()) }
+            },
+            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT),
+        )
         page.widgets.filterNot { it in compact }.forEach { widget ->
             when (widget.type) {
                 "thermostat" -> addView(thermostatPage(widget.label ?: "Thermostat", widget))
                 "weather" -> addView(weatherPage(widget.label ?: "Weather", widget))
             }
         }
-        if (page.widgets.isEmpty()) addView(secondaryText("This page has no widgets"))
     }
 
-    private fun entityButton(entity: EntityState, label: String? = null): Button =
-        Button(context).apply {
-            val active = entity.state in setOf("on", "open", "opening")
-            text = "${if (active) "●" else "○"}  ${label ?: entity.friendlyName}\n${entity.state.uppercase()}"
-            isAllCaps = false
-            textSize = 14f
-            gravity = Gravity.START or Gravity.CENTER_VERTICAL
-            setPadding(dp(14), dp(8), dp(10), dp(8))
-            setTextColor(if (active) Color.WHITE else PanelTheme.ink)
-            background = cardBackground(if (active) ACCENT_DARK else CARD, if (active) ACCENT else CARD_EDGE)
-            setOnClickListener {
-                callService(entity.domain, "toggle", entity.entityId, JSONObject())
-            }
-            isEnabled = online
-            alpha = if (online) 1f else .55f
-        }
 
-    private fun sensorCard(entity: EntityState, label: String?): View =
-        LinearLayout(context).apply {
-            orientation = VERTICAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(14), dp(8), dp(10), dp(8))
-            background = cardBackground(CARD)
-            addView(eyebrow(label ?: entity.friendlyName))
-            addView(primaryText(entity.state, 22f).apply { typeface = Typeface.DEFAULT_BOLD })
-        }
 
-    private fun unavailableCard(label: String): View = metricCard(label.uppercase(), "Unavailable").apply { alpha = .55f }
+
 
     private fun resolveEntity(widget: DashboardWidget, fallbackDomain: String? = null): EntityState? =
         widget.entityId?.let(states::get)
