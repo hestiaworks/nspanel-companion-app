@@ -5,7 +5,9 @@ import dev.hacompanion.panel.ui.model.controlTile
 import dev.hacompanion.panel.ui.model.sensorTile
 import dev.hacompanion.panel.ui.pages.PageTile
 import dev.hacompanion.panel.ui.pages.generalPageView
+import dev.hacompanion.panel.ui.pages.thermostatPageView
 import dev.hacompanion.panel.ui.pages.weatherPageView
+import kotlin.math.absoluteValue
 
 import android.content.Context
 import android.util.Log
@@ -260,9 +262,7 @@ class PanelDashboardView(
             return controlsPage(page)
         }
         return when (only?.type) {
-            "thermostat" -> boundEntityView(resolveEntity(only, "climate")) {
-                thermostatPage(page.title, only)
-            }
+            "thermostat" -> thermostatPage(page.title, only)
             // Not wrapped in boundEntityView: the page reads the state map and
             // recomposes, so rebuilding it on every update is wasted work.
             "weather" -> weatherPage(page.title, only)
@@ -312,100 +312,59 @@ class PanelDashboardView(
     private data class EntityBinding(val refresh: () -> Unit)
 
     private fun thermostatPage(title: String, widget: DashboardWidget): View {
-        val climate = resolveEntity(widget, "climate")
-            ?: return emptyPage(title, "No climate entity found")
-        val current = climate.numberAttribute("current_temperature")
-        val target = climate.numberAttribute("temperature") ?: current ?: 20.0
-        val low = climate.numberAttribute("target_temp_low") ?: target
-        val high = climate.numberAttribute("target_temp_high") ?: target
-        val unit = climate.attributes.optString("temperature_unit", "°")
-        val action = climate.attributes.optString("hvac_action").ifBlank { climate.state }
-
+        if (resolveEntity(widget, "climate") == null) {
+            return emptyPage(title, "No climate entity found")
+        }
         return verticalPage(title).apply {
             addView(
-                LinearLayout(context).apply {
-                    orientation = VERTICAL
-                    background = cardBackground(CARD)
-                    setPadding(dp(14), dp(12), dp(14), dp(12))
-                    addView(thermostatHeader(widget.label ?: climate.friendlyName, action, climate.state != "off"))
-                    addView(unifiedThermostatContent(climate, current, target, low, high, unit, action), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
-                    addView(thermostatModes(climate))
-                },
+                thermostatPageView(
+                    context = context,
+                    entities = states,
+                    widget = widget,
+                    selectedTarget = { entityId ->
+                        selectedClimateTarget.getOrPut(entityId) {
+                            if (states[entityId]?.state == "cool") "cool" else "heat"
+                        }
+                    },
+                    online = online,
+                    dark = PanelTheme.isDark,
+                    onTargetSelected = { entityId, target ->
+                        selectedClimateTarget[entityId] = target
+                        scheduleEntityRefresh(entityId)
+                    },
+                    onStep = ::stepThermostat,
+                    onMode = { climate, mode ->
+                        callService(
+                            "climate",
+                            "set_hvac_mode",
+                            climate.entityId,
+                            JSONObject().put("hvac_mode", mode),
+                        )
+                    },
+                ),
                 LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f),
             )
         }
     }
 
-    private fun thermostatHeader(name: String, action: String, powered: Boolean): View =
-        LinearLayout(context).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            addView(
-                LinearLayout(context).apply {
-                    orientation = VERTICAL
-                    addView(primaryText(name, 18f).apply { typeface = Typeface.DEFAULT_BOLD })
-                    addView(secondaryText(action.replace('_', ' ').replaceFirstChar { it.uppercase() }).apply {
-                        textSize = 11f
-                    })
-                },
-                LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f),
-            )
-            addView(TextView(context).apply {
-                text = if (powered) "ON" else "OFF"
-                textSize = 10f
-                typeface = Typeface.DEFAULT_BOLD
-                gravity = Gravity.CENTER
-                setTextColor(if (powered) ACCENT else MUTED)
-                background = PanelTheme.pill(context, if (powered) ACCENT_WASH else CONTROL)
-                setPadding(dp(12), dp(7), dp(12), dp(7))
-            })
+    /** Nudges whichever target the dial has selected by one device step. */
+    private fun stepThermostat(climate: EntityState, up: Boolean) {
+        val current = climate.numberAttribute("current_temperature")
+        val target = climate.numberAttribute("temperature") ?: current ?: 20.0
+        val low = climate.numberAttribute("target_temp_low") ?: target
+        val high = climate.numberAttribute("target_temp_high") ?: target
+        val step = temperatureStep(climate).let { if (up) it else -it }
+        if (climate.state != "heat_cool") {
+            changeTemperature(climate, target + step)
+            return
         }
-
-    private fun unifiedThermostatContent(
-        climate: EntityState,
-        current: Double?,
-        target: Double,
-        low: Double,
-        high: Double,
-        unit: String,
-        action: String,
-    ): View = LinearLayout(context).apply {
-        orientation = VERTICAL
-        gravity = Gravity.CENTER
-        val dual = climate.state == "heat_cool"
-        val selected = selectedClimateTarget.getOrPut(climate.entityId) {
-            if (climate.state == "cool") "cool" else "heat"
+        val selected = selectedClimateTarget[climate.entityId] ?: "heat"
+        // The two targets may not cross, so each is clamped against the other.
+        if (selected == "heat") {
+            changeTemperatureRange(climate, (low + step).coerceAtMost(high - step.absoluteValue), high)
+        } else {
+            changeTemperatureRange(climate, low, (high + step).coerceAtLeast(low + step.absoluteValue))
         }
-        addView(DualThermostatDialView(
-            context,
-            mode = climate.state,
-            action = action.replace('_', ' ').replaceFirstChar { it.uppercase() },
-            current = current?.let { "${format(it)}$unit" } ?: "—",
-            heat = if (dual) "${format(low)}$unit" else "${format(target)}$unit",
-            cool = if (dual) "${format(high)}$unit" else "${format(target)}$unit",
-            selectedTarget = selected,
-            onTargetSelected = {
-                selectedClimateTarget[climate.entityId] = it
-                scheduleEntityRefresh(climate.entityId)
-            },
-        ), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
-        addView(LinearLayout(context).apply {
-            gravity = Gravity.CENTER
-            val step = temperatureStep(climate)
-            addView(roundActionButton("−", 42) {
-                if (!dual) changeTemperature(climate, target - step)
-                else if (selected == "heat") changeTemperatureRange(climate, low - step, high)
-                else changeTemperatureRange(climate, low, (high - step).coerceAtLeast(low + step))
-            })
-            addView(secondaryText(if (dual) "Tap a temperature, then adjust" else "Adjust target temperature").apply {
-                gravity = Gravity.CENTER
-                textSize = 11f
-            }, LayoutParams(dp(170), LayoutParams.WRAP_CONTENT))
-            addView(roundActionButton("+", 42) {
-                if (!dual) changeTemperature(climate, target + step)
-                else if (selected == "heat") changeTemperatureRange(climate, (low + step).coerceAtMost(high - step), high)
-                else changeTemperatureRange(climate, low, high + step)
-            })
-        }, LayoutParams(LayoutParams.MATCH_PARENT, dp(44)))
     }
 
     private fun targetSelector(
@@ -454,50 +413,6 @@ class PanelDashboardView(
             addView(roundActionButton("−", 40, decrease))
             addView(roundActionButton("+", 40, increase))
         })
-    }
-
-    private fun thermostatModes(climate: EntityState): View {
-        val configured = climate.attributes.optJSONArray("hvac_modes")
-        val available = if (configured != null) {
-            buildList { for (index in 0 until configured.length()) add(configured.optString(index)) }
-        } else {
-            listOf(climate.state, "off").distinct()
-        }
-        val ordered = listOf("heat", "cool", "heat_cool", "fan_only", "dry", "off").filter(available::contains)
-        return LinearLayout(context).apply {
-            gravity = Gravity.CENTER
-            ordered.forEach { mode ->
-                val active = climate.state == mode
-                addView(Button(context).apply {
-                    text = when (mode) {
-                        "heat" -> "☀\nHeat"
-                        "cool" -> "❄\nCool"
-                        "heat_cool" -> "↔\nAuto"
-                        "fan_only" -> "≋\nFan"
-                        "dry" -> "◌\nDry"
-                        else -> "○\nOff"
-                    }
-                    textSize = 10f
-                    gravity = Gravity.CENTER
-                    isAllCaps = false
-                    minWidth = 0
-                    minimumWidth = 0
-                    setPadding(dp(2), 0, dp(2), 0)
-                    setTextColor(if (active) ACCENT else MUTED)
-                    background = cardBackground(if (active) ACCENT_WASH else PanelTheme.panel, if (active) ACCENT_WASH else PanelTheme.line, 13)
-                    isEnabled = online
-                    alpha = if (online) 1f else .55f
-                    setOnClickListener {
-                        callService(
-                            "climate",
-                            "set_hvac_mode",
-                            climate.entityId,
-                            JSONObject().put("hvac_mode", mode),
-                        )
-                    }
-                }, LayoutParams(0, dp(48), 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
-            }
-        }
     }
 
     private fun weatherPage(title: String, widget: DashboardWidget): View {
