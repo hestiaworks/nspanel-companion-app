@@ -13,6 +13,20 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.widget.FrameLayout
 import android.widget.TextView
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONObject
+import java.util.concurrent.TimeUnit
+
+/**
+ * Choose which stream URL to play.
+ *
+ * Scrypted stream URLs are session scoped, so one resolved from the bridge now
+ * is always preferred. The stored URL is the manual rebroadcast override, and
+ * the only thing available when the bridge cannot be reached.
+ */
+internal fun chooseStreamSource(fresh: String?, stored: String?): String =
+    fresh?.takeIf(String::isNotBlank) ?: stored.orEmpty()
 
 /** Lightweight page-scoped RTSP player backed by Scrypted's prebuffered stream. */
 class CameraPageView(
@@ -22,6 +36,10 @@ class CameraPageView(
 ) : FrameLayout(context), SurfaceHolder.Callback {
     private val surface = SurfaceView(context)
     private val handler = Handler(Looper.getMainLooper())
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.SECONDS)
+        .build()
     private val status = TextView(context).apply {
         setTextColor(Color.WHITE)
         textSize = 12f
@@ -68,12 +86,50 @@ class CameraPageView(
     }
 
     private fun startPlayer(holder: SurfaceHolder) {
-        val source = widget.streamBaseUrl?.takeIf(String::isNotBlank) ?: return
         if (player != null || !holder.surface.isValid) return
-        releasePlayer()
-        Log.i(TAG, "Starting camera stream ${Uri.parse(source).host}:${Uri.parse(source).port}")
         status.alpha = 1f
         status.text = "Connecting to Scrypted prebuffer…"
+        resolveSource { source ->
+            if (!attached || player != null || !holder.surface.isValid) return@resolveSource
+            if (source.isBlank()) {
+                status.text = "Camera not configured"
+                return@resolveSource
+            }
+            beginPlayback(holder, source)
+        }
+    }
+
+    /** Ask the bridge where the stream is now, falling back to what the layout carries. */
+    private fun resolveSource(onResolved: (String) -> Unit) {
+        val endpoint = widget.talkbackUrl?.takeIf(String::isNotBlank)
+        val key = widget.talkbackKey?.takeIf(String::isNotBlank)
+        val stored = widget.streamBaseUrl
+        if (endpoint == null || key == null) {
+            onResolved(chooseStreamSource(null, stored))
+            return
+        }
+        Thread {
+            val fresh = runCatching {
+                val request = Request.Builder()
+                    .url(endpoint)
+                    .header("Authorization", "Bearer $key")
+                    .get()
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@use ""
+                    JSONObject(response.body?.string().orEmpty()).optString("video_url")
+                }
+            }.getOrElse {
+                Log.w(TAG, "Could not resolve a current stream URL: ${it.message}")
+                ""
+            }
+            handler.post { onResolved(chooseStreamSource(fresh, stored)) }
+        }.start()
+    }
+
+    private fun beginPlayback(holder: SurfaceHolder, source: String) {
+        releasePlayer()
+        Log.i(TAG, "Starting camera stream ${Uri.parse(source).host}:${Uri.parse(source).port}")
         player = MediaPlayer().apply {
             setDisplay(holder)
             setAudioStreamType(AudioManager.STREAM_MUSIC)
