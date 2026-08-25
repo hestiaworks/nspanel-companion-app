@@ -26,6 +26,7 @@
 | `ui/model/WeatherModel.kt` (create) | `EntityState` → `WeatherModel`; pure, no Android imports |
 | `ui/theme/PanelColors.kt` (create) | Colour tokens and `LocalPanelColors` |
 | `ui/components/Surfaces.kt` (create) | `PanelCard`, `PanelText` |
+| `ui/ComposeHost.kt` (create) | Lifecycle owner for the window root, moved out of the spike file |
 | `ui/pages/WeatherPage.kt` (create) | Renders a `WeatherModel` |
 | `PanelDashboardView.kt` (modify) | `weatherPage()` delegates to Compose |
 | `ComposeWeatherPage.kt` (delete) | Spike file, replaced by the above |
@@ -645,13 +646,68 @@ fun weatherPageView(context: Context, model: WeatherModel, dark: Boolean): View 
     }
 ```
 
-- [ ] **Step 2: Delete the spike file**
+- [ ] **Step 2: Move the lifecycle host out of the spike file**
+
+`MainActivity` calls `installComposeHost`, which lives in the spike file that
+the next step deletes. Create
+`android/src/main/java/dev/hacompanion/panel/ui/ComposeHost.kt` with it, moved
+unchanged:
+
+```kotlin
+package dev.hacompanion.panel.ui
+
+import android.view.View
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.savedstate.SavedStateRegistry
+import androidx.savedstate.SavedStateRegistryController
+import androidx.savedstate.SavedStateRegistryOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+
+/**
+ * ComposeView requires a ViewTreeLifecycleOwner and a
+ * ViewTreeSavedStateRegistryOwner, which the framework Activity this app uses
+ * never provides. Supplying a small owner keeps MainActivity's base class as it
+ * is, rather than reworking the kiosk Activity to host Compose.
+ */
+private class ComposeHost : LifecycleOwner, SavedStateRegistryOwner {
+    private val registry = LifecycleRegistry(this)
+    private val savedState = SavedStateRegistryController.create(this)
+
+    override val lifecycle: Lifecycle get() = registry
+    override val savedStateRegistry: SavedStateRegistry get() = savedState.savedStateRegistry
+
+    fun resume() {
+        // Restoration has to happen before the lifecycle moves past INITIALIZED.
+        savedState.performRestore(null)
+        registry.currentState = Lifecycle.State.RESUMED
+    }
+}
+
+/**
+ * Compose creates its recomposer per window and resolves the lifecycle owner
+ * from the window's root view, so installing it on a ComposeView is too low in
+ * the tree. Call once from the Activity against its decor view.
+ */
+fun installComposeHost(root: View) {
+    val host = ComposeHost()
+    host.resume()
+    root.setViewTreeLifecycleOwner(host)
+    root.setViewTreeSavedStateRegistryOwner(host)
+}
+```
+
+Then add `import dev.hacompanion.panel.ui.installComposeHost` to `MainActivity.kt`.
+
+- [ ] **Step 3: Delete the spike file**
 
 ```bash
 git rm android/src/main/java/dev/hacompanion/panel/ComposeWeatherPage.kt
 ```
 
-- [ ] **Step 3: Point the dashboard at it**
+- [ ] **Step 4: Point the dashboard at it**
 
 In `PanelDashboardView.weatherPage(...)`, replace the whole body — including the spike's early `return composeWeatherPage(...)` and the `@Suppress("UNREACHABLE_CODE")` marker — with:
 
@@ -681,12 +737,12 @@ and set it inside `apply(...)`, at the top of the function body:
 
 Add the imports `dev.hacompanion.panel.ui.model.weatherModel` and `dev.hacompanion.panel.ui.pages.weatherPageView` to `PanelDashboardView.kt`.
 
-- [ ] **Step 4: Verify it compiles and the suite passes**
+- [ ] **Step 5: Verify it compiles and the suite passes**
 
 Run: `./gradlew :android:testDebugUnitTest :android:assembleDebug`
 Expected: BUILD SUCCESSFUL, all tests pass.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add -A
