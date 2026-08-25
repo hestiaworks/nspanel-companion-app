@@ -16,9 +16,12 @@ object PanelTheme {
     var accentWash: Int = Color.rgb(248, 224, 210); private set
     var line: Int = Color.rgb(218, 219, 214); private set
     var disabled: Int = Color.rgb(176, 179, 174); private set
+    /** Exposed so Compose pages can follow the same theme the views use. */
+    var isDark: Boolean = false; private set
 
     fun apply(mode: String, inheritedDark: Boolean) {
         val dark = mode == "dark" || mode == "inherit" && inheritedDark
+        isDark = dark
         if (dark) {
             canvas = Color.rgb(18, 19, 18)
             panel = Color.rgb(30, 31, 29)

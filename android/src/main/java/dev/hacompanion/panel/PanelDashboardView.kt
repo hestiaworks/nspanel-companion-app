@@ -1,5 +1,8 @@
 package dev.hacompanion.panel
 
+import dev.hacompanion.panel.ui.model.weatherModel
+import dev.hacompanion.panel.ui.pages.weatherPageView
+
 import android.content.Context
 import android.app.Dialog
 import android.graphics.Color
@@ -493,164 +496,19 @@ class PanelDashboardView(
     private fun weatherPage(title: String, widget: DashboardWidget): View {
         val weather = resolveEntity(widget, "weather")
             ?: return emptyPage(title, "No weather entity found")
-        val temperature = weather.numberAttribute("temperature")
-        val humidity = weather.numberAttribute("humidity")
-        val unit = weather.attributes.optString("temperature_unit", "°").let { if (it.contains('°')) "°" else it }
-        val forecastDays = widget.forecastDays
-        val daily = forecastPeriods(weather, "forecast").take(forecastDays)
-        val hourly = forecastPeriods(weather, "hourly_forecast").take(6)
-
-        // SPIKE: render this page with Compose so its runtime cost is measurable.
-        // Replaces the hand-built tree below; revert with the branch.
-        return composeWeatherPage(context, ComposeWeather(
-            symbol = weatherSymbol(weather.state),
-            temperature = temperature?.let { "${format(it)}$unit" } ?: "—",
-            condition = weather.state.replace('-', ' ').replaceFirstChar { it.uppercase() },
-            detail = buildString {
-                append("Feels like ")
-                append(weather.numberAttribute("apparent_temperature")?.let(::format) ?: temperature?.let(::format) ?: "—")
-                append(unit)
-                humidity?.let { append(" · ${format(it)}%") }
-            },
-            daily = daily.map { period ->
-                ComposeForecast(
-                    label = period.label,
-                    symbol = weatherSymbol(period.condition),
-                    low = period.low?.let { "${format(it)}$unit" } ?: "—",
-                    high = period.high?.let { "${format(it)}$unit" } ?: "—",
-                )
-            },
-        ))
-
-        @Suppress("UNREACHABLE_CODE")
+        // verticalPage draws the page title, which carries the long press that
+        // opens the administrator screen. Only the content below it is Compose.
         return verticalPage(title).apply {
             addView(
-                LinearLayout(context).apply {
-                    orientation = HORIZONTAL
-                    addView(LinearLayout(context).apply {
-                        orientation = VERTICAL
-                        gravity = Gravity.CENTER_HORIZONTAL
-                        background = cardBackground(CARD, CARD_EDGE, 20)
-                        setPadding(dp(12), dp(10), dp(12), dp(10))
-                        addView(primaryText(weatherSymbol(weather.state), 50f).apply { gravity = Gravity.CENTER })
-                        addView(primaryText(temperature?.let { "${format(it)}$unit" } ?: "—", 48f).apply {
-                            typeface = Typeface.DEFAULT_BOLD
-                            gravity = Gravity.CENTER
-                        })
-                        addView(primaryText(weather.state.replace('-', ' ').replaceFirstChar { it.uppercase() }, 18f).apply {
-                            typeface = Typeface.DEFAULT_BOLD
-                            gravity = Gravity.CENTER
-                            maxLines = 1
-                            ellipsize = TextUtils.TruncateAt.END
-                        })
-                        addView(secondaryText(buildString {
-                            append("Feels like ")
-                            append(weather.numberAttribute("apparent_temperature")?.let(::format) ?: temperature?.let(::format) ?: "—")
-                            append(unit)
-                            humidity?.let { append(" · ${format(it)}%") }
-                        }).apply {
-                            textSize = 13f
-                            gravity = Gravity.CENTER
-                            maxLines = 2
-                        })
-                    }, LayoutParams(0, LayoutParams.MATCH_PARENT, if (forecastDays == 1) 1.15f else 1f).apply { rightMargin = dp(4) })
-                    addView(
-                        LinearLayout(context).apply {
-                            orientation = VERTICAL
-                            daily.forEach { period ->
-                                addView(dailyForecastRow(period, unit), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f).apply {
-                                    bottomMargin = dp(4)
-                                })
-                            }
-                        }, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f).apply { leftMargin = dp(4) },
-                    )
-                }, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f),
-            )
-            if (widget.showHourly && hourly.isNotEmpty()) addView(
-                hourlyForecastCard(weather, hourly, unit),
-                LayoutParams(LayoutParams.MATCH_PARENT, dp(104)).apply { topMargin = dp(7) },
+                weatherPageView(
+                    context,
+                    weatherModel(weather, widget.forecastDays, widget.showHourly),
+                    PanelTheme.isDark,
+                ),
+                LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f),
             )
         }
     }
-
-    private fun dailyForecastRow(period: ForecastPeriod, unit: String): View =
-        LinearLayout(context).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            background = cardBackground(CARD, CARD_EDGE, 15)
-            setPadding(dp(9), dp(5), dp(9), dp(5))
-            addView(primaryText(period.label, 11f).apply { typeface = Typeface.DEFAULT_BOLD }, LayoutParams(dp(42), LayoutParams.WRAP_CONTENT))
-            addView(primaryText(weatherSymbol(period.condition), 19f).apply { gravity = Gravity.CENTER }, LayoutParams(dp(30), LayoutParams.WRAP_CONTENT))
-            addView(secondaryText(period.low?.let { "${format(it)}$unit" } ?: "—").apply {
-                textSize = 14f
-                gravity = Gravity.END
-            }, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
-            addView(primaryText(period.high?.let { "${format(it)}$unit" } ?: "—", 13f).apply {
-                typeface = Typeface.DEFAULT_BOLD
-                gravity = Gravity.END
-            }, LayoutParams(dp(38), LayoutParams.WRAP_CONTENT))
-        }
-
-    private fun hourlyForecastCard(
-        weather: EntityState,
-        hourly: List<ForecastPeriod>,
-        unit: String,
-    ): View = LinearLayout(context).apply {
-        orientation = VERTICAL
-        background = cardBackground(CARD, CARD_EDGE, 19)
-        setPadding(dp(10), dp(7), dp(10), dp(7))
-        addView(secondaryText(weather.attributes.optString("forecast_summary").ifBlank {
-            "${weather.state.replace('-', ' ').replaceFirstChar { it.uppercase() }} conditions continue."
-        }).apply {
-            textSize = 14f
-            maxLines = 2
-            ellipsize = TextUtils.TruncateAt.END
-        })
-        addView(LinearLayout(context).apply {
-            hourly.forEach { period ->
-                addView(LinearLayout(context).apply {
-                    orientation = VERTICAL
-                    gravity = Gravity.CENTER
-                    addView(secondaryText(period.label).apply { textSize = 9f; gravity = Gravity.CENTER })
-                    addView(primaryText(weatherSymbol(period.condition), 18f).apply { gravity = Gravity.CENTER })
-                    addView(primaryText(period.high?.let { "${format(it)}$unit" } ?: "—", 13f).apply {
-                        typeface = Typeface.DEFAULT_BOLD
-                        gravity = Gravity.CENTER
-                    })
-                }, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
-            }
-        }, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f).apply { topMargin = dp(4) })
-    }
-
-    private fun forecastPeriods(weather: EntityState, attribute: String): List<ForecastPeriod> {
-        val values = weather.attributes.optJSONArray(attribute) ?: return emptyList()
-        return buildList {
-            for (index in 0 until values.length()) {
-                val item = values.optJSONObject(index) ?: continue
-                add(ForecastPeriod(
-                    label = item.optString("label").ifBlank {
-                        forecastLabel(item.optString("datetime"), index, attribute == "hourly_forecast")
-                    },
-                    condition = item.optString("condition", weather.state),
-                    high = item.optDouble("temperature", Double.NaN).takeUnless(Double::isNaN),
-                    low = item.optDouble("templow", Double.NaN).takeUnless(Double::isNaN),
-                ))
-            }
-        }
-    }
-
-    private fun forecastLabel(datetime: String, index: Int, hourly: Boolean): String = runCatching {
-        val value = OffsetDateTime.parse(datetime)
-        if (hourly) {
-            if (index == 0) "Now" else value.format(DateTimeFormatter.ofPattern("HH", Locale.getDefault()))
-        } else if (index == 0) "Today" else value.format(DateTimeFormatter.ofPattern("EEE", Locale.getDefault()))
-    }.getOrElse { if (index == 0) if (hourly) "Now" else "Today" else "+$index" }
-
-    private data class ForecastPeriod(
-        val label: String,
-        val condition: String,
-        val high: Double?,
-        val low: Double?,
-    )
 
     private fun controlsPage(page: DashboardPage): View {
         val configured = page.widgets.mapNotNull { widget ->
@@ -1430,25 +1288,6 @@ class PanelDashboardView(
             setTextColor(PanelTheme.ink)
             setOnClickListener { action() }
         }
-
-    private fun weatherSymbol(condition: String): String = when (condition.lowercase()) {
-        "sunny", "clear-night" -> if (condition == "clear-night") "☾" else "☀"
-        "cloudy", "partlycloudy" -> "☁"
-        "rainy", "pouring", "lightning-rainy" -> "☂"
-        "snowy", "snowy-rainy" -> "❄"
-        "fog" -> "≋"
-        else -> "◌"
-    }
-
-    private fun weatherAge(entityId: String): String {
-        val elapsedMinutes = ((System.currentTimeMillis() - (weatherUpdatedAt[entityId] ?: 0L)) / 60_000L).coerceAtLeast(0)
-        return when {
-            elapsedMinutes < 1 -> "just now"
-            elapsedMinutes < 60 -> "${elapsedMinutes}m ago"
-            elapsedMinutes < 1_440 -> "${elapsedMinutes / 60}h ago"
-            else -> "${elapsedMinutes / 1_440}d ago"
-        }
-    }
 
     private fun cardBackground(
         color: Int,
