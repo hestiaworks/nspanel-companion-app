@@ -180,6 +180,22 @@ class WeatherModelTest {
     }
 
     @Test
+    fun fallsBackToAGeneratedSummary() {
+        assertEquals(
+            "Sunny conditions continue.",
+            weatherModel(weather("""{}""", "sunny"), 5, false).summary,
+        )
+    }
+
+    @Test
+    fun prefersTheSummaryTheIntegrationSupplies() {
+        assertEquals(
+            "Rain arriving this evening.",
+            weatherModel(weather("""{"forecast_summary":"Rain arriving this evening."}"""), 5, false).summary,
+        )
+    }
+
+    @Test
     fun survivesAnEmptyForecast() {
         val model = weatherModel(weather("""{"forecast":[]}"""), 5, true)
         assertEquals(0, model.daily.size)
@@ -225,6 +241,7 @@ data class WeatherModel(
     val temperature: String,
     val condition: String,
     val detail: String,
+    val summary: String,
     val daily: List<ForecastEntry>,
     val hourly: List<ForecastEntry>,
 )
@@ -291,6 +308,9 @@ fun weatherModel(entity: EntityState, forecastDays: Int, showHourly: Boolean): W
             append(unit)
             humidity?.let { append(" · ${formatNumber(it)}%") }
         },
+        summary = entity.attributes.optString("forecast_summary").ifBlank {
+            "${entity.state.replace('-', ' ').replaceFirstChar { it.uppercase() }} conditions continue."
+        },
         daily = entries(entity, "forecast", forecastDays),
         hourly = if (showHourly) entries(entity, "hourly_forecast", 6) else emptyList(),
     )
@@ -300,7 +320,7 @@ fun weatherModel(entity: EntityState, forecastDays: Int, showHourly: Boolean): W
 - [ ] **Step 4: Run the tests and watch them pass**
 
 Run: `./gradlew :android:testDebugUnitTest --tests '*WeatherModelTest*'`
-Expected: PASS, 11 tests.
+Expected: PASS, 13 tests.
 
 - [ ] **Step 5: Run the whole suite**
 
@@ -575,6 +595,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -591,7 +612,20 @@ import dev.hacompanion.panel.ui.theme.PanelThemeProvider
 
 @Composable
 fun WeatherPage(model: WeatherModel) {
-    Row(Modifier.fillMaxSize().padding(8.dp)) {
+    Column(Modifier.fillMaxSize()) {
+        WeatherSummaryRow(Modifier.fillMaxWidth().weight(1f), model)
+        if (model.hourly.isNotEmpty()) {
+            HourlyForecastCard(
+                Modifier.fillMaxWidth().height(104.dp).padding(top = 7.dp),
+                model,
+            )
+        }
+    }
+}
+
+@Composable
+private fun WeatherSummaryRow(modifier: Modifier, model: WeatherModel) {
+    Row(modifier) {
         PanelCard(Modifier.weight(1f).fillMaxSize(), radius = 20.dp) {
             Column(
                 Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 10.dp),
@@ -620,6 +654,28 @@ fun WeatherPage(model: WeatherModel) {
                         }
                         PanelText(entry.low, 13.sp, muted = true)
                         PanelText("  ${entry.high}", 13.sp, bold = true)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HourlyForecastCard(modifier: Modifier, model: WeatherModel) {
+    PanelCard(modifier, radius = 19.dp) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 7.dp)) {
+            PanelText(model.summary, 14.sp, muted = true, maxLines = 2)
+            Row(Modifier.fillMaxWidth().weight(1f).padding(top = 4.dp)) {
+                model.hourly.forEach { entry ->
+                    Column(
+                        Modifier.weight(1f).fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        PanelText(entry.label, 9.sp, muted = true, align = TextAlign.Center)
+                        PanelText(entry.symbol, 18.sp, align = TextAlign.Center)
+                        PanelText(entry.high, 13.sp, bold = true, align = TextAlign.Center)
                     }
                 }
             }
@@ -715,11 +771,18 @@ In `PanelDashboardView.weatherPage(...)`, replace the whole body — including t
     private fun weatherPage(title: String, widget: DashboardWidget): View {
         val weather = resolveEntity(widget, "weather")
             ?: return emptyPage(title, "No weather entity found")
-        return weatherPageView(
-            context,
-            weatherModel(weather, widget.forecastDays, widget.showHourly),
-            PanelTheme.isDark,
-        )
+        // verticalPage draws the page title, which carries the long press that
+        // opens the administrator screen. Only the content below it is Compose.
+        return verticalPage(title).apply {
+            addView(
+                weatherPageView(
+                    context,
+                    weatherModel(weather, widget.forecastDays, widget.showHourly),
+                    PanelTheme.isDark,
+                ),
+                LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f),
+            )
+        }
     }
 ```
 
