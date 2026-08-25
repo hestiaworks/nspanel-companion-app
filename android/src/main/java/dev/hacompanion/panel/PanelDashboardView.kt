@@ -1,5 +1,6 @@
 package dev.hacompanion.panel
 
+import androidx.compose.runtime.mutableStateOf
 import dev.hacompanion.panel.ui.model.controlTile
 import dev.hacompanion.panel.ui.model.sensorTile
 import dev.hacompanion.panel.ui.model.weatherModel
@@ -8,12 +9,12 @@ import dev.hacompanion.panel.ui.pages.generalPageView
 import dev.hacompanion.panel.ui.pages.weatherPageView
 
 import android.content.Context
+import android.util.Log
 import android.app.Dialog
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.text.TextUtils
-import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -1048,13 +1049,21 @@ class PanelDashboardView(
 
     private fun generalPage(page: DashboardPage): View = verticalPage(page.title).apply {
         val compact = page.widgets.filter { it.type in setOf("entity_button", "sensor") }
-        val tiles = compact.map { widget ->
+        fun buildTiles(): List<PageTile> = compact.map { widget ->
             val entity = resolveEntity(widget)
             when {
                 entity == null -> PageTile.Missing(widget.label ?: widget.entityId.orEmpty())
                 widget.type == "entity_button" -> PageTile.Control(controlTile(entity, widget.label))
                 else -> PageTile.Reading(sensorTile(entity, widget.label))
             }
+        }
+        // An entity update rewrites the tiles and lets Compose recompose, rather
+        // than tearing the page down and building it again as boundEntityView
+        // does for the pages that are still views.
+        val tiles = mutableStateOf(buildTiles())
+        compact.mapNotNull { it.entityId }.distinct().forEach { entityId ->
+            entityBindings.getOrPut(entityId, ::mutableListOf)
+                .add(EntityBinding { tiles.value = buildTiles() })
         }
         addView(
             generalPageView(context, tiles, online, PanelTheme.isDark) { entityId ->

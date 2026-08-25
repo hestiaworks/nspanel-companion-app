@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -104,7 +105,7 @@ private fun Tile(tile: PageTile, online: Boolean, onToggle: (String) -> Unit) {
 /** Hosts the page in a View so the existing pager can hold it. */
 fun generalPageView(
     context: Context,
-    tiles: List<PageTile>,
+    tiles: State<List<PageTile>>,
     online: Boolean,
     dark: Boolean,
     onToggle: (String) -> Unit,
@@ -112,7 +113,9 @@ fun generalPageView(
     setContent {
         PanelThemeProvider(dark) {
             Box(Modifier.fillMaxSize().background(LocalPanelColors.current.canvas)) {
-                GeneralPage(tiles, online, onToggle)
+                // Reading the state here is what makes an entity update a
+                // recomposition rather than a rebuilt page.
+                GeneralPage(tiles.value, online, onToggle)
             }
         }
     }
