@@ -367,54 +367,6 @@ class PanelDashboardView(
         }
     }
 
-    private fun targetSelector(
-        label: String,
-        value: Double,
-        unit: String,
-        selected: Boolean,
-        color: Int,
-        action: () -> Unit,
-    ): View = LinearLayout(context).apply {
-        gravity = Gravity.CENTER_VERTICAL
-        background = cardBackground(if (selected) PanelTheme.accentWash else PanelTheme.panel, if (selected) color else PanelTheme.line, 14)
-        setPadding(dp(10), dp(5), dp(10), dp(5))
-        addView(eyebrow(label).apply { textSize = 8f }, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
-        addView(primaryText("${format(value)}$unit", 24f).apply {
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(if (selected) color else PanelTheme.ink)
-        })
-        isClickable = true
-        isFocusable = true
-        setOnClickListener { action() }
-    }
-
-    private fun dualSetpointCard(
-        label: String,
-        value: Double,
-        unit: String,
-        decrease: () -> Unit,
-        increase: () -> Unit,
-    ): View = LinearLayout(context).apply {
-        orientation = VERTICAL
-        gravity = Gravity.CENTER
-        background = cardBackground(PanelTheme.panel, PanelTheme.line, 16)
-        setPadding(dp(4), dp(6), dp(4), dp(5))
-        addView(eyebrow(label).apply {
-            textSize = 9f
-            gravity = Gravity.CENTER
-            maxLines = 1
-        })
-        addView(primaryText("${format(value)}$unit", 30f).apply {
-            gravity = Gravity.CENTER
-            typeface = Typeface.DEFAULT_BOLD
-        })
-        addView(LinearLayout(context).apply {
-            gravity = Gravity.CENTER
-            addView(roundActionButton("−", 40, decrease))
-            addView(roundActionButton("+", 40, increase))
-        })
-    }
-
     private fun weatherPage(title: String, widget: DashboardWidget): View {
         if (resolveEntity(widget, "weather") == null) {
             return emptyPage(title, "No weather entity found")
@@ -1104,37 +1056,6 @@ class PanelDashboardView(
         typeface = Typeface.DEFAULT_BOLD
     }
 
-    private fun metricBlock(label: String, value: String, size: Float): View =
-        LinearLayout(context).apply {
-            orientation = VERTICAL
-            gravity = Gravity.CENTER
-            addView(eyebrow(label))
-            addView(primaryText(value, size).apply {
-                gravity = Gravity.CENTER
-                typeface = Typeface.DEFAULT_BOLD
-            })
-        }
-
-    private fun metricCard(label: String, value: String): LinearLayout =
-        LinearLayout(context).apply {
-            orientation = VERTICAL
-            setPadding(dp(14), dp(9), dp(14), dp(9))
-            background = cardBackground(CARD)
-            addView(eyebrow(label))
-            addView(primaryText(value, 20f).apply { typeface = Typeface.DEFAULT_BOLD })
-        }
-
-    private fun statusPill(label: String, active: Boolean): TextView =
-        TextView(context).apply {
-            text = "${if (active) "●" else "○"}  ${label.uppercase()}"
-            textSize = 12f
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            setTextColor(if (active) ACCENT else MUTED)
-            background = cardBackground(if (active) ACCENT_WASH else CARD)
-            setPadding(dp(12), dp(7), dp(12), dp(7))
-        }
-
     private fun roundActionButton(
         label: String,
         size: Int = 48,
@@ -1155,32 +1076,11 @@ class PanelDashboardView(
             layoutParams = LayoutParams(dp(size), dp(size)).apply { setMargins(dp(5), 0, dp(5), 0) }
         }
 
-    private fun navButton(label: String, action: () -> Unit): Button =
-        Button(context).apply {
-            text = label
-            textSize = 22f
-            isAllCaps = false
-            minWidth = 0
-            minimumWidth = 0
-            setPadding(dp(12), 0, dp(12), 0)
-            background = cardBackground(CARD)
-            setTextColor(PanelTheme.ink)
-            setOnClickListener { action() }
-        }
-
     private fun cardBackground(
         color: Int,
         stroke: Int = CARD_EDGE,
         radius: Int = 18,
     ): GradientDrawable = PanelTheme.rounded(context, color, radius, stroke)
-
-    private fun actionButton(label: String, action: () -> Unit): Button =
-        Button(context).apply {
-            text = label
-            textSize = 24f
-            isAllCaps = false
-            setOnClickListener { action() }
-        }
 
     private fun format(value: Double): String =
         if (value == value.roundToInt().toDouble()) value.roundToInt().toString()
