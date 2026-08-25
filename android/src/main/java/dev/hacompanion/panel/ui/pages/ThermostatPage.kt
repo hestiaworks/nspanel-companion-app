@@ -35,6 +35,10 @@ import dev.hacompanion.panel.ui.model.ThermostatModel
 import dev.hacompanion.panel.ui.model.resolveEntity
 import dev.hacompanion.panel.ui.model.thermostatModel
 import dev.hacompanion.panel.ui.theme.LocalPanelColors
+import dev.hacompanion.panel.ui.theme.LocalPanelRadius
+import dev.hacompanion.panel.ui.theme.LocalPanelSize
+import dev.hacompanion.panel.ui.theme.LocalPanelSpace
+import dev.hacompanion.panel.ui.theme.LocalPanelType
 import dev.hacompanion.panel.ui.theme.PanelThemeProvider
 
 @Composable
@@ -47,8 +51,12 @@ fun ThermostatPage(
     onMode: (String) -> Unit,
 ) {
     val colors = LocalPanelColors.current
+    val type = LocalPanelType.current
+    val space = LocalPanelSpace.current
+    val radius = LocalPanelRadius.current
+    val size = LocalPanelSize.current
     PanelCard(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 12.dp)) {
+        Column(Modifier.fillMaxSize().padding(horizontal = space.thermostatInsetX, vertical = space.cardInsetWide)) {
             Header(model)
             Box(Modifier.fillMaxWidth().weight(1f)) {
                 // The dial is Canvas drawing either way, so it stays the view
@@ -73,34 +81,34 @@ fun ThermostatPage(
                 }
             }
             Row(
-                Modifier.fillMaxWidth().height(44.dp),
+                Modifier.fillMaxWidth().height(size.stepRow),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 StepButton("−", online) { onStep(false) }
                 PanelText(
-                    model.hint, 11.sp, Modifier.width(170.dp),
+                    model.hint, type.label, Modifier.width(size.thermostatHintWidth),
                     muted = true, align = TextAlign.Center,
                 )
                 StepButton("+", online) { onStep(true) }
             }
             Row(
-                Modifier.fillMaxWidth().padding(top = 6.dp),
+                Modifier.fillMaxWidth().padding(top = space.gapWide),
                 horizontalArrangement = Arrangement.Center,
             ) {
                 model.modes.forEach { mode ->
-                    val shape = RoundedCornerShape(13.dp)
+                    val shape = RoundedCornerShape(radius.action)
                     Column(
-                        Modifier.weight(1f).height(48.dp).padding(horizontal = 2.dp)
+                        Modifier.weight(1f).height(size.modeButtonHeight).padding(horizontal = space.tiny)
                             .background(if (mode.active) colors.accentWash else colors.panel, shape)
-                            .border(1.dp, if (mode.active) colors.accentWash else colors.line, shape)
+                            .border(size.stroke, if (mode.active) colors.accentWash else colors.line, shape)
                             .clickable(enabled = online) { onMode(mode.mode) },
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
                         val ink = if (mode.active) colors.accent else colors.muted
-                        PanelText(mode.glyph, 13.sp, color = ink, align = TextAlign.Center)
-                        PanelText(mode.label, 10.sp, color = ink, align = TextAlign.Center)
+                        PanelText(mode.glyph, type.modeGlyph, color = ink, align = TextAlign.Center)
+                        PanelText(mode.label, type.micro, color = ink, align = TextAlign.Center)
                     }
                 }
             }
@@ -111,18 +119,20 @@ fun ThermostatPage(
 @Composable
 private fun Header(model: ThermostatModel) {
     val colors = LocalPanelColors.current
+    val type = LocalPanelType.current
+    val space = LocalPanelSpace.current
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            PanelText(model.name, 18.sp, bold = true, maxLines = 1)
-            PanelText(model.action, 11.sp, muted = true, maxLines = 1)
+            PanelText(model.name, type.headline, bold = true, maxLines = 1)
+            PanelText(model.action, type.label, muted = true, maxLines = 1)
         }
         Box(
             Modifier
                 .background(if (model.powered) colors.accentWash else colors.cardSecondary, CircleShape)
-                .padding(horizontal = 12.dp, vertical = 7.dp),
+                .padding(horizontal = space.cardInsetWide, vertical = space.pillInsetY),
         ) {
             PanelText(
-                if (model.powered) "ON" else "OFF", 10.sp,
+                if (model.powered) "ON" else "OFF", type.micro,
                 bold = true, color = if (model.powered) colors.accent else colors.muted,
             )
         }
@@ -133,12 +143,12 @@ private fun Header(model: ThermostatModel) {
 private fun StepButton(glyph: String, online: Boolean, onClick: () -> Unit) {
     val colors = LocalPanelColors.current
     Box(
-        Modifier.size(42.dp)
+        Modifier.size(LocalPanelSize.current.stepButton)
             .background(colors.cardSecondary, CircleShape)
             .clickable(enabled = online) { onClick() },
         contentAlignment = Alignment.Center,
     ) {
-        PanelText(glyph, 20.sp)
+        PanelText(glyph, LocalPanelType.current.stepGlyph)
     }
 }
 
@@ -161,7 +171,7 @@ fun thermostatPageView(
                 if (climate != null) {
                     val selected = selectedTarget(climate.entityId)
                     ThermostatPage(
-                        model = thermostatModel(climate, selected, widget.label),
+                        model = thermostatModel(climate, widget.label),
                         selectedTarget = selected,
                         online = online,
                         onTargetSelected = { onTargetSelected(climate.entityId, it) },

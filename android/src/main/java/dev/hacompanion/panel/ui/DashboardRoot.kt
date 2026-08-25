@@ -41,6 +41,8 @@ import dev.hacompanion.panel.ui.pages.PageTile
 import dev.hacompanion.panel.ui.pages.ThermostatPage
 import dev.hacompanion.panel.ui.pages.WeatherPage
 import dev.hacompanion.panel.ui.theme.LocalPanelColors
+import dev.hacompanion.panel.ui.theme.LocalPanelSpace
+import dev.hacompanion.panel.ui.theme.LocalPanelType
 import dev.hacompanion.panel.ui.theme.PanelThemeProvider
 
 /**
@@ -154,7 +156,7 @@ private fun ThermostatBody(
     }
     val selected = actions.selectedClimateTarget(climate.entityId)
     ThermostatPage(
-        model = thermostatModel(climate, selected, widget.label),
+        model = thermostatModel(climate, widget.label),
         selectedTarget = selected,
         online = ui.online,
         onTargetSelected = { actions.selectClimateTarget(climate.entityId, it) },
@@ -211,15 +213,24 @@ private fun GeneralBody(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PageScaffold(title: String, onLongPress: () -> Unit, content: @Composable () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(start = 12.dp, top = 10.dp, end = 12.dp, bottom = 8.dp)) {
+    val type = LocalPanelType.current
+    val space = LocalPanelSpace.current
+    Column(
+        Modifier.fillMaxSize().padding(
+            start = space.pageStart,
+            top = space.pageTop,
+            end = space.pageStart,
+            bottom = space.pageBottom,
+        ),
+    ) {
         PanelText(
             title,
-            17.sp,
+            type.pageTitle,
             Modifier
                 .fillMaxWidth()
                 .semantics { contentDescription = "$title. Long press for administrator controls" }
                 .combinedClickable(onClick = {}, onLongClick = onLongPress)
-                .padding(start = 2.dp, bottom = 6.dp),
+                .padding(start = space.tiny, bottom = space.titleGap),
             bold = true,
             maxLines = 1,
         )
@@ -230,7 +241,7 @@ private fun PageScaffold(title: String, onLongPress: () -> Unit, content: @Compo
 @Composable
 private fun PageMessage(message: String) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        PanelText(message, 14.sp, muted = true, align = TextAlign.Center)
+        PanelText(message, LocalPanelType.current.body, muted = true, align = TextAlign.Center)
     }
 }
 
@@ -242,31 +253,42 @@ private fun EmptyPage(title: String, message: String) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun UnconfiguredPage(panelName: String, panelId: String, onLongPress: () -> Unit) {
+    val type = LocalPanelType.current
+    val space = LocalPanelSpace.current
     Column(
-        Modifier.fillMaxSize().padding(horizontal = 30.dp, vertical = 24.dp),
+        Modifier.fillMaxSize().padding(
+            horizontal = space.unconfiguredInsetX,
+            vertical = space.unconfiguredInsetY,
+        ),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         PanelText(
-            "NSPANEL COMPANION", 11.sp,
+            "NSPANEL COMPANION", type.label,
             muted = true, bold = true, align = TextAlign.Center,
-            letterSpacing = 0.1.sp,
+            letterSpacing = type.eyebrowTracking,
         )
         PanelText(
-            panelName, 28.sp, Modifier.padding(top = 10.dp, bottom = 8.dp),
+            panelName, type.panelName,
+            Modifier.padding(top = space.unconfiguredNameGap, bottom = space.columnGap),
             bold = true, align = TextAlign.Center,
         )
-        PanelText("Dashboard not configured", 18.sp, bold = true, align = TextAlign.Center)
+        PanelText("Dashboard not configured", type.headline, bold = true, align = TextAlign.Center)
         PanelText(
             "Open Home Assistant \u2192 NSPanel Companion, select this panel, and create its pages.",
-            14.sp,
-            Modifier.padding(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 18.dp),
+            type.body,
+            Modifier.padding(
+                start = space.unconfiguredTextInset,
+                top = space.unconfiguredNameGap,
+                end = space.unconfiguredTextInset,
+                bottom = space.unconfiguredBodyGap,
+            ),
             muted = true,
             align = TextAlign.Center,
         )
         // The only route to administration before a dashboard exists.
         PanelText(
-            panelId, 11.sp,
+            panelId, type.label,
             Modifier
                 .semantics { contentDescription = "Panel ID $panelId. Long press for administrator controls" }
                 .combinedClickable(onClick = {}, onLongClick = onLongPress),

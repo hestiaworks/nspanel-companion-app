@@ -42,7 +42,6 @@ private fun sentenceCase(value: String): String =
 
 fun thermostatModel(
     climate: EntityState,
-    selectedTarget: String,
     label: String?,
 ): ThermostatModel {
     val unit = climate.attributes.optString("temperature_unit", "°")

@@ -30,6 +30,10 @@ import dev.hacompanion.panel.ui.model.resolveEntity
 import dev.hacompanion.panel.ui.model.sensorTile
 import dev.hacompanion.panel.ui.model.SensorTile
 import dev.hacompanion.panel.ui.theme.LocalPanelColors
+import dev.hacompanion.panel.ui.theme.LocalPanelRadius
+import dev.hacompanion.panel.ui.theme.LocalPanelSize
+import dev.hacompanion.panel.ui.theme.LocalPanelSpace
+import dev.hacompanion.panel.ui.theme.LocalPanelType
 import dev.hacompanion.panel.ui.theme.PanelThemeProvider
 
 /** One cell of the page: a reading, something to toggle, or an entity that is gone. */
@@ -41,9 +45,11 @@ sealed interface PageTile {
 
 @Composable
 fun GeneralPage(tiles: List<PageTile>, online: Boolean, onToggle: (String) -> Unit) {
+    val space = LocalPanelSpace.current
+    val size = LocalPanelSize.current
     if (tiles.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            PanelText("This page has no widgets", 14.sp, muted = true)
+            PanelText("This page has no widgets", LocalPanelType.current.body, muted = true)
         }
         return
     }
@@ -51,12 +57,12 @@ fun GeneralPage(tiles: List<PageTile>, online: Boolean, onToggle: (String) -> Un
         tiles.chunked(2).forEach { row ->
             Row(Modifier.fillMaxWidth()) {
                 row.forEach { tile ->
-                    Box(Modifier.weight(1f).height(88.dp).padding(4.dp)) {
+                    Box(Modifier.weight(1f).height(size.tileHeight).padding(space.gap)) {
                         Tile(tile, online, onToggle)
                     }
                 }
                 // Keep a lone tile at half width rather than stretching it.
-                if (row.size == 1) Box(Modifier.weight(1f).height(88.dp))
+                if (row.size == 1) Box(Modifier.weight(1f).height(size.tileHeight))
             }
         }
     }
@@ -64,16 +70,25 @@ fun GeneralPage(tiles: List<PageTile>, online: Boolean, onToggle: (String) -> Un
 
 @Composable
 private fun Tile(tile: PageTile, online: Boolean, onToggle: (String) -> Unit) {
+    val type = LocalPanelType.current
+    val space = LocalPanelSpace.current
+    val radius = LocalPanelRadius.current
+    val size = LocalPanelSize.current
     val colors = LocalPanelColors.current
-    val shape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(radius.card)
     when (tile) {
         is PageTile.Reading -> Column(
-            Modifier.fillMaxSize().background(colors.card, shape).border(1.dp, colors.line, shape)
-                .padding(start = 14.dp, top = 8.dp, end = 10.dp, bottom = 8.dp),
+            Modifier.fillMaxSize().background(colors.card, shape).border(size.stroke, colors.line, shape)
+                .padding(
+                    start = space.tileInsetStart,
+                    top = space.tileInsetTop,
+                    end = space.tileInsetEnd,
+                    bottom = space.tileInsetTop,
+                ),
             verticalArrangement = Arrangement.Center,
         ) {
-            PanelText(tile.tile.label.uppercase(), 11.sp, muted = true, bold = true)
-            PanelText(tile.tile.value, 22.sp, bold = true)
+            PanelText(tile.tile.label.uppercase(), type.label, muted = true, bold = true)
+            PanelText(tile.tile.value, type.reading, bold = true)
         }
 
         is PageTile.Control -> {
@@ -82,26 +97,36 @@ private fun Tile(tile: PageTile, online: Boolean, onToggle: (String) -> Unit) {
                 Modifier.fillMaxSize()
                     .alpha(if (online) 1f else .55f)
                     .background(if (active) colors.accentWash else colors.card, shape)
-                    .border(1.dp, if (active) colors.accent else colors.line, shape)
+                    .border(size.stroke, if (active) colors.accent else colors.line, shape)
                     .then(
                         if (online) Modifier.clickable { onToggle(tile.tile.entityId) } else Modifier,
                     )
-                    .padding(start = 14.dp, top = 8.dp, end = 10.dp, bottom = 8.dp),
+                    .padding(
+                    start = space.tileInsetStart,
+                    top = space.tileInsetTop,
+                    end = space.tileInsetEnd,
+                    bottom = space.tileInsetTop,
+                ),
                 verticalArrangement = Arrangement.Center,
             ) {
-                PanelText("${tile.tile.marker}  ${tile.tile.label}", 14.sp)
-                PanelText(tile.tile.value, 14.sp)
+                PanelText("${tile.tile.marker}  ${tile.tile.label}", type.body)
+                PanelText(tile.tile.value, type.body)
             }
         }
 
         is PageTile.Missing -> Column(
             Modifier.fillMaxSize().alpha(.55f)
-                .background(colors.card, shape).border(1.dp, colors.line, shape)
-                .padding(start = 14.dp, top = 8.dp, end = 10.dp, bottom = 8.dp),
+                .background(colors.card, shape).border(size.stroke, colors.line, shape)
+                .padding(
+                    start = space.tileInsetStart,
+                    top = space.tileInsetTop,
+                    end = space.tileInsetEnd,
+                    bottom = space.tileInsetTop,
+                ),
             verticalArrangement = Arrangement.Center,
         ) {
-            PanelText(tile.label.uppercase(), 11.sp, muted = true, bold = true)
-            PanelText("Unavailable", 22.sp, bold = true)
+            PanelText(tile.label.uppercase(), type.label, muted = true, bold = true)
+            PanelText("Unavailable", type.reading, bold = true)
         }
     }
 }

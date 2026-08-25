@@ -18,21 +18,25 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.takeOrElse
 import dev.hacompanion.panel.ui.theme.LocalPanelColors
+import dev.hacompanion.panel.ui.theme.LocalPanelRadius
+import dev.hacompanion.panel.ui.theme.LocalPanelSize
+import dev.hacompanion.panel.ui.theme.LocalPanelType
 
 /** The rounded, outlined surface every widget sits on. */
 @Composable
 fun PanelCard(
     modifier: Modifier = Modifier,
-    radius: Dp = 18.dp,
+    radius: Dp = Dp.Unspecified,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val colors = LocalPanelColors.current
-    val shape = RoundedCornerShape(radius)
+    val shape = RoundedCornerShape(radius.takeOrElse { LocalPanelRadius.current.card })
     Column(
         modifier
             .background(colors.card, shape)
-            .border(1.dp, colors.line, shape),
+            .border(LocalPanelSize.current.stroke, colors.line, shape),
         content = content,
     )
 }
@@ -41,7 +45,7 @@ fun PanelCard(
 @Composable
 fun PanelText(
     text: String,
-    size: TextUnit = 14.sp,
+    size: TextUnit = TextUnit.Unspecified,
     modifier: Modifier = Modifier,
     bold: Boolean = false,
     muted: Boolean = false,
@@ -53,6 +57,7 @@ fun PanelText(
     maxLines: Int = Int.MAX_VALUE,
 ) {
     val colors = LocalPanelColors.current
+    val resolved = if (size == TextUnit.Unspecified) LocalPanelType.current.body else size
     BasicText(
         text = text,
         modifier = modifier,
@@ -60,7 +65,7 @@ fun PanelText(
         overflow = TextOverflow.Ellipsis,
         style = TextStyle(
             color = color ?: if (muted) colors.muted else colors.ink,
-            fontSize = size,
+            fontSize = resolved,
             fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
             textAlign = align,
             letterSpacing = letterSpacing,

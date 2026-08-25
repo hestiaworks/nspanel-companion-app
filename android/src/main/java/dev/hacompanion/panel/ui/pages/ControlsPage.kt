@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
@@ -37,6 +38,10 @@ import dev.hacompanion.panel.ui.model.ControlBody
 import dev.hacompanion.panel.ui.model.ControlCardModel
 import dev.hacompanion.panel.ui.model.controlCard
 import dev.hacompanion.panel.ui.theme.LocalPanelColors
+import dev.hacompanion.panel.ui.theme.LocalPanelRadius
+import dev.hacompanion.panel.ui.theme.LocalPanelSize
+import dev.hacompanion.panel.ui.theme.LocalPanelSpace
+import dev.hacompanion.panel.ui.theme.LocalPanelType
 import dev.hacompanion.panel.ui.theme.PanelThemeProvider
 
 /** What a control card can ask the dashboard to do. */
@@ -61,12 +66,13 @@ fun ControlsPage(
     online: Boolean,
     actions: ControlActions,
 ) {
+    val space = LocalPanelSpace.current
     Column(Modifier.fillMaxSize()) {
         cards.chunked(2).forEach { row ->
             Row(Modifier.fillMaxWidth().weight(1f)) {
                 row.forEach { card ->
                     key(card.entityId) {
-                        Box(Modifier.weight(1f).fillMaxSize().padding(4.dp)) {
+                        Box(Modifier.weight(1f).fillMaxSize().padding(space.gap)) {
                             ControlCard(card, online, actions)
                         }
                     }
@@ -81,19 +87,23 @@ fun ControlsPage(
 
 @Composable
 private fun ControlCard(card: ControlCardModel, online: Boolean, actions: ControlActions) {
+    val type = LocalPanelType.current
+    val space = LocalPanelSpace.current
+    val radius = LocalPanelRadius.current
+    val size = LocalPanelSize.current
     val colors = LocalPanelColors.current
-    val shape = RoundedCornerShape(20.dp)
+    val shape = RoundedCornerShape(radius.cardLarge)
     Column(
         Modifier
             .fillMaxSize()
             .alpha(if (online) 1f else .55f)
             .background(if (card.active) colors.accentWash else colors.card, shape)
-            .border(1.dp, if (card.active) colors.accentWash else colors.line, shape)
+            .border(size.stroke, if (card.active) colors.accentWash else colors.line, shape)
             .then(
                 if (card.cardTap) Modifier.clickable(enabled = online) { actions.toggle(card.entityId) }
                 else Modifier,
             )
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = space.cardInsetWide, vertical = space.cardInset),
     ) {
         CardHeader(card, online, actions)
         if (card.dense) DenseIdentity(card)
@@ -109,14 +119,14 @@ private fun ControlCard(card: ControlCardModel, online: Boolean, actions: Contro
                     Row(Modifier.fillMaxWidth()) {
                         ModalAction("Control", online, Modifier.weight(1f)) { actions.openCover(card.entityId) }
                         if (card.showSchedule) {
-                            Box(Modifier.width(6.dp))
+                            Box(Modifier.width(space.gapWide))
                             ScheduleAction(card, online, actions, Modifier.weight(1f))
                         }
                     }
                 }
                 ControlBody.BINARY -> if (!card.dense) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomStart) {
-                        PanelText(card.bodyText, 22.sp, bold = true, maxLines = 1)
+                        PanelText(card.bodyText, type.reading, bold = true, maxLines = 1)
                     }
                 }
             }
@@ -127,18 +137,21 @@ private fun ControlCard(card: ControlCardModel, online: Boolean, actions: Contro
 
 @Composable
 private fun CardHeader(card: ControlCardModel, online: Boolean, actions: ControlActions) {
+    val type = LocalPanelType.current
+    val space = LocalPanelSpace.current
+    val size = LocalPanelSize.current
     val colors = LocalPanelColors.current
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             val ink = if (card.active) colors.accent else colors.ink
             key(card.icon, ink) {
                 AndroidView(
-                    modifier = Modifier.size(24.dp).padding(end = 5.dp),
+                    modifier = Modifier.size(size.icon).padding(end = size.iconGap),
                     factory = { context -> ControlIconView(context, card.icon, ink.toArgb()) },
                 )
             }
             if (!card.dense) {
-                PanelText(card.name, 15.sp, Modifier.weight(1f), bold = true, maxLines = 1)
+                PanelText(card.name, type.cardTitle, Modifier.weight(1f), bold = true, maxLines = 1)
             } else {
                 Box(Modifier.weight(1f))
             }
@@ -147,23 +160,25 @@ private fun CardHeader(card: ControlCardModel, online: Boolean, actions: Control
             }
         }
         if (!card.dense) {
-            PanelText(card.typeLabel, 12.sp, Modifier.padding(top = 2.dp), muted = true, maxLines = 1)
+            PanelText(card.typeLabel, type.caption, Modifier.padding(top = space.tiny), muted = true, maxLines = 1)
         }
     }
 }
 
 @Composable
 private fun PowerButton(card: ControlCardModel, online: Boolean, actions: ControlActions) {
+    val type = LocalPanelType.current
+    val size = LocalPanelSize.current
     val colors = LocalPanelColors.current
     Box(
         Modifier
-            .width(62.dp).height(42.dp)
-            .background(if (card.active) colors.accent else colors.panel, RoundedCornerShape(21.dp))
+            .width(size.powerButtonWidth).height(size.actionHeight)
+            .background(if (card.active) colors.accent else colors.panel, CircleShape)
             .clickable(enabled = online) { actions.toggle(card.entityId) },
         contentAlignment = Alignment.Center,
     ) {
         PanelText(
-            if (card.active) "ON" else "OFF", 11.sp,
+            if (card.active) "ON" else "OFF", type.label,
             bold = true, color = if (card.active) Color.White else colors.muted,
         )
     }
@@ -171,30 +186,35 @@ private fun PowerButton(card: ControlCardModel, online: Boolean, actions: Contro
 
 @Composable
 private fun DenseIdentity(card: ControlCardModel) {
-    Column(Modifier.fillMaxWidth().padding(top = 5.dp, bottom = 2.dp)) {
+    val type = LocalPanelType.current
+    val space = LocalPanelSpace.current
+    val size = LocalPanelSize.current
+    Column(Modifier.fillMaxWidth().padding(top = space.cardInsetTight, bottom = space.tiny)) {
         PanelText(
             card.name,
-            if (card.name.length > 22) 12.sp else 14.sp,
-            Modifier.height(34.dp),
+            if (card.name.length > 22) type.caption else type.body,
+            Modifier.height(size.denseNameHeight),
             bold = true,
             maxLines = 2,
         )
-        PanelText(card.typeLabel, 11.sp, muted = true, maxLines = 1)
+        PanelText(card.typeLabel, type.label, muted = true, maxLines = 1)
     }
 }
 
 @Composable
 private fun Dimmer(card: ControlCardModel, online: Boolean, actions: ControlActions) {
+    val type = LocalPanelType.current
+    val size = LocalPanelSize.current
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            PanelText("Brightness", 10.sp, Modifier.weight(1f), muted = true)
-            PanelText("${card.brightnessPercent}%", 18.sp, bold = true)
+            PanelText("Brightness", type.micro, Modifier.weight(1f), muted = true)
+            PanelText("${card.brightnessPercent}%", type.headline, bold = true)
         }
         // Keyed on the entity alone, not the value: the slider owns the value
         // while a finger is on it and adopts external changes through update.
         key(card.entityId) {
             AndroidView(
-                modifier = Modifier.fillMaxWidth().height(48.dp),
+                modifier = Modifier.fillMaxWidth().height(size.sliderHeight),
                 factory = { context ->
                     PanelSliderView(context, card.brightnessPercent) { percent ->
                         actions.setBrightness(card.entityId, percent)
@@ -212,22 +232,26 @@ private fun Dimmer(card: ControlCardModel, online: Boolean, actions: ControlActi
 /** A headline value with its action buttons pinned under it. */
 @Composable
 private fun BottomStack(headline: String, content: @Composable () -> Unit) {
+    val type = LocalPanelType.current
+    val space = LocalPanelSpace.current
+    val size = LocalPanelSize.current
     Column(
         Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.Bottom,
     ) {
-        PanelText(headline, 17.sp, bold = true, maxLines = 1)
-        Box(Modifier.fillMaxWidth().padding(top = 6.dp).height(42.dp)) { content() }
+        PanelText(headline, type.cardHeadline, bold = true, maxLines = 1)
+        Box(Modifier.fillMaxWidth().padding(top = space.gapWide).height(size.actionHeight)) { content() }
     }
 }
 
 @Composable
 private fun Footer(card: ControlCardModel, online: Boolean, actions: ControlActions) {
+    val space = LocalPanelSpace.current
     if (!card.showTimer && !card.showSchedule) return
     Row(Modifier.fillMaxWidth()) {
         if (card.showTimer) {
             TimerAction(card, online, actions, Modifier.weight(1f))
-            if (card.showSchedule) Box(Modifier.width(6.dp))
+            if (card.showSchedule) Box(Modifier.width(space.gapWide))
         }
         if (card.showSchedule) ScheduleAction(card, online, actions, Modifier.weight(1f))
     }
@@ -285,16 +309,19 @@ private fun ActionSurface(
     onClick: () -> Unit,
 ) {
     val colors = LocalPanelColors.current
-    val shape = RoundedCornerShape(13.dp)
+    val type = LocalPanelType.current
+    val radius = LocalPanelRadius.current
+    val size = LocalPanelSize.current
+    val shape = RoundedCornerShape(radius.action)
     Box(
         modifier
-            .height(42.dp)
+            .height(size.actionHeight)
             .background(fill, shape)
-            .border(1.dp, colors.line, shape)
+            .border(size.stroke, colors.line, shape)
             .clickable(enabled = online) { onClick() },
         contentAlignment = Alignment.Center,
     ) {
-        PanelText(label, 12.sp, bold = true, color = ink, align = TextAlign.Center, maxLines = 1)
+        PanelText(label, type.caption, bold = true, color = ink, align = TextAlign.Center, maxLines = 1)
     }
 }
 
