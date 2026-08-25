@@ -4,6 +4,9 @@ import dev.hacompanion.panel.ui.state.DashboardState
 import dev.hacompanion.panel.ui.model.controlTile
 import dev.hacompanion.panel.ui.model.sensorTile
 import dev.hacompanion.panel.ui.pages.PageTile
+import dev.hacompanion.panel.ui.model.deviceTypeLabel
+import dev.hacompanion.panel.ui.pages.ControlActions
+import dev.hacompanion.panel.ui.pages.controlsPageView
 import dev.hacompanion.panel.ui.pages.generalPageView
 import dev.hacompanion.panel.ui.pages.thermostatPageView
 import dev.hacompanion.panel.ui.pages.weatherPageView
@@ -383,186 +386,74 @@ class PanelDashboardView(
 
     private fun controlsPage(page: DashboardPage): View {
         val configured = page.widgets.mapNotNull { widget ->
-            widget.entityId?.let(states::get)?.let { widget to it }
+            widget.entityId?.takeIf(states::containsKey)?.let { widget to it }
         }
         val controls = if (configured.isNotEmpty()) configured
-        else states.values.filter { it.domain in CONTROL_DOMAINS }.take(4).map { null to it }
+        else states.values.filter { it.domain in CONTROL_DOMAINS }.take(4).map { null to it.entityId }
         if (controls.isEmpty()) return emptyPage(page.title, "No supported controls found")
 
         return verticalPage(page.title).apply {
-            val rows = controls.chunked(2)
-            val dense = controls.size > 2
-            rows.forEach { rowItems ->
-                addView(
-                    LinearLayout(context).apply {
-                        orientation = HORIZONTAL
-                        rowItems.forEach { (widget, entity) ->
-                            addView(
-                                boundEntityView(entity) { deviceControlCard(states[entity.entityId] ?: entity, widget, dense) },
-                                LayoutParams(0, LayoutParams.MATCH_PARENT, 1f).apply {
-                                    setMargins(dp(4), dp(4), dp(4), dp(4))
-                                },
-                            )
-                        }
-                    },
-                    LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f),
-                )
+            addView(
+                controlsPageView(context, states, controls, online, PanelTheme.isDark, controlActions),
+                LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f),
+            )
+        }
+    }
+
+    /** What the Compose control cards call back into. */
+    private val controlActions = object : ControlActions {
+        override fun toggle(entityId: String) {
+            states[entityId]?.let(::toggleEntity)
+        }
+
+        override fun setBrightness(entityId: String, percent: Int) {
+            callService("light", "turn_on", entityId, JSONObject().put("brightness_pct", percent))
+        }
+
+        override fun openFanSpeed(entityId: String) {
+            states[entityId]?.let(::showFanSpeedDialog)
+        }
+
+        override fun openCover(entityId: String) {
+            states[entityId]?.let { showCoverDialog(it, widgetFor(entityId)) }
+        }
+
+        override fun openSchedule(entityId: String) {
+            states[entityId]?.let { showScheduleListDialog(it, widgetFor(entityId)) }
+        }
+
+        override fun openTimer(entityId: String) {
+            states[entityId]?.let {
+                showTimerDialog(it, widgetFor(entityId)?.timerPresets ?: listOf(5, 15, 30, 60))
             }
         }
+
+        override fun timerMinutes(entityId: String): Int? =
+            timerMinutes[entityId]?.takeIf { it > 0 }
+
+        override fun scheduleCount(entityId: String): Int =
+            schedules.count { it.entityId == entityId }
     }
 
-    private fun deviceControlCard(entity: EntityState, widget: DashboardWidget? = null, dense: Boolean = false): View {
-        val active = entity.state in setOf("on", "open", "opening")
-        val fanHasSpeed = entity.domain == "fan" && widget?.showFanSpeed == true && entity.attributes.optInt("supported_features", 0) and 1 != 0
-        val complex = when (entity.domain) {
-            "light" -> entity.numberAttribute("brightness") != null
-            "fan" -> fanHasSpeed
-            "cover" -> true
-            else -> false
-        }
-        return LinearLayout(context).apply {
-            orientation = VERTICAL
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            background = cardBackground(if (active) ACCENT_WASH else CARD, if (active) PanelTheme.accentWash else CARD_EDGE, 20)
-            addView(deviceCardHeader(entity, active, widget, dense, showPower = entity.domain != "cover"))
-            if (dense) addView(denseControlIdentity(widget?.label ?: entity.friendlyName, entity, widget))
-            when (entity.domain) {
-                "light" -> if (entity.numberAttribute("brightness") != null) {
-                    addView(dimmerBody(entity), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
-                } else addView(binaryBody(entity, dense), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
-                "fan" -> if (fanHasSpeed) addView(fanBody(entity), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
-                    else addView(binaryBody(entity, dense), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
-                "cover" -> addView(coverBody(entity, widget), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
-                else -> addView(binaryBody(entity, dense), LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
-            }
-            if (entity.domain != "cover") addView(controlFooter(entity, widget))
-            if (widget?.cardTap ?: !complex) {
-                setOnClickListener { toggleEntity(entity) }
-                isClickable = online
-            }
-            alpha = if (online) 1f else .55f
-        }
+    /** The widget that configured an entity on the page being shown. */
+    private fun widgetFor(entityId: String): DashboardWidget? =
+        layout?.pages?.flatMap { it.widgets }?.firstOrNull { it.entityId == entityId }
+
+    /** The flat button the modal dialogs are built from. */
+    private fun modalAction(label: String, action: () -> Unit): TextView = TextView(context).apply {
+        text = label
+        textSize = 12f
+        typeface = Typeface.DEFAULT_BOLD
+        gravity = Gravity.CENTER
+        setTextColor(PanelTheme.ink)
+        background = cardBackground(PanelTheme.panel, PanelTheme.line, 13)
+        isClickable = true
+        isFocusable = true
+        setOnClickListener { action() }
     }
 
-    private fun deviceCardHeader(entity: EntityState, active: Boolean, widget: DashboardWidget?, dense: Boolean, showPower: Boolean): View =
-        LinearLayout(context).apply {
-            orientation = VERTICAL
-            addView(LinearLayout(context).apply {
-                gravity = Gravity.CENTER_VERTICAL
-                addView(ControlIconView(context, controlIcon(entity, widget?.icon ?: "auto"), if (active) ACCENT_DARK else PanelTheme.ink), LayoutParams(dp(24), dp(24)).apply { rightMargin = dp(5) })
-                if (!dense) addView(primaryText(widget?.label ?: entity.friendlyName, 15f).apply {
-                    typeface = Typeface.DEFAULT_BOLD
-                    maxLines = 1
-                    ellipsize = TextUtils.TruncateAt.END
-                }, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)) else addView(View(context), LayoutParams(0, 1, 1f))
-                if (showPower) addView(Button(context).apply {
-                    text = if (active) "ON" else "OFF"
-                    textSize = 11f
-                    typeface = Typeface.DEFAULT_BOLD
-                    isAllCaps = false
-                    minWidth = 0
-                    minimumWidth = 0
-                    setPadding(dp(5), 0, dp(5), 0)
-                    setTextColor(if (active) Color.WHITE else MUTED)
-                    background = PanelTheme.pill(context, if (active) ACCENT else PanelTheme.panel)
-                    isEnabled = online
-                    setOnClickListener { toggleEntity(entity) }
-                }, LayoutParams(dp(62), dp(42)))
-            })
-            if (!dense) addView(secondaryText(controlTypeLabel(entity, widget)).apply {
-                textSize = 12f
-                maxLines = 1
-                ellipsize = TextUtils.TruncateAt.END
-                setPadding(0, dp(2), 0, 0)
-            })
-        }
-
-    private fun denseControlIdentity(name: String, entity: EntityState, widget: DashboardWidget?): View = LinearLayout(context).apply {
-        orientation = VERTICAL
-        setPadding(0, dp(5), 0, dp(2))
-        addView(primaryText(name, if (name.length > 22) 12f else 14f).apply {
-            typeface = Typeface.DEFAULT_BOLD
-            maxLines = 2
-            ellipsize = TextUtils.TruncateAt.END
-            includeFontPadding = false
-        }, LayoutParams(LayoutParams.MATCH_PARENT, dp(34)))
-        addView(secondaryText(controlTypeLabel(entity, widget)).apply {
-            textSize = 11f
-            maxLines = 1
-            ellipsize = TextUtils.TruncateAt.END
-        })
-    }
-
-    private fun controlTypeLabel(entity: EntityState, widget: DashboardWidget?): String =
-        if (entity.domain == "fan" && widget?.showFanSpeed != true) "Fan" else deviceTypeLabel(entity)
-
-    private fun controlIcon(entity: EntityState, configured: String): String {
-        if (configured != "auto") return configured
-        val mdi = entity.attributes.optString("icon").removePrefix("mdi:")
-        val alias = mapOf(
-            "lightbulb" to "light", "ceiling-light" to "ceiling-light", "floor-lamp" to "floor-lamp",
-            "wall-sconce" to "wall-light", "led-strip-variant" to "led-strip", "spotlight" to "spotlight",
-            "fan" to "fan", "ceiling-fan" to "ceiling-fan", "hvac" to "ventilation",
-            "power" to "power", "toggle-switch" to "switch", "power-plug" to "plug", "power-socket" to "socket",
-            "curtains" to "curtains", "blinds" to "blinds", "window-shutter" to "shutter", "garage" to "garage",
-            "radiator" to "radiator", "air-conditioner" to "air-conditioner", "fireplace" to "fireplace",
-            "lock" to "lock", "gate" to "gate", "pump" to "pump", "robot-vacuum" to "vacuum", "speaker" to "speaker",
-        )[mdi]
-        if (alias != null) return alias
-        return when (entity.domain) {
-            "fan" -> "fan"
-            "cover" -> "curtains"
-            "switch", "input_boolean" -> "power"
-            else -> "light"
-        }
-    }
-
-    private fun binaryBody(entity: EntityState, dense: Boolean = false): View =
-        LinearLayout(context).apply {
-            gravity = Gravity.BOTTOM
-            if (!dense) addView(primaryText(entity.state.replace('_', ' ').replaceFirstChar { it.uppercase() }, 22f).apply {
-                    typeface = Typeface.DEFAULT_BOLD
-                })
-        }
-
-    private fun dimmerBody(entity: EntityState): View {
-        val percent = ((entity.numberAttribute("brightness") ?: 0.0) / 255.0 * 100.0).roundToInt()
-        return sliderBody("Brightness", percent) { value ->
-            callService("light", "turn_on", entity.entityId, JSONObject().put("brightness_pct", value))
-        }
-    }
-
-    private fun fanBody(entity: EntityState): View = LinearLayout(context).apply {
-        orientation = VERTICAL
-        val percent = entity.numberAttribute("percentage")?.roundToInt() ?: 0
-        gravity = Gravity.BOTTOM
-        addView(primaryText("Speed · $percent%", 17f).apply { typeface = Typeface.DEFAULT_BOLD })
-        addView(modalAction("Adjust speed") { showFanSpeedDialog(entity) }, LayoutParams(LayoutParams.MATCH_PARENT, dp(42)).apply { topMargin = dp(6) })
-    }
-
-    private fun coverBody(entity: EntityState, widget: DashboardWidget?): View = LinearLayout(context).apply {
-        orientation = VERTICAL
-        val position = entity.numberAttribute("current_position")?.roundToInt()
-        gravity = Gravity.BOTTOM
-        addView(primaryText(position?.let { "Position · $it%" } ?: entity.state.replaceFirstChar { it.uppercase() }, 17f).apply { typeface = Typeface.DEFAULT_BOLD })
-        addView(LinearLayout(context).apply {
-            addView(modalAction("Control") { showCoverDialog(entity, widget) }, LayoutParams(0, dp(42), 1f).apply {
-                if (widget?.showSchedule != false) rightMargin = dp(3)
-            })
-            if (widget?.showSchedule != false) addView(scheduleAction(entity, widget), LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(3) })
-        }, LayoutParams(LayoutParams.MATCH_PARENT, dp(42)).apply { topMargin = dp(6) })
-    }
-
-    private fun controlFooter(entity: EntityState, widget: DashboardWidget?): View = LinearLayout(context).apply {
-        val timer = entity.domain in TIMER_DOMAINS && widget?.showTimer != false
-        val schedule = widget?.showSchedule != false
-        if (timer) addView(timerAction(entity, widget?.timerPresets ?: listOf(5, 15, 30, 60)), LayoutParams(0, dp(42), 1f).apply { rightMargin = dp(3) })
-        if (schedule) addView(scheduleAction(entity, widget), LayoutParams(0, dp(42), 1f).apply { if (timer) leftMargin = dp(3) })
-    }
-
-    private fun scheduleAction(entity: EntityState, widget: DashboardWidget?): View = modalAction(
-        schedules.filter { it.entityId == entity.entityId }.let { values -> if (values.isEmpty()) "Schedule" else "Schedules · ${values.size}" }
-    ) { showScheduleListDialog(entity, widget) }
+    private fun deviceSeekBar(value: Int, onChanged: (Int) -> Unit): View =
+        PanelSliderView(context, value, onChanged).apply { isEnabled = online }
 
     private fun showScheduleListDialog(entity: EntityState, widget: DashboardWidget?) {
         val values = schedules.filter { it.entityId == entity.entityId }.sortedBy { it.time }
@@ -682,61 +573,6 @@ class PanelDashboardView(
             addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
             setLayout((resources.displayMetrics.widthPixels * .94f).roundToInt(), android.view.WindowManager.LayoutParams.WRAP_CONTENT)
         }
-    }
-
-    private fun modalAction(label: String, action: () -> Unit): TextView = TextView(context).apply {
-        text = label
-        textSize = 12f
-        typeface = Typeface.DEFAULT_BOLD
-        gravity = Gravity.CENTER
-        setTextColor(PanelTheme.ink)
-        background = cardBackground(PanelTheme.panel, PanelTheme.line, 13)
-        isClickable = true
-        isFocusable = true
-        setOnClickListener { action() }
-    }
-
-    private fun sliderBody(label: String, value: Int, onChanged: (Int) -> Unit): View =
-        LinearLayout(context).apply {
-            orientation = VERTICAL
-            gravity = Gravity.CENTER_VERTICAL
-            addView(LinearLayout(context).apply {
-                gravity = Gravity.CENTER_VERTICAL
-                addView(secondaryText(label).apply { textSize = 10f }, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
-                addView(primaryText("$value%", 18f).apply { typeface = Typeface.DEFAULT_BOLD })
-            })
-            addView(deviceSeekBar(value, onChanged), LayoutParams(LayoutParams.MATCH_PARENT, dp(48)))
-        }
-
-    private fun deviceSeekBar(value: Int, onChanged: (Int) -> Unit): View =
-        PanelSliderView(context, value, onChanged).apply { isEnabled = online }
-
-    private fun compactAction(label: String, action: () -> Unit): TextView =
-        TextView(context).apply {
-            text = label
-            textSize = 10f
-            gravity = Gravity.CENTER
-            includeFontPadding = false
-            setTextColor(MUTED)
-            background = cardBackground(PanelTheme.panel, PanelTheme.line, 12)
-            isClickable = true
-            isFocusable = true
-            isEnabled = online
-            setOnClickListener { action() }
-        }
-
-    private fun timerAction(entity: EntityState, presets: List<Int>): View = TextView(context).apply {
-        val activeMinutes = timerMinutes[entity.entityId]?.takeIf { it > 0 }
-        text = activeMinutes?.let { "◷  Timer · ${it} min" } ?: "◷  Set timer"
-        textSize = 12f
-        typeface = Typeface.DEFAULT_BOLD
-        gravity = Gravity.CENTER
-        setTextColor(if (activeMinutes != null) Color.WHITE else PanelTheme.ink)
-        background = cardBackground(if (activeMinutes != null) ACCENT else PanelTheme.panel, PanelTheme.line, 13)
-        isClickable = true
-        isFocusable = true
-        setOnClickListener { showTimerDialog(entity, presets) }
-        layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(42)).apply { topMargin = dp(5) }
     }
 
     private fun showFanSpeedDialog(entity: EntityState) {
@@ -903,14 +739,6 @@ class PanelDashboardView(
             )
             else -> callService(entity.domain, "toggle", entity.entityId, JSONObject())
         }
-    }
-
-    private fun deviceTypeLabel(entity: EntityState): String = when {
-        entity.domain == "light" && entity.numberAttribute("brightness") != null -> "Dimmable light"
-        entity.domain == "light" -> "Light"
-        entity.domain == "fan" -> "Speed · ${entity.numberAttribute("percentage")?.roundToInt() ?: 0}%"
-        entity.domain == "cover" -> "Position · ${entity.numberAttribute("current_position")?.roundToInt() ?: 0}%"
-        else -> entity.domain.replace('_', ' ').replaceFirstChar { it.uppercase() }
     }
 
     private fun generalPage(page: DashboardPage): View = verticalPage(page.title).apply {
