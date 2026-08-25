@@ -20,7 +20,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.hacompanion.panel.ui.components.PanelCard
 import dev.hacompanion.panel.ui.components.PanelText
+import dev.hacompanion.panel.DashboardWidget
+import dev.hacompanion.panel.EntityState
 import dev.hacompanion.panel.ui.model.WeatherModel
+import dev.hacompanion.panel.ui.model.resolveEntity
+import dev.hacompanion.panel.ui.model.weatherModel
 import dev.hacompanion.panel.ui.theme.LocalPanelColors
 import dev.hacompanion.panel.ui.theme.PanelThemeProvider
 
@@ -98,13 +102,21 @@ private fun HourlyForecastCard(modifier: Modifier, model: WeatherModel) {
  * from the window root, so that owner is installed there by MainActivity
  * rather than on this view.
  */
-fun weatherPageView(context: Context, model: WeatherModel, dark: Boolean): View =
-    ComposeView(context).apply {
-        setContent {
-            PanelThemeProvider(dark) {
-                Box(Modifier.fillMaxSize().background(LocalPanelColors.current.canvas)) {
-                    WeatherPage(model)
+fun weatherPageView(
+    context: Context,
+    entities: Map<String, EntityState>,
+    widget: DashboardWidget,
+    dark: Boolean,
+): View = ComposeView(context).apply {
+    setContent {
+        PanelThemeProvider(dark) {
+            Box(Modifier.fillMaxSize().background(LocalPanelColors.current.canvas)) {
+                // Read inside composition so a weather update recomposes.
+                val entity = resolveEntity(entities, widget, "weather")
+                if (entity != null) {
+                    WeatherPage(weatherModel(entity, widget.forecastDays, widget.showHourly))
                 }
             }
         }
     }
+}
