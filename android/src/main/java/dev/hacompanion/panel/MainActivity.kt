@@ -1,5 +1,7 @@
 package dev.hacompanion.panel
 
+import dev.hacompanion.panel.ui.installComposeHost
+
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
