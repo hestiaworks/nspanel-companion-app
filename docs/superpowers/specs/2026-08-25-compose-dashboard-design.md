@@ -18,30 +18,30 @@ makes the theming work that is next on the roadmap tractable.
 
 ## Decision criterion
 
-**Memory sets a hard limit; within it, the code decides.** Measured on the
-panel, one page converted cost +3,460 kB resident (+14.8%) and +424,248 B in
-the release APK (+3.4%).
+**Responsiveness decides.** This app exists because a WebView-based dashboard
+was unusable on this hardware; touches, swipes and controls giving immediate
+feedback is the property being protected. A Compose build that passes every
+memory check and feels worse has failed.
 
-Most of that is the Compose runtime being resident at all, which is a fixed
-cost rather than a per-page one, so a full conversion should not cost much more
-than a single page did.
+Baseline, measured on the panel with `tools/measure-panel.sh`:
 
-**Hard limit: discard if end-state PSS exceeds 51,200 kB (50 MB).** The panel
-has 1960 MiB and is expected to carry that comfortably.
+| Cold start | Janky frames | p95 | p99 | PSS |
+| --- | --- | --- | --- | --- |
+| 654 ms | 41.1% | 93 ms | 136 ms | 23,508 kB |
 
-That limit is deliberately generous, and the consequence should be stated
-plainly: at 50 MB memory will almost certainly not be what decides. One page
-converted measured 26,880 kB, so a full conversion would have to roughly double
-the whole app's footprint to fail. In practice the decision will rest on whether
-the dashboard is genuinely simpler — the binding machinery gone, the 1488-line
-file broken up, theming reactive — with memory as a sanity check rather than the
-arbiter.
+**Discard if the end state is meaningfully worse on jank or frame times.** The
+41% figure is dominated by page transitions, where the current architecture
+rebuilds an entire page; Compose updating only what changed is the reason to
+expect improvement rather than regression. If it regresses instead, that is the
+answer.
 
-**Watch level: 32,000 kB.** Not a failure, but a point at which growth is
-investigated and attributed to a step before continuing, since the aim is still
-the smallest footprint that does the job.
+**Memory has a hard ceiling of 51,200 kB (50 MB)** and is otherwise a sanity
+check. The panel has 1960 MiB and carries that comfortably. One page converted
+measured 26,880 kB, so a full conversion would have to double the app's
+footprint to fail. A watch level of 32,000 kB is a point to investigate growth,
+not a failure.
 
-Baselines and protocol live in the private hub's `docs/PERFORMANCE.md`.
+Protocol and records live in the private hub's `docs/PERFORMANCE.md`.
 
 ## Architecture
 
@@ -116,7 +116,8 @@ CI has no emulator, so rendering is verified on the panel. After every step:
 2. `adb install -r`, which preserves pairing and layout
 3. Screenshot each page and compare against the step 0 baseline
 4. `tools/measure-panel.sh <panel-address> "step<N>" 3`, appended to the
-   performance record
+   performance record — cold start, jank and memory, in that order of
+   importance
 5. Interaction that cannot be judged from a screenshot — sliders, the
    thermostat dial, swipe feel — is exercised by hand on the panel
 
@@ -138,6 +139,11 @@ says so next to each intermediate number.
 - **Silent failures are the danger, not loud ones.** A blank page and a crash
   loop both produce plausible memory numbers. Screenshots at every step, and the
   measurement script fails a run whose log contains a fatal exception.
+- **The doorbell path is out of scope but reachable.** `DoorbellActivity` and
+  the WebRTC session are untouched, but `MainActivity` triggers the overlay and
+  step 6 changes `MainActivity`. Doorbell video and two-way audio are verified
+  on the device at step 6; the intercom working is one of the reasons this app
+  exists.
 - **The panel is in daily use.** The released build is restored at the end of
   each working session unless agreed otherwise; steps 3 and 4 touch the controls
   used daily.
