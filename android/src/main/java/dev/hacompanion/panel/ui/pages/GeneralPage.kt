@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.State
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -23,7 +22,12 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.hacompanion.panel.ui.components.PanelText
+import dev.hacompanion.panel.DashboardWidget
+import dev.hacompanion.panel.EntityState
 import dev.hacompanion.panel.ui.model.ControlTile
+import dev.hacompanion.panel.ui.model.controlTile
+import dev.hacompanion.panel.ui.model.resolveEntity
+import dev.hacompanion.panel.ui.model.sensorTile
 import dev.hacompanion.panel.ui.model.SensorTile
 import dev.hacompanion.panel.ui.theme.LocalPanelColors
 import dev.hacompanion.panel.ui.theme.PanelThemeProvider
@@ -105,7 +109,8 @@ private fun Tile(tile: PageTile, online: Boolean, onToggle: (String) -> Unit) {
 /** Hosts the page in a View so the existing pager can hold it. */
 fun generalPageView(
     context: Context,
-    tiles: State<List<PageTile>>,
+    entities: Map<String, EntityState>,
+    widgets: List<DashboardWidget>,
     online: Boolean,
     dark: Boolean,
     onToggle: (String) -> Unit,
@@ -113,9 +118,18 @@ fun generalPageView(
     setContent {
         PanelThemeProvider(dark) {
             Box(Modifier.fillMaxSize().background(LocalPanelColors.current.canvas)) {
-                // Reading the state here is what makes an entity update a
-                // recomposition rather than a rebuilt page.
-                GeneralPage(tiles.value, online, onToggle)
+                // Read inside composition: touching the entities here is what
+                // makes an entity update recompose this page rather than
+                // requiring anything to rebuild it.
+                val tiles = widgets.map { widget ->
+                    when (val entity = resolveEntity(entities, widget)) {
+                        null -> PageTile.Missing(widget.label ?: widget.entityId.orEmpty())
+                        else ->
+                            if (widget.type == "entity_button") PageTile.Control(controlTile(entity, widget.label))
+                            else PageTile.Reading(sensorTile(entity, widget.label))
+                    }
+                }
+                GeneralPage(tiles, online, onToggle)
             }
         }
     }

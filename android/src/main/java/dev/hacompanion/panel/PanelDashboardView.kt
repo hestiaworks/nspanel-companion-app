@@ -1,9 +1,8 @@
 package dev.hacompanion.panel
 
-import androidx.compose.runtime.mutableStateOf
+import dev.hacompanion.panel.ui.state.DashboardState
 import dev.hacompanion.panel.ui.model.controlTile
 import dev.hacompanion.panel.ui.model.sensorTile
-import dev.hacompanion.panel.ui.model.weatherModel
 import dev.hacompanion.panel.ui.pages.PageTile
 import dev.hacompanion.panel.ui.pages.generalPageView
 import dev.hacompanion.panel.ui.pages.weatherPageView
@@ -47,7 +46,10 @@ class PanelDashboardView(
     private val upsertSchedule: (ControlSchedule) -> Boolean = { false },
     private val deleteSchedule: (String) -> Boolean = { false },
 ) : LinearLayout(context) {
-    private val states = linkedMapOf<String, EntityState>()
+    // Snapshot-backed so Compose pages recompose from it directly. The pages
+    // still built as views keep using the binding registry below.
+    private val dashboardState = DashboardState()
+    private val states get() = dashboardState.entities
     private val weatherUpdatedAt = mutableMapOf<String, Long>()
     private val pageHost = FrameLayout(context)
     private val pageLabel = TextView(context)
@@ -261,9 +263,9 @@ class PanelDashboardView(
             "thermostat" -> boundEntityView(resolveEntity(only, "climate")) {
                 thermostatPage(page.title, only)
             }
-            "weather" -> boundEntityView(resolveEntity(only, "weather")) {
-                weatherPage(page.title, only)
-            }
+            // Not wrapped in boundEntityView: the page reads the state map and
+            // recomposes, so rebuilding it on every update is wasted work.
+            "weather" -> weatherPage(page.title, only)
             "camera" -> CameraPageView(context, only, openCamera)
             "controls" -> controlsPage(page)
             else -> generalPage(page)
@@ -499,17 +501,14 @@ class PanelDashboardView(
     }
 
     private fun weatherPage(title: String, widget: DashboardWidget): View {
-        val weather = resolveEntity(widget, "weather")
-            ?: return emptyPage(title, "No weather entity found")
+        if (resolveEntity(widget, "weather") == null) {
+            return emptyPage(title, "No weather entity found")
+        }
         // verticalPage draws the page title, which carries the long press that
         // opens the administrator screen. Only the content below it is Compose.
         return verticalPage(title).apply {
             addView(
-                weatherPageView(
-                    context,
-                    weatherModel(weather, widget.forecastDays, widget.showHourly),
-                    PanelTheme.isDark,
-                ),
+                weatherPageView(context, states, widget, PanelTheme.isDark),
                 LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f),
             )
         }
@@ -1049,24 +1048,8 @@ class PanelDashboardView(
 
     private fun generalPage(page: DashboardPage): View = verticalPage(page.title).apply {
         val compact = page.widgets.filter { it.type in setOf("entity_button", "sensor") }
-        fun buildTiles(): List<PageTile> = compact.map { widget ->
-            val entity = resolveEntity(widget)
-            when {
-                entity == null -> PageTile.Missing(widget.label ?: widget.entityId.orEmpty())
-                widget.type == "entity_button" -> PageTile.Control(controlTile(entity, widget.label))
-                else -> PageTile.Reading(sensorTile(entity, widget.label))
-            }
-        }
-        // An entity update rewrites the tiles and lets Compose recompose, rather
-        // than tearing the page down and building it again as boundEntityView
-        // does for the pages that are still views.
-        val tiles = mutableStateOf(buildTiles())
-        compact.mapNotNull { it.entityId }.distinct().forEach { entityId ->
-            entityBindings.getOrPut(entityId, ::mutableListOf)
-                .add(EntityBinding { tiles.value = buildTiles() })
-        }
         addView(
-            generalPageView(context, tiles, online, PanelTheme.isDark) { entityId ->
+            generalPageView(context, states, compact, online, PanelTheme.isDark) { entityId ->
                 states[entityId]?.let { callService(it.domain, "toggle", entityId, JSONObject()) }
             },
             LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT),
@@ -1078,9 +1061,6 @@ class PanelDashboardView(
             }
         }
     }
-
-
-
 
 
     private fun resolveEntity(widget: DashboardWidget, fallbackDomain: String? = null): EntityState? =
