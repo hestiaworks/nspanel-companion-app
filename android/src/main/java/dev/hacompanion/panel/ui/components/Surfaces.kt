@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -47,6 +48,8 @@ fun PanelText(
     /** Overrides the ink entirely, for the accent used on active controls. */
     color: Color? = null,
     align: TextAlign? = null,
+    letterSpacing: TextUnit = TextUnit.Unspecified,
+    monospace: Boolean = false,
     maxLines: Int = Int.MAX_VALUE,
 ) {
     val colors = LocalPanelColors.current
@@ -60,6 +63,8 @@ fun PanelText(
             fontSize = size,
             fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
             textAlign = align,
+            letterSpacing = letterSpacing,
+            fontFamily = if (monospace) FontFamily.Monospace else null,
         ),
     )
 }

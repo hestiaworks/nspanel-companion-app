@@ -1,15 +1,11 @@
 package dev.hacompanion.panel
 
+import androidx.compose.ui.platform.ComposeView
+import dev.hacompanion.panel.ui.DashboardActions
+import dev.hacompanion.panel.ui.DashboardRoot
+import dev.hacompanion.panel.ui.DashboardUiState
 import dev.hacompanion.panel.ui.state.DashboardState
-import dev.hacompanion.panel.ui.model.controlTile
-import dev.hacompanion.panel.ui.model.sensorTile
-import dev.hacompanion.panel.ui.pages.PageTile
 import dev.hacompanion.panel.ui.model.deviceTypeLabel
-import dev.hacompanion.panel.ui.pages.ControlActions
-import dev.hacompanion.panel.ui.pages.controlsPageView
-import dev.hacompanion.panel.ui.pages.generalPageView
-import dev.hacompanion.panel.ui.pages.thermostatPageView
-import dev.hacompanion.panel.ui.pages.weatherPageView
 import kotlin.math.absoluteValue
 
 import android.content.Context
@@ -57,6 +53,8 @@ class PanelDashboardView(
     private val states get() = dashboardState.entities
     private val weatherUpdatedAt = mutableMapOf<String, Long>()
     private val pageHost = FrameLayout(context)
+    private val ui = DashboardUiState()
+    private val composeRoot = ComposeView(context)
     private val pageLabel = TextView(context)
     private val panelStatus = PanelStatusView(context)
     private var layout = DashboardLayout.default()
@@ -69,11 +67,7 @@ class PanelDashboardView(
     private var gestureStartX = 0f
     private var interactionActive = false
     private var dashboardActive = true
-    private val entityBindings = mutableMapOf<String, MutableList<EntityBinding>>()
-    private val dirtyEntityIds = linkedSetOf<String>()
-    private var entityRefreshPending = false
     private var fullRenderCount = 0
-    private var targetedRefreshBatchCount = 0
     private val timerMinutes = mutableMapOf<String, Int>()
     private val timerCallbacks = mutableMapOf<String, Runnable>()
     private val selectedClimateTarget = mutableMapOf<String, String>()
@@ -85,10 +79,85 @@ class PanelDashboardView(
         }
     }
 
+    /**
+     * What the Compose pages call back into. Declared before init, because
+     * properties initialise in declaration order and init installs the root
+     * that reads this.
+     */
+    private val dashboardActions = object : DashboardActions {
+        override fun openAdmin() = this@PanelDashboardView.openAdmin()
+
+        override fun openCamera(widget: DashboardWidget) =
+            this@PanelDashboardView.openCamera(widget)
+
+        override fun selectedClimateTarget(entityId: String): String =
+            selectedClimateTarget.getOrPut(entityId) {
+                if (states[entityId]?.state == "cool") "cool" else "heat"
+            }
+
+        override fun selectClimateTarget(entityId: String, target: String) {
+            selectedClimateTarget[entityId] = target
+            ui.sidecarRevision += 1
+        }
+
+        override fun stepThermostat(entityId: String, up: Boolean) {
+            states[entityId]?.let { this@PanelDashboardView.stepThermostat(it, up) }
+        }
+
+        override fun setHvacMode(entityId: String, mode: String) {
+            callService("climate", "set_hvac_mode", entityId, JSONObject().put("hvac_mode", mode))
+        }
+
+        override fun toggle(entityId: String) {
+            states[entityId]?.let(::toggleEntity)
+        }
+
+        override fun setBrightness(entityId: String, percent: Int) {
+            callService("light", "turn_on", entityId, JSONObject().put("brightness_pct", percent))
+        }
+
+        override fun openFanSpeed(entityId: String) {
+            states[entityId]?.let(::showFanSpeedDialog)
+        }
+
+        override fun openCover(entityId: String) {
+            states[entityId]?.let { showCoverDialog(it, widgetFor(entityId)) }
+        }
+
+        override fun openSchedule(entityId: String) {
+            states[entityId]?.let { showScheduleListDialog(it, widgetFor(entityId)) }
+        }
+
+        override fun openTimer(entityId: String) {
+            states[entityId]?.let {
+                showTimerDialog(it, widgetFor(entityId)?.timerPresets ?: listOf(5, 15, 30, 60))
+            }
+        }
+
+        override fun timerMinutes(entityId: String): Int? =
+            timerMinutes[entityId]?.takeIf { it > 0 }
+
+        override fun scheduleCount(entityId: String): Int =
+            schedules.count { it.entityId == entityId }
+    }
+
     init {
         orientation = VERTICAL
         setBackgroundColor(BACKGROUND)
         setPadding(dp(4), dp(4), dp(4), 0)
+        composeRoot.setContent { DashboardRoot(ui, dashboardState.entities, dashboardActions) }
+        pageHost.addView(
+            composeRoot,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            ),
+        )
+        pageHost.addView(panelStatus, FrameLayout.LayoutParams(
+            LayoutParams.WRAP_CONTENT,
+            LayoutParams.WRAP_CONTENT,
+            Gravity.TOP or Gravity.END,
+        ).apply { topMargin = dp(3); marginEnd = dp(6) })
         addView(
             pageHost,
             LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f),
@@ -116,7 +185,6 @@ class PanelDashboardView(
     fun updateState(value: EntityState) {
         states[value.entityId] = value
         if (value.domain == "weather") weatherUpdatedAt[value.entityId] = System.currentTimeMillis()
-        if (entityBindings.containsKey(value.entityId)) scheduleEntityRefresh(value.entityId)
     }
 
     fun updateWeatherForecast(entityId: String, forecastType: String, forecast: JSONArray) {
@@ -126,7 +194,6 @@ class PanelDashboardView(
         val updated = existing.copy(attributes = attributes)
         states[entityId] = updated
         weatherUpdatedAt[entityId] = System.currentTimeMillis()
-        if (entityBindings.containsKey(entityId)) scheduleEntityRefresh(entityId)
     }
 
     fun setSchedules(values: List<ControlSchedule>) {
@@ -190,7 +257,6 @@ class PanelDashboardView(
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 interactionActive = false
-                flushEntityRefreshes()
                 scheduleDefaultPageReturn()
             }
         }
@@ -234,123 +300,28 @@ class PanelDashboardView(
         postDelayed(returnToDefault, layout.defaultPageReturnSeconds * 1_000L)
     }
 
+    /**
+     * Publishes the current inputs. Nothing is inflated here any more: the
+     * Compose root recomposes from the state it reads.
+     */
     private fun render() {
         fullRenderCount += 1
-        if (BuildConfig.DEBUG) Log.d(RENDER_LOG_TAG, "full=$fullRenderCount targeted=$targetedRefreshBatchCount")
-        entityBindings.clear()
-        dirtyEntityIds.clear()
-        pageHost.removeAllViews()
-        if (!configured) {
-            pageHost.addView(unconfiguredPage())
-            pageLabel.text = ""
-            return
-        }
-        val definition = layout.pages[pageIndex.coerceIn(0, layout.pages.lastIndex)]
-        val page = renderPage(definition)
-        pageHost.addView(page)
-        if (layout.showClock || layout.showMicIndicator) {
-            (panelStatus.parent as? android.view.ViewGroup)?.removeView(panelStatus)
-            pageHost.addView(panelStatus, FrameLayout.LayoutParams(
-                LayoutParams.WRAP_CONTENT,
-                LayoutParams.WRAP_CONTENT,
-                Gravity.TOP or Gravity.END,
-            ).apply { topMargin = dp(3); marginEnd = dp(6) })
-        }
-        pageLabel.text = layout.pages.indices.joinToString(" ") { if (it == pageIndex) "●" else "○" }
+        if (BuildConfig.DEBUG) Log.d(RENDER_LOG_TAG, "full=$fullRenderCount")
+        ui.configured = configured
+        ui.layout = layout
+        ui.online = online
+        ui.panelName = panelName
+        ui.panelId = panelId
+        ui.dark = PanelTheme.isDark
+        ui.pageIndex = pageIndex
+        ui.sidecarRevision += 1
+        panelStatus.visibility =
+            if (configured && (layout.showClock || layout.showMicIndicator)) VISIBLE else GONE
+        pageLabel.text =
+            if (configured) layout.pages.indices.joinToString(" ") { if (it == pageIndex) "\u25cf" else "\u25cb" }
+            else ""
     }
 
-    private fun renderPage(page: DashboardPage): View {
-        val only = page.widgets.singleOrNull()
-        if (page.widgets.isNotEmpty() && page.widgets.all { it.type in setOf("controls", "entity_button") }) {
-            return controlsPage(page)
-        }
-        return when (only?.type) {
-            "thermostat" -> thermostatPage(page.title, only)
-            // Not wrapped in boundEntityView: the page reads the state map and
-            // recomposes, so rebuilding it on every update is wasted work.
-            "weather" -> weatherPage(page.title, only)
-            "camera" -> CameraPageView(context, only, openCamera)
-            "controls" -> controlsPage(page)
-            else -> generalPage(page)
-        }
-    }
-
-    private fun boundEntityView(entity: EntityState?, create: () -> View): View {
-        if (entity == null) return create()
-        return FrameLayout(context).also { host ->
-            fun refresh() {
-                host.removeAllViews()
-                host.addView(create(), FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                ))
-            }
-            refresh()
-            entityBindings.getOrPut(entity.entityId, ::mutableListOf).add(EntityBinding(::refresh))
-        }
-    }
-
-    private fun scheduleEntityRefresh(entityId: String) {
-        dirtyEntityIds += entityId
-        if (interactionActive || entityRefreshPending) return
-        entityRefreshPending = true
-        postDelayed({
-            entityRefreshPending = false
-            flushEntityRefreshes()
-        }, ENTITY_REFRESH_DELAY_MS)
-    }
-
-    private fun flushEntityRefreshes() {
-        if (interactionActive || dirtyEntityIds.isEmpty()) return
-        val pending = dirtyEntityIds.toList()
-        dirtyEntityIds.clear()
-        targetedRefreshBatchCount += 1
-        if (BuildConfig.DEBUG) Log.d(
-            RENDER_LOG_TAG,
-            "targeted batch=$targetedRefreshBatchCount entities=${pending.size} full=$fullRenderCount",
-        )
-        pending.forEach { entityId -> entityBindings[entityId]?.toList()?.forEach { it.refresh() } }
-    }
-
-    private data class EntityBinding(val refresh: () -> Unit)
-
-    private fun thermostatPage(title: String, widget: DashboardWidget): View {
-        if (resolveEntity(widget, "climate") == null) {
-            return emptyPage(title, "No climate entity found")
-        }
-        return verticalPage(title).apply {
-            addView(
-                thermostatPageView(
-                    context = context,
-                    entities = states,
-                    widget = widget,
-                    selectedTarget = { entityId ->
-                        selectedClimateTarget.getOrPut(entityId) {
-                            if (states[entityId]?.state == "cool") "cool" else "heat"
-                        }
-                    },
-                    online = online,
-                    dark = PanelTheme.isDark,
-                    onTargetSelected = { entityId, target ->
-                        selectedClimateTarget[entityId] = target
-                        scheduleEntityRefresh(entityId)
-                    },
-                    onStep = ::stepThermostat,
-                    onMode = { climate, mode ->
-                        callService(
-                            "climate",
-                            "set_hvac_mode",
-                            climate.entityId,
-                            JSONObject().put("hvac_mode", mode),
-                        )
-                    },
-                ),
-                LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f),
-            )
-        }
-    }
-
-    /** Nudges whichever target the dial has selected by one device step. */
     private fun stepThermostat(climate: EntityState, up: Boolean) {
         val current = climate.numberAttribute("current_temperature")
         val target = climate.numberAttribute("temperature") ?: current ?: 20.0
@@ -370,74 +341,23 @@ class PanelDashboardView(
         }
     }
 
-    private fun weatherPage(title: String, widget: DashboardWidget): View {
-        if (resolveEntity(widget, "weather") == null) {
-            return emptyPage(title, "No weather entity found")
-        }
-        // verticalPage draws the page title, which carries the long press that
-        // opens the administrator screen. Only the content below it is Compose.
-        return verticalPage(title).apply {
-            addView(
-                weatherPageView(context, states, widget, PanelTheme.isDark),
-                LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f),
-            )
-        }
-    }
-
-    private fun controlsPage(page: DashboardPage): View {
-        val configured = page.widgets.mapNotNull { widget ->
-            widget.entityId?.takeIf(states::containsKey)?.let { widget to it }
-        }
-        val controls = if (configured.isNotEmpty()) configured
-        else states.values.filter { it.domain in CONTROL_DOMAINS }.take(4).map { null to it.entityId }
-        if (controls.isEmpty()) return emptyPage(page.title, "No supported controls found")
-
-        return verticalPage(page.title).apply {
-            addView(
-                controlsPageView(context, states, controls, online, PanelTheme.isDark, controlActions),
-                LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f),
-            )
-        }
-    }
-
-    /** What the Compose control cards call back into. */
-    private val controlActions = object : ControlActions {
-        override fun toggle(entityId: String) {
-            states[entityId]?.let(::toggleEntity)
-        }
-
-        override fun setBrightness(entityId: String, percent: Int) {
-            callService("light", "turn_on", entityId, JSONObject().put("brightness_pct", percent))
-        }
-
-        override fun openFanSpeed(entityId: String) {
-            states[entityId]?.let(::showFanSpeedDialog)
-        }
-
-        override fun openCover(entityId: String) {
-            states[entityId]?.let { showCoverDialog(it, widgetFor(entityId)) }
-        }
-
-        override fun openSchedule(entityId: String) {
-            states[entityId]?.let { showScheduleListDialog(it, widgetFor(entityId)) }
-        }
-
-        override fun openTimer(entityId: String) {
-            states[entityId]?.let {
-                showTimerDialog(it, widgetFor(entityId)?.timerPresets ?: listOf(5, 15, 30, 60))
-            }
-        }
-
-        override fun timerMinutes(entityId: String): Int? =
-            timerMinutes[entityId]?.takeIf { it > 0 }
-
-        override fun scheduleCount(entityId: String): Int =
-            schedules.count { it.entityId == entityId }
-    }
-
-    /** The widget that configured an entity on the page being shown. */
+    /** The widget that configured an entity, wherever it sits in the layout. */
     private fun widgetFor(entityId: String): DashboardWidget? =
-        layout?.pages?.flatMap { it.widgets }?.firstOrNull { it.entityId == entityId }
+        layout.pages.flatMap { it.widgets }.firstOrNull { it.entityId == entityId }
+
+    private fun primaryText(value: String, size: Float): TextView =
+        TextView(context).apply {
+            text = value
+            textSize = size
+            setTextColor(PanelTheme.ink)
+        }
+
+    private fun secondaryText(value: String): TextView =
+        TextView(context).apply {
+            text = value
+            textSize = 13f
+            setTextColor(MUTED)
+        }
 
     /** The flat button the modal dialogs are built from. */
     private fun modalAction(label: String, action: () -> Unit): TextView = TextView(context).apply {
@@ -721,12 +641,12 @@ class PanelDashboardView(
                 callService(entity.domain, "turn_off", entity.entityId, JSONObject())
                 timerMinutes[entity.entityId] = 0
                 timerCallbacks.remove(entity.entityId)
-                scheduleEntityRefresh(entity.entityId)
+                ui.sidecarRevision += 1
             }
             timerCallbacks[entity.entityId] = callback
             postDelayed(callback, minutes * 60_000L)
         }
-        scheduleEntityRefresh(entity.entityId)
+        ui.sidecarRevision += 1
     }
 
     private fun toggleEntity(entity: EntityState) {
@@ -740,23 +660,6 @@ class PanelDashboardView(
             else -> callService(entity.domain, "toggle", entity.entityId, JSONObject())
         }
     }
-
-    private fun generalPage(page: DashboardPage): View = verticalPage(page.title).apply {
-        val compact = page.widgets.filter { it.type in setOf("entity_button", "sensor") }
-        addView(
-            generalPageView(context, states, compact, online, PanelTheme.isDark) { entityId ->
-                states[entityId]?.let { callService(it.domain, "toggle", entityId, JSONObject()) }
-            },
-            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT),
-        )
-        page.widgets.filterNot { it in compact }.forEach { widget ->
-            when (widget.type) {
-                "thermostat" -> addView(thermostatPage(widget.label ?: "Thermostat", widget))
-                "weather" -> addView(weatherPage(widget.label ?: "Weather", widget))
-            }
-        }
-    }
-
 
     private fun resolveEntity(widget: DashboardWidget, fallbackDomain: String? = null): EntityState? =
         widget.entityId?.let(states::get)
@@ -802,87 +705,6 @@ class PanelDashboardView(
             }
             addView(pageLabel, LayoutParams(dp(86), dp(24)))
         }
-
-    private fun verticalPage(title: String): LinearLayout =
-        LinearLayout(context).apply {
-            orientation = VERTICAL
-            setPadding(dp(12), dp(10), dp(12), dp(8))
-            addView(
-                primaryText(title, 17f).apply {
-                    setTextColor(PanelTheme.ink)
-                    typeface = Typeface.DEFAULT_BOLD
-                    letterSpacing = .04f
-                    setPadding(dp(2), 0, 0, dp(6))
-                    contentDescription = "$title. Long press for administrator controls"
-                    setOnLongClickListener {
-                        openAdmin()
-                        true
-                    }
-                },
-            )
-        }
-
-    private fun emptyPage(title: String, message: String): View =
-        verticalPage(title).apply {
-            addView(
-                secondaryText(message).apply { gravity = Gravity.CENTER },
-                LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f),
-            )
-        }
-
-    private fun unconfiguredPage(): View =
-        LinearLayout(context).apply {
-            orientation = VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(dp(30), dp(24), dp(30), dp(24))
-            addView(eyebrow("NSPanel Companion"))
-            addView(primaryText(panelName, 28f).apply {
-                gravity = Gravity.CENTER
-                typeface = Typeface.DEFAULT_BOLD
-                setPadding(0, dp(10), 0, dp(8))
-            })
-            addView(secondaryText("Dashboard not configured").apply {
-                gravity = Gravity.CENTER
-                textSize = 18f
-                typeface = Typeface.DEFAULT_BOLD
-                setTextColor(PanelTheme.ink)
-            })
-            addView(secondaryText("Open Home Assistant → NSPanel Companion, select this panel, and create its pages.").apply {
-                gravity = Gravity.CENTER
-                setPadding(dp(16), dp(10), dp(16), dp(18))
-            })
-            addView(secondaryText(panelId).apply {
-                gravity = Gravity.CENTER
-                textSize = 11f
-                typeface = Typeface.MONOSPACE
-                setTextIsSelectable(true)
-                contentDescription = "Panel ID $panelId. Long press for administrator controls"
-                setOnLongClickListener {
-                    openAdmin()
-                    true
-                }
-            })
-        }
-
-    private fun primaryText(value: String, size: Float): TextView =
-        TextView(context).apply {
-            text = value
-            textSize = size
-            setTextColor(PanelTheme.ink)
-        }
-
-    private fun secondaryText(value: String): TextView =
-        TextView(context).apply {
-            text = value
-            textSize = 14f
-            setTextColor(MUTED)
-        }
-
-    private fun eyebrow(value: String): TextView = secondaryText(value.uppercase()).apply {
-        textSize = 11f
-        letterSpacing = .1f
-        typeface = Typeface.DEFAULT_BOLD
-    }
 
     private fun roundActionButton(
         label: String,
