@@ -18,20 +18,28 @@ makes the theming work that is next on the roadmap tractable.
 
 ## Decision criterion
 
-**Memory decides.** Measured on the panel, one page converted cost
-+3,460 kB resident (+14.8%) and +424,248 B in the release APK (+3.4%).
+**Memory sets a hard limit; within it, the code decides.** Measured on the
+panel, one page converted cost +3,460 kB resident (+14.8%) and +424,248 B in
+the release APK (+3.4%).
 
 Most of that is the Compose runtime being resident at all, which is a fixed
 cost rather than a per-page one, so a full conversion should not cost much more
 than a single page did.
 
-**Threshold: discard if end-state PSS exceeds 29,500 kB**, that is the
-23,420 kB baseline plus roughly double the fixed cost already observed. Above
-that, the runtime is not merely present but growing with the work, and no
-improvement in the code buys it back.
+**Hard limit: discard if end-state PSS exceeds 51,200 kB (50 MB).** The panel
+has 1960 MiB and is expected to carry that comfortably.
 
-The threshold is a judgement, not a measured limit; it is written down so the
-decision at the end is a comparison rather than an argument.
+That limit is deliberately generous, and the consequence should be stated
+plainly: at 50 MB memory will almost certainly not be what decides. One page
+converted measured 26,880 kB, so a full conversion would have to roughly double
+the whole app's footprint to fail. In practice the decision will rest on whether
+the dashboard is genuinely simpler — the binding machinery gone, the 1488-line
+file broken up, theming reactive — with memory as a sanity check rather than the
+arbiter.
+
+**Watch level: 32,000 kB.** Not a failure, but a point at which growth is
+investigated and attributed to a step before continuing, since the aim is still
+the smallest footprint that does the job.
 
 Baselines and protocol live in the private hub's `docs/PERFORMANCE.md`.
 
