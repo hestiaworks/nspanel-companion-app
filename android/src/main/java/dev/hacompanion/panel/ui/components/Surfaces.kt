@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -43,6 +44,8 @@ fun PanelText(
     modifier: Modifier = Modifier,
     bold: Boolean = false,
     muted: Boolean = false,
+    /** Overrides the ink entirely, for the accent used on active controls. */
+    color: Color? = null,
     align: TextAlign? = null,
     maxLines: Int = Int.MAX_VALUE,
 ) {
@@ -53,7 +56,7 @@ fun PanelText(
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
         style = TextStyle(
-            color = if (muted) colors.muted else colors.ink,
+            color = color ?: if (muted) colors.muted else colors.ink,
             fontSize = size,
             fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
             textAlign = align,
