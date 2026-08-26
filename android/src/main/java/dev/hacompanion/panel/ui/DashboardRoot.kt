@@ -70,6 +70,9 @@ class DashboardUiState {
 interface DashboardActions : ControlActions {
     fun openAdmin()
     fun openCamera(widget: DashboardWidget)
+
+    /** A stream URL warmed while this camera was one swipe away, if any. */
+    fun claimWarmedStream(widget: DashboardWidget): String?
     fun selectedClimateTarget(entityId: String): String
     fun selectClimateTarget(entityId: String, target: String)
     fun stepThermostat(entityId: String, up: Boolean)
@@ -116,7 +119,13 @@ private fun PageContent(
     if (!allControls && only?.type == "camera") {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
-            factory = { context -> CameraPageView(context, only) { actions.openCamera(only) } },
+            factory = { context ->
+                CameraPageView(
+                    context,
+                    only,
+                    claimWarmed = { actions.claimWarmedStream(only) },
+                ) { actions.openCamera(only) }
+            },
         )
         return
     }

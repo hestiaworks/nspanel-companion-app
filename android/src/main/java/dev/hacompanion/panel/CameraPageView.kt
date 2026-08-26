@@ -32,6 +32,8 @@ internal fun chooseStreamSource(fresh: String?, stored: String?): String =
 class CameraPageView(
     context: Context,
     private val widget: DashboardWidget,
+    /** A URL warmed while the camera was one swipe away, if there is one. */
+    private val claimWarmed: () -> String? = { null },
     private val openFullscreen: (DashboardWidget) -> Unit,
 ) : FrameLayout(context), SurfaceHolder.Callback {
     private val surface = SurfaceView(context)
@@ -51,6 +53,11 @@ class CameraPageView(
 
     // Phase timings, so the start-up cost can be attributed rather than guessed.
     private var startedAt = 0L
+
+    // A warmed URL is a session someone else minted; if it turns out to be
+    // dead, the page resolves for itself once rather than showing a failure.
+    private var playingWarmed = false
+    private var retriedFresh = false
     private fun since() = android.os.SystemClock.elapsedRealtime() - startedAt
     private var attached = false
     private val connectTimeout = Runnable {
@@ -92,10 +99,11 @@ class CameraPageView(
     private fun startPlayer(holder: SurfaceHolder) {
         if (player != null || !holder.surface.isValid) return
         startedAt = android.os.SystemClock.elapsedRealtime()
+        retriedFresh = false
         Log.i(TAG, "timing: surface ready, resolving source")
         status.alpha = 1f
         status.text = "Connecting to Scrypted prebuffer…"
-        resolveSource { source ->
+        resolveSource(allowWarmed = true) { source ->
             Log.i(TAG, "timing: source resolved at ${since()} ms")
             if (!attached || player != null || !holder.surface.isValid) return@resolveSource
             if (source.isBlank()) {
@@ -107,29 +115,26 @@ class CameraPageView(
     }
 
     /** Ask the bridge where the stream is now, falling back to what the layout carries. */
-    private fun resolveSource(onResolved: (String) -> Unit) {
+    private fun resolveSource(allowWarmed: Boolean, onResolved: (String) -> Unit) {
         val endpoint = widget.talkbackUrl?.takeIf(String::isNotBlank)
         val key = widget.talkbackKey?.takeIf(String::isNotBlank)
         val stored = widget.streamBaseUrl
+        if (allowWarmed) {
+            val warmed = claimWarmed()?.takeIf(String::isNotBlank)
+            if (warmed != null) {
+                playingWarmed = true
+                Log.i(TAG, "timing: warmed source used at ${since()} ms")
+                onResolved(warmed)
+                return
+            }
+        }
+        playingWarmed = false
         if (endpoint == null || key == null) {
             onResolved(chooseStreamSource(null, stored))
             return
         }
         Thread {
-            val fresh = runCatching {
-                val request = Request.Builder()
-                    .url(endpoint)
-                    .header("Authorization", "Bearer $key")
-                    .get()
-                    .build()
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) return@use ""
-                    JSONObject(response.body?.string().orEmpty()).optString("video_url")
-                }
-            }.getOrElse {
-                Log.w(TAG, "Could not resolve a current stream URL: ${it.message}")
-                ""
-            }
+            val fresh = fetchStreamUrl(client, endpoint, key)
             handler.post { onResolved(chooseStreamSource(fresh, stored)) }
         }.start()
     }
@@ -165,6 +170,7 @@ class CameraPageView(
             setOnErrorListener { _, what, extra ->
                 handler.removeCallbacks(connectTimeout)
                 Log.w(TAG, "Camera stream failed: $what/$extra")
+                if (retryWithFreshSource()) return@setOnErrorListener true
                 status.alpha = 1f
                 status.text = "Stream unavailable · $what/$extra"
                 true
@@ -173,6 +179,31 @@ class CameraPageView(
             prepareAsync()
         }
         handler.postDelayed(connectTimeout, CONNECT_TIMEOUT_MS)
+    }
+
+    /**
+     * Resolve again without the warmed URL, once, if that is what failed. A
+     * warmed session can die before it is played; falling back to the request
+     * the page would have made anyway costs the user a delay, not the stream.
+     */
+    private fun retryWithFreshSource(): Boolean {
+        if (!playingWarmed || retriedFresh) return false
+        val holder = surface.holder
+        if (!attached || !holder.surface.isValid) return false
+        retriedFresh = true
+        Log.i(TAG, "Warmed session was dead; resolving a fresh one")
+        releasePlayer()
+        status.alpha = 1f
+        status.text = "Reconnecting…"
+        resolveSource(allowWarmed = false) { source ->
+            if (!attached || player != null || !holder.surface.isValid) return@resolveSource
+            if (source.isBlank()) {
+                status.text = "Camera not configured"
+                return@resolveSource
+            }
+            beginPlayback(holder, source)
+        }
+        return true
     }
 
     private fun rtspUrl(source: String): Uri {
