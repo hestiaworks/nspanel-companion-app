@@ -23,6 +23,7 @@ class PanelSliderView(
         strokeWidth = context.dp(1).toFloat()
     }
     private var fraction = initialValue.coerceIn(0, 100) / 100f
+    private var dragging = false
 
     init {
         isClickable = true
@@ -62,6 +63,7 @@ class PanelSliderView(
         if (!isEnabled) return false
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                dragging = true
                 parent?.requestDisallowInterceptTouchEvent(true)
                 updateFromX(event.x)
                 return true
@@ -71,6 +73,7 @@ class PanelSliderView(
                 return true
             }
             MotionEvent.ACTION_UP -> {
+                dragging = false
                 updateFromX(event.x)
                 parent?.requestDisallowInterceptTouchEvent(false)
                 performClick()
@@ -78,11 +81,26 @@ class PanelSliderView(
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
+                dragging = false
                 parent?.requestDisallowInterceptTouchEvent(false)
                 return true
             }
         }
         return super.onTouchEvent(event)
+    }
+
+    /**
+     * Adopts a value that came from elsewhere. Ignored mid-drag: the state
+     * arriving from Home Assistant lags the finger, and letting it win would
+     * make the thumb jump backwards under the user.
+     */
+    fun setValue(percent: Int) {
+        if (dragging) return
+        val next = percent.coerceIn(0, 100) / 100f
+        if (next == fraction) return
+        fraction = next
+        contentDescription = "${percent.coerceIn(0, 100)} percent"
+        invalidate()
     }
 
     override fun performClick(): Boolean = super.performClick()

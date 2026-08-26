@@ -1,5 +1,7 @@
 package dev.hacompanion.panel
 
+import dev.hacompanion.panel.ui.installComposeHost
+
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
@@ -71,6 +73,8 @@ class MainActivity : Activity() {
         applyDebugProvisioning(intent)
         requestWindowFeature(Window.FEATURE_NO_TITLE)
         setContentView(createContent())
+        // SPIKE: Compose resolves its recomposer's lifecycle owner from the window root.
+        installComposeHost(window.decorView)
         startPairingAdvertisement()
         enterImmersiveMode()
         refreshReport()
