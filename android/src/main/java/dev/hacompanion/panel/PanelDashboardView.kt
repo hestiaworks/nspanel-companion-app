@@ -54,6 +54,8 @@ class PanelDashboardView(
     private val weatherUpdatedAt = mutableMapOf<String, Long>()
     private val pageHost = FrameLayout(context)
     private val ui = DashboardUiState()
+    private val streamWarmer = CameraStreamWarmer()
+    private var warmedForPage = -1
     private val composeRoot = ComposeView(context)
     private val pageLabel = TextView(context)
     private val panelStatus = PanelStatusView(context)
@@ -89,6 +91,9 @@ class PanelDashboardView(
 
         override fun openCamera(widget: DashboardWidget) =
             this@PanelDashboardView.openCamera(widget)
+
+        override fun claimWarmedStream(widget: DashboardWidget): String? =
+            streamWarmer.claim(widget)
 
         override fun selectedClimateTarget(entityId: String): String =
             selectedClimateTarget.getOrPut(entityId) {
@@ -209,6 +214,7 @@ class PanelDashboardView(
         layout = value
         panelStatus.configure(value.showClock, value.showMicIndicator, value.micIndicatorLingerSeconds)
         pageIndex = value.pages.indexOfFirst { it.id == value.defaultPageId }.coerceAtLeast(0)
+        warmNeighbouringCameras()
         scheduleRender()
     }
 
@@ -240,6 +246,7 @@ class PanelDashboardView(
     fun setPage(index: Int) {
         if (!configured) return
         pageIndex = index.coerceIn(0, layout.pages.lastIndex)
+        warmNeighbouringCameras()
         scheduleRender()
         scheduleDefaultPageReturn()
     }
@@ -281,6 +288,20 @@ class PanelDashboardView(
             }
         }
         return true
+    }
+
+    /**
+     * Ask the bridge for the stream URLs of any camera one swipe away.
+     *
+     * Driven by an actual change of page rather than by render or by every
+     * setPage call. Swiping at either end of the layout, and the return to the
+     * default page, both re-select the page already shown; warming on those
+     * had the panel mint a session it never played every fifteen seconds.
+     */
+    private fun warmNeighbouringCameras() {
+        if (!configured || pageIndex == warmedForPage) return
+        warmedForPage = pageIndex
+        streamWarmer.warm(camerasToWarm(layout.pages, pageIndex))
     }
 
     private fun scheduleRender() {
