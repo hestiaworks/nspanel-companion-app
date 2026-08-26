@@ -61,32 +61,7 @@ interface ControlActions {
 }
 
 @Composable
-fun ControlsPage(
-    cards: List<ControlCardModel>,
-    online: Boolean,
-    actions: ControlActions,
-) {
-    val space = LocalPanelSpace.current
-    Column(Modifier.fillMaxSize()) {
-        cards.chunked(2).forEach { row ->
-            Row(Modifier.fillMaxWidth().weight(1f)) {
-                row.forEach { card ->
-                    key(card.entityId) {
-                        Box(Modifier.weight(1f).fillMaxSize().padding(space.gap)) {
-                            ControlCard(card, online, actions)
-                        }
-                    }
-                }
-                // Keeps a lone card on the last row at half width, as the
-                // two-column view layout did.
-                if (row.size == 1) Box(Modifier.weight(1f))
-            }
-        }
-    }
-}
-
-@Composable
-private fun ControlCard(card: ControlCardModel, online: Boolean, actions: ControlActions) {
+internal fun ControlCard(card: ControlCardModel, online: Boolean, actions: ControlActions) {
     val type = LocalPanelType.current
     val space = LocalPanelSpace.current
     val radius = LocalPanelRadius.current
@@ -322,24 +297,5 @@ private fun ActionSurface(
         contentAlignment = Alignment.Center,
     ) {
         PanelText(label, type.caption, bold = true, color = ink, align = TextAlign.Center, maxLines = 1)
-    }
-}
-
-/** Hosts the page in a View so the existing pager can hold it. */
-fun controlsPageView(
-    context: Context,
-    entities: Map<String, EntityState>,
-    configured: List<Pair<DashboardWidget?, String>>,
-    online: Boolean,
-    dark: Boolean,
-    actions: ControlActions,
-): View = ComposeView(context).apply {
-    setContent {
-        PanelThemeProvider(dark) {
-            val cards = configured.mapNotNull { (widget, entityId) ->
-                entities[entityId]?.let { controlCard(it, widget, dense = configured.size > 2) }
-            }
-            ControlsPage(cards, online, actions)
-        }
     }
 }

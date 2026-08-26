@@ -28,16 +28,12 @@ import dev.hacompanion.panel.DashboardPage
 import dev.hacompanion.panel.DashboardWidget
 import dev.hacompanion.panel.EntityState
 import dev.hacompanion.panel.ui.components.PanelText
-import dev.hacompanion.panel.ui.model.controlCard
-import dev.hacompanion.panel.ui.model.controlTile
+import dev.hacompanion.panel.ui.model.pageCells
 import dev.hacompanion.panel.ui.model.resolveEntity
-import dev.hacompanion.panel.ui.model.sensorTile
 import dev.hacompanion.panel.ui.model.thermostatModel
 import dev.hacompanion.panel.ui.model.weatherModel
 import dev.hacompanion.panel.ui.pages.ControlActions
-import dev.hacompanion.panel.ui.pages.ControlsPage
-import dev.hacompanion.panel.ui.pages.GeneralPage
-import dev.hacompanion.panel.ui.pages.PageTile
+import dev.hacompanion.panel.ui.pages.PageGrid
 import dev.hacompanion.panel.ui.pages.ThermostatPage
 import dev.hacompanion.panel.ui.pages.WeatherPage
 import dev.hacompanion.panel.ui.theme.LocalPanelColors
@@ -112,11 +108,9 @@ private fun PageContent(
     actions: DashboardActions,
 ) {
     val only = page.widgets.singleOrNull()
-    val allControls = page.widgets.isNotEmpty() &&
-        page.widgets.all { it.type in setOf("controls", "entity_button") }
 
     // The camera fills the page itself: it has no title bar to long press.
-    if (!allControls && only?.type == "camera") {
+    if (only?.type == "camera") {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { context ->
@@ -131,11 +125,12 @@ private fun PageContent(
     }
 
     PageScaffold(page.title, actions::openAdmin) {
-        when {
-            allControls || only?.type == "controls" -> ControlsBody(page, ui, entities, actions)
-            only?.type == "thermostat" -> ThermostatBody(only, ui, entities, actions)
-            only?.type == "weather" -> WeatherBody(only, entities)
-            else -> GeneralBody(page, ui, entities, actions)
+        when (only?.type) {
+            "thermostat" -> ThermostatBody(only, ui, entities, actions)
+            "weather" -> WeatherBody(only, entities)
+            // Every other page is the same grid; each widget brings its own
+            // form, so no page-wide type has to be inferred from the mixture.
+            else -> PageBody(page, ui, entities, actions)
         }
     }
 }
@@ -175,47 +170,15 @@ private fun ThermostatBody(
 }
 
 @Composable
-private fun ControlsBody(
+private fun PageBody(
     page: DashboardPage,
     ui: DashboardUiState,
     entities: Map<String, EntityState>,
     actions: DashboardActions,
 ) {
-    val configured = page.widgets.mapNotNull { widget ->
-        widget.entityId?.let { id -> entities[id]?.let { widget to it } }
-    }
-    val chosen = configured.ifEmpty {
-        entities.values.filter { it.domain in CONTROL_DOMAINS }.take(4).map { null to it }
-    }
-    if (chosen.isEmpty()) {
-        PageMessage("No supported controls found")
-        return
-    }
     // Read so a schedule or timer change recomposes the labels that show them.
     @Suppress("UNUSED_EXPRESSION") ui.sidecarRevision
-    ControlsPage(
-        cards = chosen.map { (widget, entity) -> controlCard(entity, widget, dense = chosen.size > 2) },
-        online = ui.online,
-        actions = actions,
-    )
-}
-
-@Composable
-private fun GeneralBody(
-    page: DashboardPage,
-    ui: DashboardUiState,
-    entities: Map<String, EntityState>,
-    actions: DashboardActions,
-) {
-    val tiles = page.widgets.map { widget ->
-        when (val entity = resolveEntity(entities, widget)) {
-            null -> PageTile.Missing(widget.label ?: widget.entityId.orEmpty())
-            else ->
-                if (widget.type == "entity_button") PageTile.Control(controlTile(entity, widget.label))
-                else PageTile.Reading(sensorTile(entity, widget.label))
-        }
-    }
-    GeneralPage(tiles, ui.online, actions::toggle)
+    PageGrid(pageCells(page.widgets, entities), ui.online, actions)
 }
 
 /** The page title, which carries the long press that opens administration. */
