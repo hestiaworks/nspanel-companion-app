@@ -22,8 +22,12 @@ data class PanelType(
     val pageTitle: TextUnit = 17.sp,
     val cardHeadline: TextUnit = 17.sp,
     val headline: TextUnit = 18.sp,
+    val dialogChoice: TextUnit = 17.sp,
+    val dialogReading: TextUnit = 34.sp,
+    val dialogAction: TextUnit = 15.sp,
     val reading: TextUnit = 22.sp,
     val panelName: TextUnit = 28.sp,
+    val dialogTitle: TextUnit = 24.sp,
     val cardTitle: TextUnit = 15.sp,
     val body: TextUnit = 14.sp,
     val detail: TextUnit = 13.sp,
@@ -48,6 +52,9 @@ data class PanelRadius(
     val cardSmall: Dp = 15.dp,
     val cardHourly: Dp = 19.dp,
     val action: Dp = 13.dp,
+    val dialog: Dp = 24.dp,
+    val choice: Dp = 16.dp,
+    val preset: Dp = 15.dp,
 )
 
 /** Gaps and insets. */
@@ -72,6 +79,8 @@ data class PanelSpace(
     val pageTop: Dp = 10.dp,
     val pageBottom: Dp = 8.dp,
     val titleGap: Dp = 6.dp,
+    val dialogInsetX: Dp = 20.dp,
+    val dialogInsetY: Dp = 18.dp,
     val unconfiguredInsetX: Dp = 30.dp,
     val unconfiguredInsetY: Dp = 24.dp,
     val unconfiguredTextInset: Dp = 16.dp,
@@ -94,6 +103,10 @@ data class PanelSize(
     val hourlyStrip: Dp = 104.dp,
     val thermostatHintWidth: Dp = 170.dp,
     val denseNameHeight: Dp = 34.dp,
+    val dialogChoiceHeight: Dp = 58.dp,
+    val dialogActionHeight: Dp = 50.dp,
+    val dialogSliderHeight: Dp = 64.dp,
+    val dialogPresetHeight: Dp = 54.dp,
     val stroke: Dp = 1.dp,
 )
 

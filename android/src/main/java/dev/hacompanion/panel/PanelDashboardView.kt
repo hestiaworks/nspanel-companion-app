@@ -1,6 +1,24 @@
 package dev.hacompanion.panel
 
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import dev.hacompanion.panel.ui.PanelDialogAction
+import dev.hacompanion.panel.ui.PanelDialogButton
+import dev.hacompanion.panel.ui.PanelDialogChoices
+import dev.hacompanion.panel.ui.PanelDialogHeader
+import dev.hacompanion.panel.ui.components.PanelText
+import dev.hacompanion.panel.ui.showPanelDialog
+import dev.hacompanion.panel.ui.theme.LocalPanelRadius
+import dev.hacompanion.panel.ui.theme.LocalPanelSize
+import dev.hacompanion.panel.ui.theme.LocalPanelType
 import dev.hacompanion.panel.ui.DashboardActions
 import dev.hacompanion.panel.ui.DashboardRoot
 import dev.hacompanion.panel.ui.DashboardUiState
@@ -402,17 +420,18 @@ class PanelDashboardView(
             showScheduleDialog(entity, widget, null)
             return
         }
-        showControlDialog("Schedules", entity.friendlyName) { dialog ->
+        showPanelDialog(context, PanelTheme.isDark) { dismiss ->
+            PanelDialogHeader("Schedules", entity.friendlyName)
             values.forEach { schedule ->
-                addView(modalAction("${schedule.time}  ·  ${schedule.action.replace('_', ' ')}") {
-                    dialog.dismiss()
+                PanelDialogAction("${schedule.time}  \u00b7  ${schedule.action.replace('_', ' ')}") {
+                    dismiss()
                     showScheduleDialog(entity, widget, schedule)
-                }, LayoutParams(LayoutParams.MATCH_PARENT, dp(48)).apply { bottomMargin = dp(5) })
+                }
             }
-            addView(modalAction("＋ Add schedule") {
-                dialog.dismiss()
+            PanelDialogAction("\uff0b Add schedule") {
+                dismiss()
                 showScheduleDialog(entity, widget, null)
-            }, LayoutParams(LayoutParams.MATCH_PARENT, dp(50)).apply { topMargin = dp(4) })
+            }
         }
     }
 
@@ -518,140 +537,117 @@ class PanelDashboardView(
 
     private fun showFanSpeedDialog(entity: EntityState) {
         val percent = entity.numberAttribute("percentage")?.roundToInt() ?: 0
-        showControlDialog("Fan speed", entity.friendlyName) { dialog ->
-            addView(primaryText("$percent%", 34f).apply { typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER })
-            addView(deviceSeekBar(percent) { value ->
-                callService("fan", "set_percentage", entity.entityId, JSONObject().put("percentage", value))
-            }, LayoutParams(LayoutParams.MATCH_PARENT, dp(64)))
-            addView(LinearLayout(context).apply {
+        showPanelDialog(context, PanelTheme.isDark) { dismiss ->
+            PanelDialogHeader("Fan speed", entity.friendlyName)
+            PanelText(
+                "$percent%",
+                LocalPanelType.current.dialogReading,
+                Modifier.fillMaxWidth(),
+                bold = true,
+                align = TextAlign.Center,
+            )
+            AndroidView(
+                modifier = Modifier.fillMaxWidth().height(LocalPanelSize.current.dialogSliderHeight),
+                factory = { host ->
+                    PanelSliderView(host, percent) { value ->
+                        callService("fan", "set_percentage", entity.entityId, JSONObject().put("percentage", value))
+                    }
+                },
+            )
+            Row(Modifier.fillMaxWidth()) {
                 listOf(25 to "Low", 50 to "Medium", 100 to "High").forEach { (value, label) ->
-                    addView(TextView(context).apply {
-                        text = label
-                        textSize = 14f
-                        typeface = Typeface.DEFAULT_BOLD
-                        gravity = Gravity.CENTER
-                        background = cardBackground(PanelTheme.panel, PanelTheme.line, 15)
-                        setTextColor(PanelTheme.ink)
-                        setOnClickListener {
+                    Box(Modifier.weight(1f).padding(horizontal = 3.dp, vertical = 4.dp)) {
+                        PanelDialogButton(
+                            label = label,
+                            height = LocalPanelSize.current.dialogPresetHeight,
+                            active = false,
+                            radius = LocalPanelRadius.current.preset,
+                        ) {
                             callService("fan", "set_percentage", entity.entityId, JSONObject().put("percentage", value))
-                            dialog.dismiss()
+                            dismiss()
                         }
-                    }, LayoutParams(0, dp(54), 1f).apply { setMargins(dp(3), dp(4), dp(3), 0) })
+                    }
                 }
-            })
+            }
         }
     }
 
     private fun showCoverDialog(entity: EntityState, widget: DashboardWidget?) {
         val position = entity.numberAttribute("current_position")?.roundToInt() ?: 0
+        // SUPPORT_SET_POSITION. Without it the cover only opens and closes.
         val canPosition = entity.attributes.optInt("supported_features", 0) and 4 != 0
-        showControlDialog("Curtains", entity.friendlyName) { dialog ->
+        showPanelDialog(context, PanelTheme.isDark) { dismiss ->
+            PanelDialogHeader("Curtains", entity.friendlyName)
             if (canPosition) {
-                addView(primaryText("Position · $position%", 22f).apply { typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER })
-                addView(deviceSeekBar(position) { value ->
-                    callService("cover", "set_cover_position", entity.entityId, JSONObject().put("position", value))
-                }, LayoutParams(LayoutParams.MATCH_PARENT, dp(64)))
-            }
-            addView(LinearLayout(context).apply {
-                listOf("Open" to "open_cover", "Stop" to "stop_cover", "Close" to "close_cover").forEach { (label, service) ->
-                    addView(TextView(context).apply {
-                        text = label
-                        textSize = 15f
-                        typeface = Typeface.DEFAULT_BOLD
-                        gravity = Gravity.CENTER
-                        background = cardBackground(PanelTheme.panel, PanelTheme.line, 15)
-                        setTextColor(PanelTheme.ink)
-                        setOnClickListener {
-                            callService("cover", service, entity.entityId, JSONObject())
-                            if (service == "stop_cover") {
-                                widget?.gradualOpenScript?.let { callService("script", "turn_off", it, JSONObject()) }
-                                widget?.gradualCloseScript?.let { callService("script", "turn_off", it, JSONObject()) }
-                            }
-                            if (service != "stop_cover") dialog.dismiss()
+                PanelText(
+                    "Position · $position%",
+                    LocalPanelType.current.reading,
+                    Modifier.fillMaxWidth(),
+                    bold = true,
+                    align = TextAlign.Center,
+                )
+                AndroidView(
+                    modifier = Modifier.fillMaxWidth().height(LocalPanelSize.current.dialogSliderHeight),
+                    factory = { host ->
+                        PanelSliderView(host, position) { value ->
+                            callService("cover", "set_cover_position", entity.entityId, JSONObject().put("position", value))
                         }
-                    }, LayoutParams(0, dp(58), 1f).apply { setMargins(dp(3), dp(4), dp(3), 0) })
+                    },
+                )
+            }
+            Row(Modifier.fillMaxWidth()) {
+                listOf("Open" to "open_cover", "Stop" to "stop_cover", "Close" to "close_cover")
+                    .forEach { (label, service) ->
+                        Box(Modifier.weight(1f).padding(horizontal = 3.dp, vertical = 4.dp)) {
+                            PanelDialogButton(
+                                label = label,
+                                height = LocalPanelSize.current.dialogChoiceHeight,
+                                active = false,
+                                radius = LocalPanelRadius.current.preset,
+                            ) {
+                                callService("cover", service, entity.entityId, JSONObject())
+                                // Stop also has to end a gradual run, or the
+                                // script keeps driving the cover afterwards.
+                                if (service == "stop_cover") {
+                                    widget?.gradualOpenScript?.let { callService("script", "turn_off", it, JSONObject()) }
+                                    widget?.gradualCloseScript?.let { callService("script", "turn_off", it, JSONObject()) }
+                                } else {
+                                    dismiss()
+                                }
+                            }
+                        }
+                    }
+            }
+            listOfNotNull(
+                widget?.gradualOpenScript?.let { "Gradually open" to it },
+                widget?.gradualCloseScript?.let { "Gradually close" to it },
+            ).forEach { (label, script) ->
+                PanelDialogAction(label) {
+                    callService("script", "turn_on", script, JSONObject())
+                    dismiss()
                 }
-            })
-            widget?.gradualOpenScript?.let { script ->
-                addView(modalAction("Gradually open") {
-                    callService("script", "turn_on", script, JSONObject())
-                    dialog.dismiss()
-                }, LayoutParams(LayoutParams.MATCH_PARENT, dp(52)).apply { topMargin = dp(8) })
-            }
-            widget?.gradualCloseScript?.let { script ->
-                addView(modalAction("Gradually close") {
-                    callService("script", "turn_on", script, JSONObject())
-                    dialog.dismiss()
-                }, LayoutParams(LayoutParams.MATCH_PARENT, dp(52)).apply { topMargin = dp(8) })
             }
         }
-    }
-
-    private fun showControlDialog(title: String, subtitle: String, content: LinearLayout.(Dialog) -> Unit) {
-        val dialog = Dialog(context)
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
-        dialog.setContentView(LinearLayout(context).apply {
-            orientation = VERTICAL
-            setPadding(dp(20), dp(18), dp(20), dp(18))
-            background = cardBackground(CARD, CARD_EDGE, 24)
-            addView(primaryText(title, 24f).apply { typeface = Typeface.DEFAULT_BOLD })
-            addView(secondaryText(subtitle).apply { textSize = 13f; setPadding(0, dp(3), 0, dp(14)) })
-            content(dialog)
-        })
-        dialog.window?.apply {
-            setBackgroundDrawableResource(android.R.color.transparent)
-            setDimAmount(.65f)
-            addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-        }
-        dialog.show()
-        dialog.window?.setLayout((resources.displayMetrics.widthPixels * .9f).roundToInt(), android.view.WindowManager.LayoutParams.WRAP_CONTENT)
     }
 
     private fun showTimerDialog(entity: EntityState, presets: List<Int>) {
-        val dialog = Dialog(context)
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
-        dialog.setContentView(LinearLayout(context).apply {
-            orientation = VERTICAL
-            setPadding(dp(20), dp(18), dp(20), dp(18))
-            background = cardBackground(CARD, CARD_EDGE, 24)
-            addView(primaryText("Timer", 24f).apply { typeface = Typeface.DEFAULT_BOLD })
-            addView(secondaryText(entity.friendlyName).apply { textSize = 13f; setPadding(0, dp(3), 0, dp(14)) })
-            presets.distinct().chunked(2).forEach { row ->
-                addView(LinearLayout(context).apply {
-                    row.forEach { minutes ->
-                        val selected = timerMinutes[entity.entityId] == minutes
-                        addView(TextView(context).apply {
-                            text = "$minutes min"
-                            textSize = 17f
-                            typeface = Typeface.DEFAULT_BOLD
-                            gravity = Gravity.CENTER
-                            setTextColor(if (selected) Color.WHITE else PanelTheme.ink)
-                            background = cardBackground(if (selected) ACCENT else PanelTheme.panel, if (selected) ACCENT else PanelTheme.line, 16)
-                            setOnClickListener { setTimer(entity, minutes); dialog.dismiss() }
-                        }, LayoutParams(0, dp(58), 1f).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) })
-                    }
-                    if (row.size == 1) addView(View(context), LayoutParams(0, dp(58), 1f))
-                })
+        val running = timerMinutes[entity.entityId]?.takeIf { it > 0 }
+        showPanelDialog(context, PanelTheme.isDark, widthFraction = .86f) { dismiss ->
+            PanelDialogHeader("Timer", entity.friendlyName)
+            PanelDialogChoices(
+                labels = presets.distinct().map { "$it min" },
+                selected = { it == "$running min" },
+            ) { label ->
+                setTimer(entity, label.substringBefore(" ").toInt())
+                dismiss()
             }
-            timerMinutes[entity.entityId]?.takeIf { it > 0 }?.let {
-                addView(TextView(context).apply {
-                    text = "Cancel timer"
-                    textSize = 15f
-                    gravity = Gravity.CENTER
-                    setTextColor(Color.rgb(210, 74, 63))
-                    background = cardBackground(PanelTheme.panel, PanelTheme.line, 15)
-                    setOnClickListener { setTimer(entity, 0); dialog.dismiss() }
-                }, LayoutParams(LayoutParams.MATCH_PARENT, dp(50)).apply { topMargin = dp(9) })
+            if (running != null) {
+                PanelDialogAction("Cancel timer", destructive = true) {
+                    setTimer(entity, 0)
+                    dismiss()
+                }
             }
-        })
-        dialog.window?.apply {
-            setBackgroundDrawableResource(android.R.color.transparent)
-            setDimAmount(.65f)
-            addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            setLayout((resources.displayMetrics.widthPixels * .86f).roundToInt(), android.view.WindowManager.LayoutParams.WRAP_CONTENT)
         }
-        dialog.show()
-        dialog.window?.setLayout((resources.displayMetrics.widthPixels * .86f).roundToInt(), android.view.WindowManager.LayoutParams.WRAP_CONTENT)
     }
 
     private fun setTimer(entity: EntityState, minutes: Int) {

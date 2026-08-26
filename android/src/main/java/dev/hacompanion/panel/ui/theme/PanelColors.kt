@@ -23,6 +23,8 @@ data class PanelColors(
     val accentWash: Color,
     val line: Color,
     val disabled: Color,
+    /** Destructive actions: cancelling a timer, clearing a connection. */
+    val danger: Color,
 )
 
 val lightPanelColors = PanelColors(
@@ -36,6 +38,7 @@ val lightPanelColors = PanelColors(
     accentWash = Color(0xFFF8E0D2),
     line = Color(0xFFDADBD6),
     disabled = Color(0xFFB0B3AE),
+    danger = Color(0xFFD24A3F),
 )
 
 val darkPanelColors = PanelColors(
@@ -49,6 +52,7 @@ val darkPanelColors = PanelColors(
     accentWash = Color(0xFF59301C),
     line = Color(0xFF3D3F3B),
     disabled = Color(0xFF656862),
+    danger = Color(0xFFE05B4F),
 )
 
 val LocalPanelColors = staticCompositionLocalOf { lightPanelColors }

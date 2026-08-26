@@ -1,5 +1,12 @@
 package dev.hacompanion.panel
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.Modifier
+import dev.hacompanion.panel.ui.PanelDialogAction
+import dev.hacompanion.panel.ui.PanelDialogHeader
+import dev.hacompanion.panel.ui.showPanelDialog
 import dev.hacompanion.panel.ui.installComposeHost
 
 import android.Manifest
@@ -323,26 +330,40 @@ class MainActivity : Activity() {
             "Exit immersive mode",
         )
 
-        AlertDialog.Builder(this)
-            .setTitle("Administrator controls")
-            .setItems(actions) { _, which ->
-                when (which) {
-                    0 -> showConnectionDialog()
-                    1 -> requestMicrophone()
-                    2 -> requestHomeRole()
-                    3 -> startActivity(Intent(Settings.ACTION_SETTINGS))
-                    4 -> showDiagnostics()
-                    5 -> showPanelIdentity()
-                    6 -> discoverForPairing()
-                    7 -> copyReport()
-                    8 -> showDoorbell()
-                    9 -> showQuietDoorbell()
-                    10 -> clearConnection()
-                    11 -> exitImmersiveMode()
+        val run: (Int) -> Unit = { which ->
+            when (which) {
+                0 -> showConnectionDialog()
+                1 -> requestMicrophone()
+                2 -> requestHomeRole()
+                3 -> startActivity(Intent(Settings.ACTION_SETTINGS))
+                4 -> showDiagnostics()
+                5 -> showPanelIdentity()
+                6 -> discoverForPairing()
+                7 -> copyReport()
+                8 -> showDoorbell()
+                9 -> showQuietDoorbell()
+                10 -> clearConnection()
+                11 -> exitImmersiveMode()
+            }
+        }
+        showPanelDialog(this, PanelTheme.isDark) { dismiss ->
+            PanelDialogHeader("Administrator controls", "Panel setup and diagnostics")
+            // Scrollable: twelve actions do not fit a 480 pixel screen, and the
+            // platform dialog this replaced scrolled its list for the same reason.
+            Column(
+                Modifier
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                actions.forEachIndexed { index, label ->
+                    PanelDialogAction(label) {
+                        dismiss()
+                        run(index)
+                    }
                 }
             }
-            .setNegativeButton("Close", null)
-            .show()
+            PanelDialogAction("Close") { dismiss() }
+        }
     }
 
     private fun showPanelIdentity() {
