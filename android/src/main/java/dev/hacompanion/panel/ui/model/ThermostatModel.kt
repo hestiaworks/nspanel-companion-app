@@ -64,7 +64,7 @@ private val PRIMARY = listOf("heat", "cool", "heat_cool", "off")
 private val SECONDARY = listOf("dry", "fan_only")
 
 private fun cellFor(mode: String, active: Boolean) = when (mode) {
-    "heat" -> ModeCell(mode, "\u2600\ufe0e", "HEAT", active)
+    "heat" -> ModeCell(mode, "\u2600\ufe0e", "HEAT", active, warm = true)
     "cool" -> ModeCell(mode, "\u2744\ufe0e", "COOL", active)
     "heat_cool" -> ModeCell(mode, "\u2194", "AUTO", active)
     "dry" -> ModeCell(mode, "\u25cc", "DRY", active)
@@ -185,12 +185,15 @@ fun thermostatModel(
             secondary ->
                 listOf(TargetCell("temperature", "TARGET", "not used in this mode", reading = false))
             dual -> listOf(
-                TargetCell("heat", "HEAT TO", "${reading(low)}$unit"),
+                TargetCell("heat", "HEAT TO", "${reading(low)}$unit", warm = true),
                 TargetCell("cool", "COOL TO", "${reading(high)}$unit"),
             )
             // The lone setpoint is always the one the rail adjusts, so it is
             // filled without anything to select it against.
-            else -> listOf(TargetCell("temperature", "TARGET", "${reading(target)}$unit", selected = true))
+            else -> listOf(TargetCell(
+                "temperature", "TARGET", "${reading(target)}$unit",
+                selected = true, warm = climate.state == "heat",
+            ))
         },
         attributes = attributes,
         modeCells = modeCells,

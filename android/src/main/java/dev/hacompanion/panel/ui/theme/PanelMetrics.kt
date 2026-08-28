@@ -43,8 +43,14 @@ data class PanelType(
     val labelTracking: TextUnit = 0.12.em,
     /** Wider, for the labels that title a band rather than sit beside a value. */
     val labelTrackingWide: TextUnit = 0.14.em,
-    /** A 120 px numeral is set tight, so its unit lands at cap height. */
-    val displayLeading: TextUnit = 0.82.em,
+    /**
+     * The proportion of its own size a display numeral occupies.
+     *
+     * The spec sets the hero line at .82, which no text style can express
+     * here: lineHeight can add leading but never take a single line below the
+     * font's ascent and descent. Applied as a layout instead.
+     */
+    val displayLeading: Float = 0.82f,
 )
 
 /** Slab is square. The mic dot and the status pill use CircleShape instead. */

@@ -121,6 +121,14 @@ data class TargetCell(
      * be one.
      */
     val reading: Boolean = true,
+    /**
+     * Whether this setpoint is a heating one.
+     *
+     * The colour says what the setpoint does rather than what the unit is
+     * doing, so heat is warm and cool is accent even while both sit idle —
+     * and in heat_cool the two appear side by side.
+     */
+    val warm: Boolean = false,
 )
 
 /**
@@ -131,12 +139,7 @@ data class TargetCell(
  * a border.
  */
 @Composable
-fun TargetRow(
-    cells: List<TargetCell>,
-    enabled: Boolean,
-    tint: Color,
-    onSelect: (String) -> Unit,
-) {
+fun TargetRow(cells: List<TargetCell>, enabled: Boolean, onSelect: (String) -> Unit) {
     val colors = LocalPanelColors.current
     val type = LocalPanelType.current
     // A single cell spans the width and can afford the wider inset; two cells
@@ -149,7 +152,10 @@ fun TargetRow(
                 val filled = cell.selected && enabled
                 Row(
                     Modifier.weight(1f).fillMaxHeight()
-                        .background(if (filled) tint else colors.panel)
+                        .background(
+                            if (filled) (if (cell.warm) colors.warm else colors.accent)
+                            else colors.panel
+                        )
                         .clickable(enabled = enabled && cells.size > 1) { onSelect(cell.key) }
                         .padding(horizontal = inset),
                     verticalAlignment = Alignment.CenterVertically,
@@ -235,6 +241,8 @@ data class ModeCell(
     val glyph: String,
     val label: String,
     val active: Boolean,
+    /** Heat is the only mode the spec fills warm; everything else is accent. */
+    val warm: Boolean = false,
 )
 
 /**
@@ -246,7 +254,6 @@ data class ModeCell(
 fun ModeRow(
     cells: List<ModeCell>,
     enabled: Boolean,
-    tint: Color,
     height: Dp = LocalPanelSize.current.modeRow,
     onPick: (ModeCell) -> Unit,
 ) {
@@ -258,7 +265,13 @@ fun ModeRow(
                 if (index > 0) CellRule()
                 Column(
                     Modifier.weight(1f).fillMaxHeight()
-                        .background(if (cell.active) tint else colors.canvas)
+                        .background(
+                            when {
+                                !cell.active -> colors.canvas
+                                cell.warm -> colors.warm
+                                else -> colors.accent
+                            }
+                        )
                         .clickable(enabled = enabled) { onPick(cell) },
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,

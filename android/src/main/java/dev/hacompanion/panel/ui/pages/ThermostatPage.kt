@@ -11,12 +11,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.hacompanion.panel.ui.components.PanelText
 import dev.hacompanion.panel.ui.model.MORE_KEY
 import dev.hacompanion.panel.ui.model.ThermostatModel
 import dev.hacompanion.panel.ui.slab.AttributeRow
 import dev.hacompanion.panel.ui.slab.HeaderRow
+import dev.hacompanion.panel.ui.slab.lineBox
 import dev.hacompanion.panel.ui.slab.ModeRow
 import dev.hacompanion.panel.ui.slab.StepperRail
 import dev.hacompanion.panel.ui.slab.TargetRow
@@ -51,10 +54,12 @@ fun ThermostatPage(
     val colors = LocalPanelColors.current
     val type = LocalPanelType.current
     val usable = online && model.targetUsable
-    // One accent per screen, and the mode chooses which: warm while the room
-    // is being heated, accent otherwise. The rail, the selected setpoint and
-    // the running mode all take it, so the page reads as one decision.
-    val tint = if (model.heating) colors.warm else colors.accent
+    // The rail belongs to whichever setpoint it is adjusting, so it takes that
+    // setpoint's colour: warm for a heating one, accent for a cooling one.
+    val adjusting =
+        if (model.targets.size > 1) model.targets.firstOrNull { it.key == selectedTarget }
+        else model.targets.firstOrNull()
+    val railTint = if (adjusting?.warm == true) colors.warm else colors.accent
     // An attribute row costs 56 px, and the spec takes it from the numeral and
     // the mode row rather than from the block that has to hold the caption.
     val dense = model.attributes.isNotEmpty()
@@ -87,11 +92,15 @@ fun ThermostatPage(
                     semibold = true, muted = true,
                     letterSpacing = type.labelTrackingWide, maxLines = 1,
                 )
-                Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.Top) {
-                    PanelText(
-                        model.displayValue, if (dense) type.hero else type.display,
-                        bold = true, maxLines = 1, lineHeight = type.displayLeading,
-                    )
+                val numeral = if (dense) type.hero else type.display
+                Row(
+                    Modifier.padding(top = 6.dp)
+                        .lineBox(with(LocalDensity.current) {
+                            (numeral.value * type.displayLeading).sp.toDp()
+                        }),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    PanelText(model.displayValue, numeral, bold = true, maxLines = 1)
                     PanelText(
                         model.displayUnit,
                         if (dense) type.heroUnitSmall else type.heroUnit,
@@ -102,7 +111,6 @@ fun ThermostatPage(
                             },
                         ),
                         semibold = true, muted = true, maxLines = 1,
-                        lineHeight = type.displayLeading,
                     )
                 }
                 if (model.displayCaption.isNotBlank()) {
@@ -113,7 +121,7 @@ fun ThermostatPage(
                     )
                 }
             }
-            StepperRail(enabled = usable, tint = tint) { up -> onStep(up) }
+            StepperRail(enabled = usable, tint = railTint) { up -> onStep(up) }
         }
 
         TargetRow(
@@ -121,7 +129,6 @@ fun ThermostatPage(
                 if (model.targets.size > 1) it.copy(selected = it.key == selectedTarget) else it
             },
             enabled = usable,
-            tint = tint,
             onSelect = onTargetSelected,
         )
 
@@ -130,7 +137,6 @@ fun ThermostatPage(
         ModeRow(
             model.modeCells,
             enabled = online,
-            tint = tint,
             height = if (dense) size.modeRowCompact else size.modeRow,
         ) { cell ->
             if (cell.key == MORE_KEY) onOpenMore() else onMode(cell.key)

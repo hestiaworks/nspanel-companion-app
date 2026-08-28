@@ -246,4 +246,30 @@ class ThermostatModelTest {
                           "temperature":23.0}"""
         assertTrue(thermostatModel(ac("cool", cooling), null).targets.single().selected)
     }
+
+    @Test
+    fun onlyHeatingIsWarm() {
+        // Spec: every filled mode cell is accent except HEAT, which is #FF7A3D.
+        val model = thermostatModel(ac("heat", FULL), null)
+        assertEquals(
+            listOf(true, false, false, false, false),
+            model.modeCells.map { it.warm },
+        )
+    }
+
+    @Test
+    fun eachSetpointCarriesTheColourOfWhatItDoes() {
+        // Auto is where both appear at once: heat warm, cool accent.
+        val auto = """{"hvac_modes":["off","heat_cool"],"current_temperature":19.4,
+                       "target_temp_low":20.0,"target_temp_high":24.0}"""
+        assertEquals(listOf(true, false), thermostatModel(ac("heat_cool", auto), null).targets.map { it.warm })
+    }
+
+    @Test
+    fun theLoneSetpointTakesTheColourOfTheModeItServes() {
+        val heat = """{"hvac_modes":["off","heat"],"current_temperature":19.4,"temperature":21.0}"""
+        assertTrue(thermostatModel(ac("heat", heat), null).targets.single().warm)
+        val cool = """{"hvac_modes":["off","cool"],"current_temperature":26.2,"temperature":23.0}"""
+        assertFalse(thermostatModel(ac("cool", cool), null).targets.single().warm)
+    }
 }
