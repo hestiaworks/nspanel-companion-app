@@ -18,6 +18,7 @@ import dev.hacompanion.panel.MicUsageTracker
 import kotlinx.coroutines.delay
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -77,6 +78,15 @@ class DashboardUiState {
      * so nothing else would tell the affected labels to recompose.
      */
     var sidecarRevision by mutableStateOf(0)
+
+    /**
+     * Which setpoint the rail adjusts, per entity.
+     *
+     * Snapshot state, so choosing one moves the fill on the next frame. Held
+     * in a plain map it moved on the next entity update instead, which read
+     * as the rail adjusting whichever setpoint you had selected before.
+     */
+    val selectedTargets = mutableStateMapOf<String, String>()
 }
 
 /** Everything the dashboard's pages call back into. */
@@ -90,6 +100,12 @@ interface DashboardActions : ControlActions {
     fun selectClimateTarget(entityId: String, target: String)
     fun stepThermostat(entityId: String, up: Boolean)
     fun setHvacMode(entityId: String, mode: String)
+
+    /** The sheet behind the mode row's MORE slot. */
+    fun openMoreModes(entityId: String)
+
+    /** The sheet behind a fan speed or swing cell. `key` is the attribute. */
+    fun openClimateAttribute(entityId: String, key: String)
 }
 
 @Composable
@@ -221,10 +237,8 @@ private fun ThermostatBody(
         onStep = { up -> actions.stepThermostat(climate.entityId, up) },
         onMode = { mode -> actions.setHvacMode(climate.entityId, mode) },
         onLongPressTitle = actions::openAdmin,
-        // Task 11 replaces these with sheets; until then the slot and the
-        // attribute row are inert rather than absent, so the bands are real.
-        onOpenMore = {},
-        onOpenAttribute = {},
+        onOpenMore = { actions.openMoreModes(climate.entityId) },
+        onOpenAttribute = { key -> actions.openClimateAttribute(climate.entityId, key) },
     )
 }
 

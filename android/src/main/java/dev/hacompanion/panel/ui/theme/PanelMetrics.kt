@@ -34,6 +34,8 @@ data class PanelType(
     val caption: TextUnit = 16.sp,
     /** A phrase standing where a reading would be, so it is not set like one. */
     val note: TextUnit = 19.sp,
+    /** The line under a sheet's title, saying what the choice affects. */
+    val sheetSubtitle: TextUnit = 14.sp,
     val micro: TextUnit = 11.sp,
     val glyphLarge: TextUnit = 52.sp,
     val glyph: TextUnit = 30.sp,
@@ -118,6 +120,13 @@ data class PanelSize(
     val icon: Dp = 30.dp,
     val dot: Dp = 10.dp,
     val stroke: Dp = 1.dp,
+    /**
+     * The rule at a sheet's top edge.
+     *
+     * The one place two pixels are used: it marks where the sheet begins
+     * against the dimmed page behind it, which one pixel at 65% dim cannot.
+     */
+    val sheetRule: Dp = 2.dp,
     /** The rule marking the rail as the control the setpoint answers to. */
     val railRule: Dp = 4.dp,
 )

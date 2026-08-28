@@ -16,6 +16,12 @@ import dev.hacompanion.panel.ui.PanelDialogChoices
 import dev.hacompanion.panel.ui.PanelDialogHeader
 import dev.hacompanion.panel.ui.components.PanelText
 import dev.hacompanion.panel.ui.showPanelDialog
+import dev.hacompanion.panel.ui.model.sentenceCase
+import dev.hacompanion.panel.ui.model.thermostatModel
+import dev.hacompanion.panel.ui.slab.Sheet
+import dev.hacompanion.panel.ui.slab.SheetModes
+import dev.hacompanion.panel.ui.slab.SheetOptions
+import dev.hacompanion.panel.ui.slab.showPanelSheet
 import dev.hacompanion.panel.ui.theme.LocalPanelRadius
 import dev.hacompanion.panel.ui.theme.LocalPanelSize
 import dev.hacompanion.panel.ui.theme.LocalPanelType
@@ -88,7 +94,6 @@ class PanelDashboardView(
     private var fullRenderCount = 0
     private val timerMinutes = mutableMapOf<String, Int>()
     private val timerCallbacks = mutableMapOf<String, Runnable>()
-    private val selectedClimateTarget = mutableMapOf<String, String>()
     private var schedules = emptyList<ControlSchedule>()
     private val returnToDefault = Runnable {
         if (!interactionActive && dashboardActive) {
@@ -112,17 +117,22 @@ class PanelDashboardView(
             streamWarmer.claim(widget)
 
         override fun selectedClimateTarget(entityId: String): String =
-            selectedClimateTarget.getOrPut(entityId) {
-                if (states[entityId]?.state == "cool") "cool" else "heat"
-            }
+            selectedTargetFor(entityId)
 
         override fun selectClimateTarget(entityId: String, target: String) {
-            selectedClimateTarget[entityId] = target
-            ui.sidecarRevision += 1
+            ui.selectedTargets[entityId] = target
         }
 
         override fun stepThermostat(entityId: String, up: Boolean) {
             states[entityId]?.let { this@PanelDashboardView.stepThermostat(it, up) }
+        }
+
+        override fun openMoreModes(entityId: String) {
+            states[entityId]?.let(::showMoreModesSheet)
+        }
+
+        override fun openClimateAttribute(entityId: String, key: String) {
+            states[entityId]?.let { showClimateAttributeSheet(it, key) }
         }
 
         override fun setHvacMode(entityId: String, mode: String) {
@@ -363,7 +373,7 @@ class PanelDashboardView(
             changeTemperature(climate, target + step)
             return
         }
-        val selected = selectedClimateTarget[climate.entityId] ?: "heat"
+        val selected = selectedTargetFor(climate.entityId)
         // The two targets may not cross, so each is clamped against the other.
         if (selected == "heat") {
             changeTemperatureRange(climate, (low + step).coerceAtMost(high - step.absoluteValue), high)
@@ -371,6 +381,66 @@ class PanelDashboardView(
             changeTemperatureRange(climate, low, (high + step).coerceAtLeast(low + step.absoluteValue))
         }
     }
+
+    /**
+     * The modes that did not earn a cell in the row, as a sheet.
+     *
+     * Picking one is a mode change like any other, so it replaces whatever is
+     * running rather than adding to it — which is what the subtitle says.
+     */
+    private fun showMoreModesSheet(climate: EntityState) {
+        val model = thermostatModel(climate, widgetFor(climate.entityId)?.label)
+        if (model.moreOptions.isEmpty()) return
+        showPanelSheet(context, PanelTheme.isDark) { dismiss ->
+            Sheet("More modes", "${model.name} \u00b7 replaces the current mode", dismiss) {
+                SheetModes(model.moreOptions) { cell ->
+                    callService(
+                        "climate", "set_hvac_mode", climate.entityId,
+                        JSONObject().put("hvac_mode", cell.key),
+                    )
+                    dismiss()
+                }
+            }
+        }
+    }
+
+    /**
+     * Fan speed or swing, whose option lists are the vendor's rather than
+     * ours — so the sheet is built from what the entity reports.
+     */
+    private fun showClimateAttributeSheet(climate: EntityState, key: String) {
+        val optionsKey = if (key == "swing_mode") "swing_modes" else "fan_modes"
+        val array = climate.attributes.optJSONArray(optionsKey) ?: return
+        val options = buildList<Pair<String, String>> {
+            for (index in 0 until array.length()) {
+                val value = array.optString(index)
+                if (value.isNotBlank()) add(value to sentenceCase(value))
+            }
+        }
+        if (options.isEmpty()) return
+        val title = if (key == "swing_mode") "Swing" else "Fan speed"
+        val name = widgetFor(climate.entityId)?.label ?: climate.friendlyName
+        showPanelSheet(context, PanelTheme.isDark) { dismiss ->
+            Sheet(title, "$name \u00b7 stays set across modes", dismiss) {
+                SheetOptions(options, climate.attributes.optString(key)) { value ->
+                    val service = if (key == "swing_mode") "set_swing_mode" else "set_fan_mode"
+                    callService("climate", service, climate.entityId, JSONObject().put(key, value))
+                    dismiss()
+                }
+            }
+        }
+    }
+
+    /**
+     * The setpoint the rail is adjusting.
+     *
+     * Resolved rather than stored on first read: a cooling unit starts on its
+     * cool setpoint, and writing that default during composition would be a
+     * snapshot write from inside the frame that reads it.
+     */
+    private fun selectedTargetFor(entityId: String): String =
+        ui.selectedTargets[entityId]
+            ?: if (states[entityId]?.state == "cool") "cool" else "heat"
 
     /** The widget that configured an entity, wherever it sits in the layout. */
     private fun widgetFor(entityId: String): DashboardWidget? =

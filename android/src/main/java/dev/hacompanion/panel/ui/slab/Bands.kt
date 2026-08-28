@@ -243,6 +243,11 @@ data class ModeCell(
     val active: Boolean,
     /** Heat is the only mode the spec fills warm; everything else is accent. */
     val warm: Boolean = false,
+    /**
+     * The mode's name in a sheet row, which has room for it: FAN in a 96 px
+     * cell is "Fan only" once it has the width to say so.
+     */
+    val name: String = label,
 )
 
 /**

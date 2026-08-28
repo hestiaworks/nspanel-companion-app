@@ -71,8 +71,8 @@ private fun cellFor(mode: String, active: Boolean) = when (mode) {
     "heat" -> ModeCell(mode, "\u2600\ufe0e", "HEAT", active, warm = true)
     "cool" -> ModeCell(mode, "\u2744\ufe0e", "COOL", active)
     "heat_cool" -> ModeCell(mode, "\u2194", "AUTO", active)
-    "dry" -> ModeCell(mode, "\u25cc", "DRY", active)
-    "fan_only" -> ModeCell(mode, "\u224b", "FAN", active)
+    "dry" -> ModeCell(mode, "\u25cc", "DRY", active, name = "Dry")
+    "fan_only" -> ModeCell(mode, "\u224b", "FAN", active, name = "Fan only")
     else -> ModeCell(mode, "\u25cb", "OFF", active)
 }
 
@@ -91,7 +91,8 @@ private fun glyphAndLabel(mode: String): Pair<String, String> = when (mode) {
     else -> "○" to "Off"
 }
 
-private fun sentenceCase(value: String): String =
+/** A service value as a label: "fan_only" becomes "Fan only". */
+fun sentenceCase(value: String): String =
     value.replace('_', ' ').replaceFirstChar { it.uppercase() }
 
 fun thermostatModel(

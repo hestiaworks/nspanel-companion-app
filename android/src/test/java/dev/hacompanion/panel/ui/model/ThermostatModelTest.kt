@@ -303,4 +303,12 @@ class ThermostatModelTest {
     fun anUnknownEntityIsTreatedAsUnavailable() {
         assertFalse(thermostatModel(ac("unknown", "{}"), null).available)
     }
+
+    @Test
+    fun aSheetRowHasTheWidthToSayFanOnly() {
+        // The row cell says FAN because 96 px is all it has; the sheet does not.
+        val more = thermostatModel(ac("heat", FULL), null).moreOptions
+        assertEquals(listOf("DRY", "FAN"), more.map { it.label })
+        assertEquals(listOf("Dry", "Fan only"), more.map { it.name })
+    }
 }
