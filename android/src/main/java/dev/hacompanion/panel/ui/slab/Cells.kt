@@ -21,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
@@ -148,27 +149,39 @@ fun LevelTile(
     }
 }
 
-/** The 132 px column of + and −, to the right of a reading. */
+/**
+ * The 132 px column of + and −.
+ *
+ * The four pixel rule down its left edge is the mode's colour: it marks the
+ * rail as the control the setpoint answers to, where a 1 px line would read
+ * as separation between two unrelated regions.
+ */
 @Composable
-fun StepperRail(enabled: Boolean, onStep: (Boolean) -> Unit) {
+fun StepperRail(enabled: Boolean, tint: Color, onStep: (Boolean) -> Unit) {
     val colors = LocalPanelColors.current
     val type = LocalPanelType.current
     val size = LocalPanelSize.current
-    Column(Modifier.width(size.rail).fillMaxHeight()) {
-        listOf(true, false).forEachIndexed { index, up ->
-            if (index > 0) {
-                Box(Modifier.fillMaxWidth().height(size.stroke).background(colors.line))
-            }
-            Box(
-                Modifier.fillMaxWidth().weight(1f)
-                    .clickable(enabled = enabled) { onStep(up) },
-                contentAlignment = Alignment.Center,
-            ) {
-                PanelText(
-                    if (up) "+" else "−",
-                    type.glyphStep,
-                    color = if (enabled) colors.ink else colors.disabled,
-                )
+    Row(Modifier.width(size.rail).fillMaxHeight()) {
+        Box(
+            Modifier.width(size.railRule).fillMaxHeight()
+                .background(if (enabled) tint else colors.line)
+        )
+        Column(Modifier.fillMaxHeight().weight(1f).background(colors.card)) {
+            listOf(true, false).forEachIndexed { index, up ->
+                if (index > 0) {
+                    Box(Modifier.fillMaxWidth().height(size.stroke).background(colors.line))
+                }
+                Box(
+                    Modifier.fillMaxWidth().weight(1f)
+                        .clickable(enabled = enabled) { onStep(up) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    PanelText(
+                        if (up) "+" else "−",
+                        type.glyphStep,
+                        color = if (enabled) colors.ink else colors.disabled,
+                    )
+                }
             }
         }
     }

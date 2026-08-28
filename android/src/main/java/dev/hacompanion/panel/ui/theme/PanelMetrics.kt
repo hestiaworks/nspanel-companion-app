@@ -26,6 +26,11 @@ data class PanelType(
     val body: TextUnit = 17.sp,
     val bodySmall: TextUnit = 15.sp,
     val label: TextUnit = 13.sp,
+    /** The clock, which is read at a glance rather than scanned as a label. */
+    val clock: TextUnit = 16.sp,
+    /** The unit beside a 120 px reading, and the caption under it. */
+    val heroUnit: TextUnit = 42.sp,
+    val caption: TextUnit = 16.sp,
     val micro: TextUnit = 11.sp,
     val glyphLarge: TextUnit = 52.sp,
     val glyph: TextUnit = 30.sp,
@@ -33,6 +38,10 @@ data class PanelType(
     val glyphMode: TextUnit = 22.sp,
     /** Tracking belongs to the label role now rather than being its own token. */
     val labelTracking: TextUnit = 0.12.em,
+    /** Wider, for the labels that title a band rather than sit beside a value. */
+    val labelTrackingWide: TextUnit = 0.14.em,
+    /** A 120 px numeral is set tight, so its unit lands at cap height. */
+    val displayLeading: TextUnit = 0.82.em,
 )
 
 /** Slab is square. The mic dot and the status pill use CircleShape instead. */
@@ -49,6 +58,18 @@ data class PanelRadius(
 @Immutable
 data class PanelSpace(
     val edge: Dp = 24.dp,
+    /** The status strip is inset less than a band: it is chrome, not content. */
+    val strip: Dp = 20.dp,
+    /** The gap between page bar segments, and the bar's own inset. */
+    val hair: Dp = 2.dp,
+    /**
+     * How far the unit drops to sit at the numeral's cap height.
+     *
+     * The difference between two cap heights, which no layout alignment
+     * expresses: top alignment lines up line boxes and baseline alignment
+     * lines up the feet. Measured on the panel against the spec's frames.
+     */
+    val heroUnitDrop: Dp = 26.dp,
     val unconfiguredInsetX: Dp = 30.dp,
     val unconfiguredInsetY: Dp = 24.dp,
     val unconfiguredTextInset: Dp = 16.dp,
@@ -78,6 +99,8 @@ data class PanelSize(
     val icon: Dp = 30.dp,
     val dot: Dp = 10.dp,
     val stroke: Dp = 1.dp,
+    /** The rule marking the rail as the control the setpoint answers to. */
+    val railRule: Dp = 4.dp,
 )
 
 val LocalPanelType = staticCompositionLocalOf { PanelType() }

@@ -1,6 +1,7 @@
 package dev.hacompanion.panel.ui.slab
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -36,10 +37,10 @@ fun StatusStrip(time: String, micActive: Boolean?, pages: Int, current: Int) {
 
     Band(size.statusBar, rule = false, fill = colors.canvas) {
         Row(
-            Modifier.fillMaxSize().padding(horizontal = LocalPanelSpace.current.edge),
+            Modifier.fillMaxSize().padding(horizontal = LocalPanelSpace.current.strip),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PanelText(time, type.label, letterSpacing = type.labelTracking)
+            PanelText(time, type.clock, semibold = true)
             Box(Modifier.weight(1f))
             if (micActive != null) {
                 Box(
@@ -52,17 +53,20 @@ fun StatusStrip(time: String, micActive: Boolean?, pages: Int, current: Int) {
         }
     }
 
-    // Weights rather than an offset: the segment's position is a share of the
-    // parent's width, and a modifier that offsets by a fraction sees only its
-    // own constraints — which put the segment a quarter of its own width from
-    // the left instead of a quarter of the screen.
-    Row(Modifier.fillMaxWidth().height(size.pageBar).background(colors.line)) {
+    // One segment per page, separated rather than sliding along a rail: at
+    // three pixels the gap is what makes them count as four, and a share of a
+    // parent's width cannot be expressed as an offset on the child itself.
+    val gap = LocalPanelSpace.current.hair
+    Row(
+        Modifier.fillMaxWidth().height(size.pageBar).padding(horizontal = gap),
+        horizontalArrangement = Arrangement.spacedBy(gap),
+    ) {
         val page = current.coerceIn(0, (pages - 1).coerceAtLeast(0))
-        if (page > 0) Box(Modifier.weight(page.toFloat()).fillMaxHeight())
-        if (pages > 0) {
-            Box(Modifier.weight(1f).fillMaxHeight().background(colors.accent))
+        repeat(pages) { index ->
+            Box(
+                Modifier.weight(1f).fillMaxHeight()
+                    .background(if (index == page) colors.accent else colors.line)
+            )
         }
-        val after = pages - page - 1
-        if (after > 0) Box(Modifier.weight(after.toFloat()).fillMaxHeight())
     }
 }

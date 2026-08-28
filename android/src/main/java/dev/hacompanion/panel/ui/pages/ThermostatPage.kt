@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import dev.hacompanion.panel.ui.components.PanelText
 import dev.hacompanion.panel.ui.model.MORE_KEY
 import dev.hacompanion.panel.ui.model.ThermostatModel
@@ -49,50 +50,74 @@ fun ThermostatPage(
     val colors = LocalPanelColors.current
     val type = LocalPanelType.current
     val usable = online && model.targetUsable
+    // One accent per screen, and the mode chooses which: warm while the room
+    // is being heated, accent otherwise. The rail, the selected setpoint and
+    // the running mode all take it, so the page reads as one decision.
+    val tint = if (model.heating) colors.warm else colors.accent
 
     Column(Modifier.fillMaxSize().background(colors.canvas)) {
         HeaderRow(
             model.name,
             model.status,
-            tint = if (model.heating) colors.warm else null,
+            // Idle takes neither colour: the header says what the unit is
+            // doing, and doing nothing is not worth an accent.
+            tint = when {
+                model.heating -> colors.warm
+                model.cooling -> colors.accent
+                else -> null
+            },
             onLongPress = onLongPressTitle,
         )
 
         Row(Modifier.fillMaxWidth().weight(1f)) {
             Column(
+                // Inset on the left only: the rail closes the right edge, and
+                // padding there would put a gap where a rule belongs.
                 Modifier.weight(1f).fillMaxHeight()
-                    .padding(horizontal = LocalPanelSpace.current.edge),
+                    .padding(start = LocalPanelSpace.current.edge),
                 verticalArrangement = Arrangement.Center,
             ) {
                 PanelText(
                     model.displayLabel, type.label,
-                    muted = true, letterSpacing = type.labelTracking, maxLines = 1,
+                    semibold = true, muted = true,
+                    letterSpacing = type.labelTrackingWide, maxLines = 1,
                 )
-                // The unit rides the top of the digits rather than the top of
-                // the 120 px line box, which is an ascender above them: dropped
-                // by one edge it lands at cap height and stops floating.
-                Row(verticalAlignment = Alignment.Top) {
-                    PanelText(model.displayValue, type.display, bold = true, maxLines = 1)
+                Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.Top) {
                     PanelText(
-                        model.displayUnit, type.title,
-                        Modifier.padding(top = LocalPanelSpace.current.edge),
+                        model.displayValue, type.display,
+                        bold = true, maxLines = 1, lineHeight = type.displayLeading,
+                    )
+                    PanelText(
+                        model.displayUnit, type.heroUnit,
+                        Modifier.padding(
+                            start = 9.dp,
+                            top = LocalPanelSpace.current.heroUnitDrop,
+                        ),
+                        semibold = true, muted = true, maxLines = 1,
+                        lineHeight = type.displayLeading,
+                    )
+                }
+                if (model.displayCaption.isNotBlank()) {
+                    PanelText(
+                        model.displayCaption, type.caption,
+                        Modifier.padding(top = 12.dp),
                         muted = true, maxLines = 1,
                     )
                 }
-                PanelText(model.displayCaption, type.bodySmall, muted = true, maxLines = 1)
             }
-            StepperRail(enabled = usable) { up -> onStep(up) }
+            StepperRail(enabled = usable, tint = tint) { up -> onStep(up) }
         }
 
         TargetRow(
             model.targets.map { it.copy(selected = model.targets.size > 1 && it.key == selectedTarget) },
             enabled = usable,
+            tint = tint,
             onSelect = onTargetSelected,
         )
 
         AttributeRow(model.attributes, enabled = online) { onOpenAttribute(it.key) }
 
-        ModeRow(model.modeCells, enabled = online) { cell ->
+        ModeRow(model.modeCells, enabled = online, tint = tint) { cell ->
             if (cell.key == MORE_KEY) onOpenMore() else onMode(cell.key)
         }
     }

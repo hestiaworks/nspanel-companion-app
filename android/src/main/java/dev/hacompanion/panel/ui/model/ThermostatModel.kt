@@ -42,8 +42,10 @@ data class ThermostatModel(
     val modeCells: List<ModeCell>,
     /** What the MORE sheet offers. Empty when the unit reports neither. */
     val moreOptions: List<ModeCell>,
-    /** True only while the unit is actually heating, which tints the header. */
+    /** True only while the unit is actually heating, which tints the page warm. */
     val heating: Boolean,
+    /** True only while it is actually cooling; idle takes neither and stays muted. */
+    val cooling: Boolean,
     /** False in dry and fan_only: the rail greys out rather than disappearing. */
     val targetUsable: Boolean,
 )
@@ -161,12 +163,10 @@ fun thermostatModel(
         status = buildString {
             append(climate.attributes.optString("hvac_action").ifBlank { climate.state }
                 .replace('_', ' ').uppercase())
-            if (climate.state != "off" && !secondary) {
-                append(" \u00b7 ")
-                append(
-                    if (dual) "${formatNumber(low)}\u2013${formatNumber(high)}$unit"
-                    else "${formatNumber(target)}$unit"
-                )
+            // Only in heat_cool: a single setpoint is already the filled band
+            // below, and repeating it in the header says the same thing twice.
+            if (dual && climate.state != "off") {
+                append(" \u00b7 ${formatNumber(low)}\u2013${formatNumber(high)}$unit")
             }
         },
         // While drying, humidity is the number being acted on; the room is
@@ -187,7 +187,9 @@ fun thermostatModel(
                 TargetCell("heat", "HEAT TO", "${reading(low)}$unit"),
                 TargetCell("cool", "COOL TO", "${reading(high)}$unit"),
             )
-            else -> listOf(TargetCell("temperature", "TARGET", "${reading(target)}$unit"))
+            // The lone setpoint is always the one the rail adjusts, so it is
+            // filled without anything to select it against.
+            else -> listOf(TargetCell("temperature", "TARGET", "${reading(target)}$unit", selected = true))
         },
         attributes = attributes,
         modeCells = modeCells,
@@ -195,6 +197,7 @@ fun thermostatModel(
             cellFor(it, active = climate.state == it)
         },
         heating = climate.attributes.optString("hvac_action") == "heating",
+        cooling = climate.attributes.optString("hvac_action") == "cooling",
         targetUsable = !secondary && climate.state != "off",
     )
 }

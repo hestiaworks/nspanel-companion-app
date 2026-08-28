@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.dp
 import dev.hacompanion.panel.ui.components.PanelText
 import dev.hacompanion.panel.ui.theme.LocalPanelColors
@@ -78,7 +79,7 @@ fun CellRule() {
 fun HeaderRow(title: String, status: String, tint: Color? = null, onLongPress: (() -> Unit)? = null) {
     val colors = LocalPanelColors.current
     val type = LocalPanelType.current
-    Band(LocalPanelSize.current.headerRow, rule = false) {
+    Band(LocalPanelSize.current.headerRow) {
         Row(
             Modifier.fillMaxSize().padding(horizontal = LocalPanelSpace.current.edge),
             verticalAlignment = Alignment.CenterVertically,
@@ -89,13 +90,14 @@ fun HeaderRow(title: String, status: String, tint: Color? = null, onLongPress: (
                 Modifier.weight(1f).then(
                     if (onLongPress != null) Modifier.longPressable(onLongPress) else Modifier
                 ),
-                bold = true,
+                semibold = true,
                 maxLines = 1,
             )
             if (status.isNotBlank()) {
                 PanelText(
                     status,
                     type.label,
+                    semibold = true,
                     color = tint ?: colors.muted,
                     letterSpacing = type.labelTracking,
                     maxLines = 1,
@@ -121,34 +123,51 @@ data class TargetCell(
  * a border.
  */
 @Composable
-fun TargetRow(cells: List<TargetCell>, enabled: Boolean, onSelect: (String) -> Unit) {
+fun TargetRow(
+    cells: List<TargetCell>,
+    enabled: Boolean,
+    tint: Color,
+    onSelect: (String) -> Unit,
+) {
     val colors = LocalPanelColors.current
     val type = LocalPanelType.current
-    val edge = LocalPanelSpace.current.edge
+    // A single cell spans the width and can afford the wider inset; two cells
+    // share it and cannot.
+    val inset = if (cells.size > 1) 20.dp else LocalPanelSpace.current.edge
     Band(LocalPanelSize.current.targetRow) {
         Row(Modifier.fillMaxSize()) {
             cells.forEachIndexed { index, cell ->
                 if (index > 0) CellRule()
+                val filled = cell.selected && enabled
                 Row(
                     Modifier.weight(1f).fillMaxHeight()
-                        .background(if (cell.selected) colors.accentWash else colors.panel)
+                        .background(if (filled) tint else colors.panel)
                         .clickable(enabled = enabled && cells.size > 1) { onSelect(cell.key) }
-                        .padding(horizontal = edge),
+                        .padding(horizontal = inset),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     PanelText(
                         cell.label,
                         type.label,
                         Modifier.weight(1f),
-                        color = if (enabled) colors.muted else colors.disabled,
-                        letterSpacing = type.labelTracking,
+                        bold = true,
+                        color = when {
+                            filled -> colors.onAccent
+                            enabled -> colors.muted
+                            else -> colors.disabled
+                        },
+                        letterSpacing = type.labelTrackingWide,
                         maxLines = 1,
                     )
                     PanelText(
                         cell.value,
                         type.reading,
                         bold = true,
-                        color = if (enabled) colors.ink else colors.disabled,
+                        color = when {
+                            filled -> colors.onAccent
+                            enabled -> colors.ink
+                            else -> colors.disabled
+                        },
                         maxLines = 1,
                     )
                 }
@@ -188,8 +207,9 @@ fun AttributeRow(entries: List<Attribute>, enabled: Boolean, onOpen: (Attribute)
                         entry.label,
                         type.label,
                         Modifier.weight(1f),
+                        bold = true,
                         muted = true,
-                        letterSpacing = type.labelTracking,
+                        letterSpacing = type.labelTrackingWide,
                         maxLines = 1,
                     )
                     PanelText(entry.value, type.body, bold = true, maxLines = 1)
@@ -213,7 +233,7 @@ data class ModeCell(
  * every band above it.
  */
 @Composable
-fun ModeRow(cells: List<ModeCell>, enabled: Boolean, onPick: (ModeCell) -> Unit) {
+fun ModeRow(cells: List<ModeCell>, enabled: Boolean, tint: Color, onPick: (ModeCell) -> Unit) {
     val colors = LocalPanelColors.current
     val type = LocalPanelType.current
     Band(LocalPanelSize.current.modeRow) {
@@ -222,13 +242,13 @@ fun ModeRow(cells: List<ModeCell>, enabled: Boolean, onPick: (ModeCell) -> Unit)
                 if (index > 0) CellRule()
                 Column(
                     Modifier.weight(1f).fillMaxHeight()
-                        .background(if (cell.active) colors.accent else colors.panel)
+                        .background(if (cell.active) tint else colors.panel)
                         .clickable(enabled = enabled) { onPick(cell) },
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                 ) {
                     val ink = when {
-                        cell.active -> Color.White
+                        cell.active -> colors.onAccent
                         enabled -> colors.muted
                         else -> colors.disabled
                     }
@@ -238,7 +258,8 @@ fun ModeRow(cells: List<ModeCell>, enabled: Boolean, onPick: (ModeCell) -> Unit)
                         type.label,
                         Modifier.padding(top = 4.dp),
                         color = ink,
-                        letterSpacing = type.labelTracking,
+                        semibold = true,
+                        letterSpacing = 0.08.em,
                         maxLines = 1,
                     )
                 }

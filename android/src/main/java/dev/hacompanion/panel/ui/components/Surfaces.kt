@@ -49,6 +49,8 @@ fun PanelText(
     size: TextUnit = TextUnit.Unspecified,
     modifier: Modifier = Modifier,
     bold: Boolean = false,
+    /** The spec's 600: labels and titles that carry weight without shouting. */
+    semibold: Boolean = false,
     muted: Boolean = false,
     /** Overrides the ink entirely, for the accent used on active controls. */
     color: Color? = null,
@@ -56,6 +58,8 @@ fun PanelText(
     letterSpacing: TextUnit = TextUnit.Unspecified,
     monospace: Boolean = false,
     maxLines: Int = Int.MAX_VALUE,
+    /** Set tight for the display numeral, so its unit sits at cap height. */
+    lineHeight: TextUnit = TextUnit.Unspecified,
 ) {
     val colors = LocalPanelColors.current
     val resolved = if (size == TextUnit.Unspecified) LocalPanelType.current.body else size
@@ -67,9 +71,14 @@ fun PanelText(
         style = TextStyle(
             color = color ?: if (muted) colors.muted else colors.ink,
             fontSize = resolved,
-            fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
+            fontWeight = when {
+                bold -> FontWeight.Bold
+                semibold -> FontWeight.SemiBold
+                else -> FontWeight.Normal
+            },
             textAlign = align,
             letterSpacing = letterSpacing,
+            lineHeight = lineHeight,
             fontFamily = if (monospace) FontFamily.Monospace else PanelFont.barlow,
             // Every reading on this panel updates in place.
             fontFeatureSettings = PanelFont.TABULAR,

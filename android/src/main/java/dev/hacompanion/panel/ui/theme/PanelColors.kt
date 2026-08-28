@@ -23,6 +23,8 @@ data class PanelColors(
     val muted: Color,
     val accent: Color,
     val accentWash: Color,
+    /** Ink on a filled accent or warm band — the fill is the loud half. */
+    val onAccent: Color,
     val line: Color,
     val disabled: Color,
     /** Destructive actions: cancelling a timer, deleting a schedule. */
@@ -43,6 +45,8 @@ val darkPanelColors = PanelColors(
     muted = Color(0xFF8A9299),
     accent = Color(0xFF4F8FFF),
     accentWash = Color(0xFF172233),
+    // Dark ink on a light fill: in this theme the accent is the brighter half.
+    onAccent = Color(0xFF0E1012),
     line = Color(0xFF23282D),
     disabled = Color(0xFF4A5158),
     danger = Color(0xFFD24A3F),
@@ -60,6 +64,7 @@ val lightPanelColors = PanelColors(
     muted = Color(0xFF6E7570),
     accent = Color(0xFF2E6FE0),
     accentWash = Color(0xFFE7EEFB),
+    onAccent = Color(0xFFFFFFFF),
     line = Color(0xFFD9DCD8),
     disabled = Color(0xFFA8ADA6),
     danger = Color(0xFFC0392B),

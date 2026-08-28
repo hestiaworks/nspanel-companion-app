@@ -154,7 +154,9 @@ class MainActivity : Activity() {
         val dashboardRoot = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(PanelTheme.canvas)
-            setPadding(dp(4), dp(4), dp(4), dp(3))
+            // No inset: Slab runs every band to the screen edge, and four
+            // pixels of canvas around the outside reads as a frame the design
+            // does not have.
         }
         connectionDot = TextView(this)
         connectionTitle = TextView(this)

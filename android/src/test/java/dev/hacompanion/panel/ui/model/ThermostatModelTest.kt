@@ -223,4 +223,27 @@ class ThermostatModelTest {
                        "target_temp_low":20.0,"target_temp_high":24.0}"""
         assertEquals(listOf("heat", "cool"), thermostatModel(ac("heat_cool", auto), null).targets.map { it.key })
     }
+
+    @Test
+    fun coolingIsFlaggedSeparatelySoTheHeaderCanTakeTheAccent() {
+        val cooling = """{"hvac_modes":["off","cool"],"hvac_action":"cooling",
+                          "current_temperature":26.2,"temperature":23.0}"""
+        val model = thermostatModel(ac("cool", cooling), null)
+        assertTrue(model.cooling)
+        assertFalse(model.heating)
+    }
+
+    @Test
+    fun aSingleSetpointIsAlreadyFilledSoTheHeaderDoesNotRepeatIt() {
+        val cooling = """{"hvac_modes":["off","cool"],"hvac_action":"cooling",
+                          "current_temperature":26.2,"temperature":23.0}"""
+        assertEquals("COOLING", thermostatModel(ac("cool", cooling), null).status)
+    }
+
+    @Test
+    fun theLoneSetpointIsSelectedWithoutAnythingToSelectItAgainst() {
+        val cooling = """{"hvac_modes":["off","cool"],"current_temperature":26.2,
+                          "temperature":23.0}"""
+        assertTrue(thermostatModel(ac("cool", cooling), null).targets.single().selected)
+    }
 }
