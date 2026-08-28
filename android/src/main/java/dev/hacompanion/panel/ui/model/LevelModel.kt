@@ -26,13 +26,3 @@ fun percentAt(x: Float, width: Float): Int {
  */
 fun presetsFor(domain: String): List<Int> =
     if (domain == "cover") listOf(0, 25, 50, 75, 100) else listOf(1, 25, 50, 100)
-
-/**
- * The page bar is one segment wide per page, sitting at the current one. At
- * three pixels tall it reads as position rather than as decoration, which is
- * why it replaces the row of dots.
- */
-fun pageBarFraction(pages: Int): Float = if (pages <= 0) 0f else 1f / pages
-
-fun pageBarOffset(page: Int, pages: Int): Float =
-    if (pages <= 0) 0f else page.coerceIn(0, pages - 1).toFloat() / pages

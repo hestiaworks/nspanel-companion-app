@@ -43,27 +43,4 @@ class LevelModelTest {
         // Spec §7 "Cover as its own page": the band is labelled by quarters.
         assertEquals(listOf(0, 25, 50, 75, 100), presetsFor("cover"))
     }
-
-    @Test
-    fun theBarIsDividedByThePageCount() {
-        assertEquals(0.25f, pageBarFraction(pages = 4), 0.001f)
-        assertEquals(1f, pageBarFraction(pages = 1), 0.001f)
-    }
-
-    @Test
-    fun aLayoutWithNoPagesDoesNotDivideByZero() {
-        assertEquals(0f, pageBarFraction(pages = 0), 0.001f)
-    }
-
-    @Test
-    fun theSegmentSitsAtTheCurrentPage() {
-        assertEquals(0f, pageBarOffset(page = 0, pages = 4), 0.001f)
-        assertEquals(0.75f, pageBarOffset(page = 3, pages = 4), 0.001f)
-    }
-
-    @Test
-    fun aPageOutsideTheLayoutDoesNotPushTheSegmentOffTheBar() {
-        assertEquals(0.75f, pageBarOffset(page = 9, pages = 4), 0.001f)
-        assertEquals(0f, pageBarOffset(page = -2, pages = 4), 0.001f)
-    }
 }

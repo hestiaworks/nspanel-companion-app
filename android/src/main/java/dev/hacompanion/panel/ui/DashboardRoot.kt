@@ -9,7 +9,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import android.os.SystemClock
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import dev.hacompanion.panel.MicUsageTracker
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -39,7 +45,10 @@ import dev.hacompanion.panel.ui.pages.WeatherPage
 import dev.hacompanion.panel.ui.theme.LocalPanelColors
 import dev.hacompanion.panel.ui.theme.LocalPanelSpace
 import dev.hacompanion.panel.ui.theme.LocalPanelType
+import dev.hacompanion.panel.ui.model.panelTime
+import dev.hacompanion.panel.ui.slab.StatusStrip
 import dev.hacompanion.panel.ui.theme.PanelThemeProvider
+import java.util.TimeZone
 
 /**
  * The dashboard's snapshot-backed inputs. Writing one of these is the whole
@@ -54,6 +63,14 @@ class DashboardUiState {
     var panelName by mutableStateOf("NSPanel Pro")
     var panelId by mutableStateOf("")
     var dark by mutableStateOf(false)
+
+    /** Home Assistant's clock, which the panel's own is not trusted over. */
+    var serverTimeMs by mutableStateOf(System.currentTimeMillis())
+    var syncedAtElapsedMs by mutableStateOf(0L)
+    var timezone: TimeZone by mutableStateOf(TimeZone.getDefault())
+    var showClock by mutableStateOf(true)
+    var showMic by mutableStateOf(true)
+    var micLingerSeconds by mutableStateOf(15)
 
     /**
      * Bumped when schedules or timers change. Neither lives in the entity map,
@@ -82,7 +99,11 @@ fun DashboardRoot(
     actions: DashboardActions,
 ) {
     PanelThemeProvider(ui.dark) {
-        Box(Modifier.fillMaxSize().background(LocalPanelColors.current.canvas)) {
+        Column(Modifier.fillMaxSize().background(LocalPanelColors.current.canvas)) {
+            if (ui.showClock || ui.showMic) {
+                PanelStatusStrip(ui)
+            }
+            Box(Modifier.fillMaxWidth().weight(1f)) {
             if (!ui.configured) {
                 UnconfiguredPage(ui.panelName, ui.panelId, actions::openAdmin)
             } else {
@@ -96,8 +117,35 @@ fun DashboardRoot(
                     key(page.id) { PageContent(page, ui, entities, actions) }
                 }
             }
+            }
         }
     }
+}
+
+/**
+ * The clock ticks in composition rather than from a view's handler, so the
+ * whole strip is one recomposition a second and nothing is laid out twice.
+ */
+@Composable
+private fun PanelStatusStrip(ui: DashboardUiState) {
+    val context = LocalContext.current
+    var elapsed by remember { mutableStateOf(SystemClock.elapsedRealtime()) }
+    var micActive by remember { mutableStateOf(false) }
+    LaunchedEffect(ui.micLingerSeconds) {
+        while (true) {
+            elapsed = SystemClock.elapsedRealtime()
+            micActive = MicUsageTracker.recentlyUsed(context, ui.micLingerSeconds)
+            delay(1_000)
+        }
+    }
+    StatusStrip(
+        time = if (ui.showClock) {
+            panelTime(ui.serverTimeMs, ui.syncedAtElapsedMs, elapsed, ui.timezone)
+        } else "",
+        micActive = if (ui.showMic) micActive else null,
+        pages = ui.layout.pages.size,
+        current = ui.pageIndex,
+    )
 }
 
 @Composable

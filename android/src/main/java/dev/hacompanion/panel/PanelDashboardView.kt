@@ -75,8 +75,6 @@ class PanelDashboardView(
     private val streamWarmer = CameraStreamWarmer()
     private var warmedForPage = -1
     private val composeRoot = ComposeView(context)
-    private val pageLabel = TextView(context)
-    private val panelStatus = PanelStatusView(context)
     private var layout = DashboardLayout.default()
     private var configured = true
     private var panelName = "NSPanel Pro"
@@ -176,16 +174,10 @@ class PanelDashboardView(
                 FrameLayout.LayoutParams.MATCH_PARENT,
             ),
         )
-        pageHost.addView(panelStatus, FrameLayout.LayoutParams(
-            LayoutParams.WRAP_CONTENT,
-            LayoutParams.WRAP_CONTENT,
-            Gravity.TOP or Gravity.END,
-        ).apply { topMargin = dp(3); marginEnd = dp(6) })
         addView(
             pageHost,
             LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f),
         )
-        addView(createFooter())
         scheduleRender()
     }
 
@@ -230,14 +222,16 @@ class PanelDashboardView(
         setBackgroundColor(PanelTheme.canvas)
         configured = true
         layout = value
-        panelStatus.configure(value.showClock, value.showMicIndicator, value.micIndicatorLingerSeconds)
         pageIndex = value.pages.indexOfFirst { it.id == value.defaultPageId }.coerceAtLeast(0)
         warmNeighbouringCameras()
         scheduleRender()
     }
 
     fun synchronizeServerTime(serverTimeMs: Long, serverTimezone: String) {
-        panelStatus.synchronize(serverTimeMs, serverTimezone)
+        if (serverTimeMs <= 0) return
+        ui.serverTimeMs = serverTimeMs
+        ui.syncedAtElapsedMs = android.os.SystemClock.elapsedRealtime()
+        ui.timezone = java.util.TimeZone.getTimeZone(serverTimezone)
     }
 
     fun showUnconfigured(name: String, deviceId: String) {
@@ -354,11 +348,9 @@ class PanelDashboardView(
         ui.dark = PanelTheme.isDark
         ui.pageIndex = pageIndex
         ui.sidecarRevision += 1
-        panelStatus.visibility =
-            if (configured && (layout.showClock || layout.showMicIndicator)) VISIBLE else GONE
-        pageLabel.text =
-            if (configured) layout.pages.indices.joinToString(" ") { if (it == pageIndex) "\u25cf" else "\u25cb" }
-            else ""
+        ui.showClock = layout.showClock
+        ui.showMic = layout.showMicIndicator
+        ui.micLingerSeconds = layout.micIndicatorLingerSeconds
     }
 
     private fun stepThermostat(climate: EntityState, up: Boolean) {
@@ -710,18 +702,6 @@ class PanelDashboardView(
 
     private fun temperatureStep(climate: EntityState): Double =
         climate.numberAttribute("target_temp_step") ?: 0.5
-
-    private fun createFooter(): View =
-        LinearLayout(context).apply {
-            gravity = Gravity.CENTER
-            setPadding(0, dp(2), 0, 0)
-            pageLabel.apply {
-                gravity = Gravity.CENTER
-                setTextColor(MUTED)
-                textSize = 11f
-            }
-            addView(pageLabel, LayoutParams(dp(86), dp(24)))
-        }
 
     private fun roundActionButton(
         label: String,
