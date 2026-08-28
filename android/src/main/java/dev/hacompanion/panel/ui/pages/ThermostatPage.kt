@@ -21,6 +21,7 @@ import dev.hacompanion.panel.ui.slab.ModeRow
 import dev.hacompanion.panel.ui.slab.StepperRail
 import dev.hacompanion.panel.ui.slab.TargetRow
 import dev.hacompanion.panel.ui.theme.LocalPanelColors
+import dev.hacompanion.panel.ui.theme.LocalPanelSize
 import dev.hacompanion.panel.ui.theme.LocalPanelSpace
 import dev.hacompanion.panel.ui.theme.LocalPanelType
 
@@ -54,6 +55,10 @@ fun ThermostatPage(
     // is being heated, accent otherwise. The rail, the selected setpoint and
     // the running mode all take it, so the page reads as one decision.
     val tint = if (model.heating) colors.warm else colors.accent
+    // An attribute row costs 56 px, and the spec takes it from the numeral and
+    // the mode row rather than from the block that has to hold the caption.
+    val dense = model.attributes.isNotEmpty()
+    val size = LocalPanelSize.current
 
     Column(Modifier.fillMaxSize().background(colors.canvas)) {
         HeaderRow(
@@ -84,14 +89,17 @@ fun ThermostatPage(
                 )
                 Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.Top) {
                     PanelText(
-                        model.displayValue, type.display,
+                        model.displayValue, if (dense) type.hero else type.display,
                         bold = true, maxLines = 1, lineHeight = type.displayLeading,
                     )
                     PanelText(
-                        model.displayUnit, type.heroUnit,
+                        model.displayUnit,
+                        if (dense) type.heroUnitSmall else type.heroUnit,
                         Modifier.padding(
                             start = 9.dp,
-                            top = LocalPanelSpace.current.heroUnitDrop,
+                            top = with(LocalPanelSpace.current) {
+                                if (dense) heroUnitDropSmall else heroUnitDrop
+                            },
                         ),
                         semibold = true, muted = true, maxLines = 1,
                         lineHeight = type.displayLeading,
@@ -100,7 +108,7 @@ fun ThermostatPage(
                 if (model.displayCaption.isNotBlank()) {
                     PanelText(
                         model.displayCaption, type.caption,
-                        Modifier.padding(top = 12.dp),
+                        Modifier.padding(top = if (dense) 10.dp else 12.dp),
                         muted = true, maxLines = 1,
                     )
                 }
@@ -109,7 +117,9 @@ fun ThermostatPage(
         }
 
         TargetRow(
-            model.targets.map { it.copy(selected = model.targets.size > 1 && it.key == selectedTarget) },
+            model.targets.map {
+                if (model.targets.size > 1) it.copy(selected = it.key == selectedTarget) else it
+            },
             enabled = usable,
             tint = tint,
             onSelect = onTargetSelected,
@@ -117,7 +127,12 @@ fun ThermostatPage(
 
         AttributeRow(model.attributes, enabled = online) { onOpenAttribute(it.key) }
 
-        ModeRow(model.modeCells, enabled = online, tint = tint) { cell ->
+        ModeRow(
+            model.modeCells,
+            enabled = online,
+            tint = tint,
+            height = if (dense) size.modeRowCompact else size.modeRow,
+        ) { cell ->
             if (cell.key == MORE_KEY) onOpenMore() else onMode(cell.key)
         }
     }

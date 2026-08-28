@@ -182,7 +182,8 @@ fun thermostatModel(
             else -> humidity?.let { "${formatNumber(it)}% humidity" } ?: ""
         },
         targets = when {
-            secondary -> listOf(TargetCell("temperature", "TARGET", "not used in this mode"))
+            secondary ->
+                listOf(TargetCell("temperature", "TARGET", "not used in this mode", reading = false))
             dual -> listOf(
                 TargetCell("heat", "HEAT TO", "${reading(low)}$unit"),
                 TargetCell("cool", "COOL TO", "${reading(high)}$unit"),

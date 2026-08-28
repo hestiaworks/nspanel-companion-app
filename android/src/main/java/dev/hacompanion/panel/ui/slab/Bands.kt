@@ -79,7 +79,9 @@ fun CellRule() {
 fun HeaderRow(title: String, status: String, tint: Color? = null, onLongPress: (() -> Unit)? = null) {
     val colors = LocalPanelColors.current
     val type = LocalPanelType.current
-    Band(LocalPanelSize.current.headerRow) {
+    // Canvas, not panel: the header is the page's own ground, and the bands
+    // that lift off it are the ones holding a control.
+    Band(LocalPanelSize.current.headerRow, fill = colors.canvas) {
         Row(
             Modifier.fillMaxSize().padding(horizontal = LocalPanelSpace.current.edge),
             verticalAlignment = Alignment.CenterVertically,
@@ -113,6 +115,12 @@ data class TargetCell(
     val label: String,
     val value: String,
     val selected: Boolean = false,
+    /**
+     * False when the value is a phrase rather than a number — dry reports no
+     * setpoint, and "not used in this mode" set at reading size would claim to
+     * be one.
+     */
+    val reading: Boolean = true,
 )
 
 /**
@@ -161,10 +169,12 @@ fun TargetRow(
                     )
                     PanelText(
                         cell.value,
-                        type.reading,
-                        bold = true,
+                        if (cell.reading) type.reading else type.note,
+                        bold = cell.reading,
+                        semibold = !cell.reading,
                         color = when {
                             filled -> colors.onAccent
+                            !cell.reading -> colors.muted
                             enabled -> colors.ink
                             else -> colors.disabled
                         },
@@ -233,16 +243,22 @@ data class ModeCell(
  * every band above it.
  */
 @Composable
-fun ModeRow(cells: List<ModeCell>, enabled: Boolean, tint: Color, onPick: (ModeCell) -> Unit) {
+fun ModeRow(
+    cells: List<ModeCell>,
+    enabled: Boolean,
+    tint: Color,
+    height: Dp = LocalPanelSize.current.modeRow,
+    onPick: (ModeCell) -> Unit,
+) {
     val colors = LocalPanelColors.current
     val type = LocalPanelType.current
-    Band(LocalPanelSize.current.modeRow) {
+    Band(height) {
         Row(Modifier.fillMaxSize()) {
             cells.forEachIndexed { index, cell ->
                 if (index > 0) CellRule()
                 Column(
                     Modifier.weight(1f).fillMaxHeight()
-                        .background(if (cell.active) tint else colors.panel)
+                        .background(if (cell.active) tint else colors.canvas)
                         .clickable(enabled = enabled) { onPick(cell) },
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,

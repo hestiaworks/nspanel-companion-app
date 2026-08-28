@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.sp
 @Immutable
 data class PanelType(
     val display: TextUnit = 120.sp,
-    val hero: TextUnit = 100.sp,
+    val hero: TextUnit = 106.sp,
     val reading: TextUnit = 34.sp,
     val title: TextUnit = 24.sp,
     val subtitle: TextUnit = 20.sp,
@@ -30,7 +30,10 @@ data class PanelType(
     val clock: TextUnit = 16.sp,
     /** The unit beside a 120 px reading, and the caption under it. */
     val heroUnit: TextUnit = 42.sp,
+    val heroUnitSmall: TextUnit = 38.sp,
     val caption: TextUnit = 16.sp,
+    /** A phrase standing where a reading would be, so it is not set like one. */
+    val note: TextUnit = 19.sp,
     val micro: TextUnit = 11.sp,
     val glyphLarge: TextUnit = 52.sp,
     val glyph: TextUnit = 30.sp,
@@ -70,6 +73,8 @@ data class PanelSpace(
      * lines up the feet. Measured on the panel against the spec's frames.
      */
     val heroUnitDrop: Dp = 26.dp,
+    /** The same drop against the smaller numeral, in the same proportion. */
+    val heroUnitDropSmall: Dp = 23.dp,
     val unconfiguredInsetX: Dp = 30.dp,
     val unconfiguredInsetY: Dp = 24.dp,
     val unconfiguredTextInset: Dp = 16.dp,
@@ -94,6 +99,14 @@ data class PanelSize(
     val presetCell: Dp = 96.dp,
     val confirmButton: Dp = 100.dp,
     val modeRow: Dp = 105.dp,
+    /**
+     * The mode row when an attribute row is also present.
+     *
+     * The attribute row's 56 px is not free: the spec buys it back from the
+     * numeral and this row together, so the column still sums to 480 rather
+     * than pushing the caption off the bottom of the reading block.
+     */
+    val modeRowCompact: Dp = 81.dp,
     val levelBand: Dp = 120.dp,
     val rail: Dp = 132.dp,
     val icon: Dp = 30.dp,

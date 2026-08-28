@@ -69,6 +69,11 @@ fun PanelText(
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
         style = TextStyle(
+            // Off, because a band states its height in pixels and the font's
+            // own ascent padding is invisible space the layout cannot see:
+            // with it on, a 120 px numeral measures taller than its line box
+            // and quietly clips whatever the band puts under it.
+            platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
             color = color ?: if (muted) colors.muted else colors.ink,
             fontSize = resolved,
             fontWeight = when {

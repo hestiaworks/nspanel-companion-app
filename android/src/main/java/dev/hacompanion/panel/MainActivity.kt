@@ -56,6 +56,7 @@ class MainActivity : Activity() {
     private var panelApiClient: PanelApiClient? = null
     private var panelSyncClient: PanelSyncClient? = null
     private var pairingAdvertiser: PanelPairingAdvertiser? = null
+    private var demoMode = false
     private val watchdogHandler = Handler(Looper.getMainLooper())
     private var connectionPhase = ConnectionPhase.NOT_CONFIGURED
     private var offlineSinceMs = 0L
@@ -180,7 +181,13 @@ class MainActivity : Activity() {
             { schedule -> panelApiClient?.upsertSchedule(schedule) == true },
             { scheduleId -> panelApiClient?.deleteSchedule(scheduleId) == true },
         )
-        if (previewUnconfigured) {
+        val demo = DemoHarness.apply(intent, dashboardView)
+        demoMode = demo
+        if (demo) {
+            // Nothing to connect to and nothing to keep awake: the harness has
+            // already put a layout and a set of states in front of the view.
+            applyKeepScreenOn(false)
+        } else if (previewUnconfigured) {
             applyKeepScreenOn(false)
             val deviceId = PanelIdentityStore(this).deviceId
             dashboardView.showUnconfigured("Living Room NSPanel", deviceId)
@@ -205,7 +212,7 @@ class MainActivity : Activity() {
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT,
         ))
-        if (credentials == null && !previewUnconfigured) {
+        if (credentials == null && !previewUnconfigured && !demo) {
             onboardingView = createPairingOnboarding().also {
                 root.addView(it, FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
@@ -910,7 +917,9 @@ class MainActivity : Activity() {
                 offlineSinceMs = android.os.SystemClock.elapsedRealtime()
             }
         }
-        if (::dashboardView.isInitialized) {
+        // The harness has no connection to report on, and letting a failed
+        // one mark the demo offline greys out every control on it.
+        if (::dashboardView.isInitialized && !demoMode) {
             dashboardView.setOnline(status.phase == ConnectionPhase.ONLINE)
         }
         connectionTitle.text = when (status.phase) {
