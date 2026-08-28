@@ -25,6 +25,13 @@ data class PanelColors(
     val accentWash: Color,
     /** Ink on a filled accent or warm band — the fill is the loud half. */
     val onAccent: Color,
+    /**
+     * The filled part of a tile whose ground is already accentWash.
+     *
+     * A level needs three tones, not two: the ground says the device is on,
+     * the fill says how far, and the accent edge between them says where.
+     */
+    val accentFill: Color,
     val line: Color,
     val disabled: Color,
     /** Destructive actions: cancelling a timer, deleting a schedule. */
@@ -47,6 +54,7 @@ val darkPanelColors = PanelColors(
     accentWash = Color(0xFF172233),
     // Dark ink on a light fill: in this theme the accent is the brighter half.
     onAccent = Color(0xFF0E1012),
+    accentFill = Color(0xFF23406E),
     line = Color(0xFF23282D),
     disabled = Color(0xFF4A5158),
     danger = Color(0xFFD24A3F),
@@ -65,6 +73,7 @@ val lightPanelColors = PanelColors(
     accent = Color(0xFF2E6FE0),
     accentWash = Color(0xFFE7EEFB),
     onAccent = Color(0xFFFFFFFF),
+    accentFill = Color(0xFFCFE0FA),
     line = Color(0xFFD9DCD8),
     disabled = Color(0xFFA8ADA6),
     danger = Color(0xFFC0392B),

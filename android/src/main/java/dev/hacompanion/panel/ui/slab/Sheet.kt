@@ -199,3 +199,53 @@ fun SheetModes(cells: List<ModeCell>, onPick: (ModeCell) -> Unit) {
         }
     }
 }
+
+/**
+ * A level as a 120 px band with no thumb, the reading sitting on the fill.
+ *
+ * The whole band is the target — press anywhere and the fill moves to your
+ * finger — which is the one place on the panel where a drag is worth having,
+ * because a sheet is not something you can catch by accident.
+ */
+@Composable
+fun SheetLevel(percent: Int, onSet: (Int) -> Unit) {
+    val colors = LocalPanelColors.current
+    val type = LocalPanelType.current
+    val size = LocalPanelSize.current
+    Box(Modifier.fillMaxWidth().height(size.stroke).background(colors.line))
+    LevelSurface(
+        percent,
+        enabled = true,
+        modifier = Modifier.fillMaxWidth().height(size.levelBand),
+        onSet = onSet,
+    ) {
+        Box(
+            Modifier.fillMaxWidth().padding(horizontal = LocalPanelSpace.current.edge),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            PanelText("$percent%", type.sheetLevel, bold = true, color = colors.onAccent)
+        }
+    }
+}
+
+/** The levels worth reaching without aiming: a row of full-height cells. */
+@Composable
+fun SheetPresets(values: List<Int>, onPick: (Int) -> Unit) {
+    val colors = LocalPanelColors.current
+    val type = LocalPanelType.current
+    val size = LocalPanelSize.current
+    Box(Modifier.fillMaxWidth().height(size.stroke).background(colors.line))
+    Row(Modifier.fillMaxWidth().height(size.listRow)) {
+        values.forEachIndexed { index, value ->
+            if (index > 0) CellRule()
+            Box(
+                Modifier.weight(1f).fillMaxHeight()
+                    .background(colors.canvas)
+                    .clickable { onPick(value) },
+                contentAlignment = Alignment.Center,
+            ) {
+                PanelText("$value%", type.glyphMode, bold = true, muted = true, maxLines = 1)
+            }
+        }
+    }
+}

@@ -20,7 +20,10 @@ import dev.hacompanion.panel.ui.model.sentenceCase
 import dev.hacompanion.panel.ui.model.thermostatModel
 import dev.hacompanion.panel.ui.slab.Sheet
 import dev.hacompanion.panel.ui.slab.SheetModes
+import dev.hacompanion.panel.ui.slab.SheetLevel
 import dev.hacompanion.panel.ui.slab.SheetOptions
+import dev.hacompanion.panel.ui.slab.SheetPresets
+import dev.hacompanion.panel.ui.model.presetsFor
 import dev.hacompanion.panel.ui.slab.showPanelSheet
 import dev.hacompanion.panel.ui.theme.LocalPanelRadius
 import dev.hacompanion.panel.ui.theme.LocalPanelSize
@@ -145,6 +148,14 @@ class PanelDashboardView(
 
         override fun setBrightness(entityId: String, percent: Int) {
             callService("light", "turn_on", entityId, JSONObject().put("brightness_pct", percent))
+        }
+
+        override fun openBrightness(entityId: String) {
+            states[entityId]?.let(::showBrightnessSheet)
+        }
+
+        override fun moveCover(entityId: String, action: String) {
+            callService("cover", "${action}_cover", entityId, JSONObject())
         }
 
         override fun openFanSpeed(entityId: String) {
@@ -379,6 +390,32 @@ class PanelDashboardView(
             changeTemperatureRange(climate, (low + step).coerceAtMost(high - step.absoluteValue), high)
         } else {
             changeTemperatureRange(climate, low, (high + step).coerceAtLeast(low + step.absoluteValue))
+        }
+    }
+
+    /**
+     * Brightness as a band you press rather than a thumb you find, with the
+     * presets underneath for the levels worth reaching directly.
+     */
+    private fun showBrightnessSheet(entity: EntityState) {
+        val percent = ((entity.numberAttribute("brightness") ?: 0.0) / 255.0 * 100.0).roundToInt()
+        val name = widgetFor(entity.entityId)?.label ?: entity.friendlyName
+        showPanelSheet(context, PanelTheme.isDark) { dismiss ->
+            Sheet("Brightness", name, dismiss) {
+                SheetLevel(percent) { value ->
+                    callService(
+                        "light", "turn_on", entity.entityId,
+                        JSONObject().put("brightness_pct", value),
+                    )
+                }
+                SheetPresets(presetsFor("light")) { value ->
+                    callService(
+                        "light", "turn_on", entity.entityId,
+                        JSONObject().put("brightness_pct", value),
+                    )
+                    dismiss()
+                }
+            }
         }
     }
 

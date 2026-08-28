@@ -22,6 +22,22 @@ data class ControlCardModel(
     val showSchedule: Boolean,
     val cardTap: Boolean,
     val dense: Boolean,
+
+    /**
+     * The proportion of the tile to fill, or null when the device has no
+     * level at all — an on/off light is not a dimmer set to 100.
+     */
+    val level: Int?,
+    /**
+     * The level as text, or null when the fill alone says it.
+     *
+     * A switch fills the tile completely when it is on, but showing "100%"
+     * would claim a level it has no way to set.
+     */
+    val levelText: String?,
+    /** Covers get ▲ ■ ▼ where everything else has room for a subtitle. */
+    val actionStrip: Boolean,
+    val subtitle: String?,
 )
 
 private val TIMER_DOMAINS = setOf("light", "switch", "fan")
@@ -74,6 +90,23 @@ fun controlCard(
         else -> ControlBody.BINARY
     }
     val position = entity.numberAttribute("current_position")?.roundToInt()
+    val on = entity.state in setOf("on", "open", "opening")
+
+    // What proportion of the tile is filled. A device with no level of its
+    // own is all or nothing, which is still a fill — it just cannot be
+    // anywhere in between.
+    val level: Int? = when (entity.domain) {
+        "light" -> entity.numberAttribute("brightness")
+            ?.let { if (on) (it / 255.0 * 100.0).roundToInt() else 0 }
+        "cover" -> position ?: if (on) 100 else 0
+        "fan" -> entity.numberAttribute("percentage")?.roundToInt() ?: if (on) 100 else 0
+        else -> if (on) 100 else 0
+    }
+    // Shown only where the number means something the tile can set.
+    val levelText = level
+        ?.takeIf { on && body != ControlBody.BINARY }
+        ?.let { "$it%" }
+
     return ControlCardModel(
         entityId = entity.entityId,
         name = widget?.label ?: entity.friendlyName,
@@ -95,5 +128,15 @@ fun controlCard(
         // toggle when tapped anywhere.
         cardTap = widget?.cardTap ?: (body == ControlBody.BINARY),
         dense = dense,
+        level = level,
+        levelText = levelText,
+        actionStrip = entity.domain == "cover",
+        // A cover says its position in the fill and its actions in the strip,
+        // so it has neither room nor need for a line of prose.
+        subtitle = when {
+            entity.domain == "cover" -> null
+            levelText != null -> null
+            else -> entity.state.replace('_', ' ').replaceFirstChar { it.uppercase() }
+        },
     )
 }

@@ -45,9 +45,9 @@ object DemoLayout {
                 id = "controls",
                 title = "Controls",
                 widgets = listOf(
-                    DashboardWidget(type = "light", entityId = "light.demo_ceiling", label = "Ceiling"),
-                    DashboardWidget(type = "light", entityId = "light.demo_lamp", label = "Lamp"),
-                    DashboardWidget(type = "cover", entityId = "cover.demo_blind", label = "Blind"),
+                    DashboardWidget(type = "controls", entityId = "light.demo_ceiling", label = "Ceiling"),
+                    DashboardWidget(type = "controls", entityId = "light.demo_lamp", label = "Lamp"),
+                    DashboardWidget(type = "controls", entityId = "cover.demo_blind", label = "Blind"),
                     DashboardWidget(type = "sensor", entityId = "sensor.demo_temp", label = "Bedroom temp"),
                 ),
             ),

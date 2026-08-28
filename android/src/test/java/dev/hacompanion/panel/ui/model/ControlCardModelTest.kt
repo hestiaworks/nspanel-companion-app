@@ -108,4 +108,47 @@ class ControlCardModelTest {
         assertFalse(controlCard(entity("cover.a", "open"), null, dense = false).showTimer)
         assertFalse(controlCard(entity("light.a", "on"), widget().copy(showTimer = false), dense = false).showTimer)
     }
+
+    @Test
+    fun aDimmableLightsLevelIsItsFill() {
+        val card = controlCard(entity("light.a", "on", """{"brightness": 46}"""), null, dense = false)
+        assertEquals(18, card.level)
+        assertEquals("18%", card.levelText)
+    }
+
+    @Test
+    fun aLightWithNoBrightnessHasNoLevelToFill() {
+        val card = controlCard(entity("light.a", "on"), null, dense = false)
+        assertEquals(null, card.level)
+        assertEquals("Off", controlCard(entity("light.a", "off"), null, dense = false).subtitle)
+    }
+
+    @Test
+    fun aCoverCarriesAnActionStripInsteadOfASubtitle() {
+        val card = controlCard(entity("cover.a", "open", """{"current_position": 60}"""), null, dense = false)
+        assertTrue(card.actionStrip)
+        assertEquals(60, card.level)
+        assertEquals(null, card.subtitle)
+    }
+
+    @Test
+    fun aSwitchIsFullyFilledOrEmpty() {
+        assertEquals(100, controlCard(entity("switch.a", "on"), null, dense = false).level)
+        assertEquals(0, controlCard(entity("switch.a", "off"), null, dense = false).level)
+    }
+
+    @Test
+    fun aSwitchHasNoPercentageToShowEvenThoughItHasAFill() {
+        // Filling the tile says on; "100%" would claim a level it cannot set.
+        assertEquals(null, controlCard(entity("switch.a", "on"), null, dense = false).levelText)
+        assertEquals("On", controlCard(entity("switch.a", "on"), null, dense = false).subtitle)
+    }
+
+    @Test
+    fun anOffDimmerFillsNothingAndSaysSo() {
+        val card = controlCard(entity("light.a", "off", """{"brightness": 46}"""), null, dense = false)
+        assertEquals(0, card.level)
+        assertEquals(null, card.levelText)
+        assertEquals("Off", card.subtitle)
+    }
 }

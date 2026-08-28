@@ -42,8 +42,16 @@ import dev.hacompanion.panel.ui.theme.PanelThemeProvider
 fun ReadingTile(tile: SensorTile) {
     val type = LocalPanelType.current
     TileSurface {
-        PanelText(tile.label.uppercase(), type.label, muted = true, bold = true)
-        PanelText(tile.value, type.reading, bold = true)
+        PanelText(
+            tile.label.uppercase(), type.label,
+            bold = true, muted = true,
+            letterSpacing = type.labelTrackingWide, maxLines = 1,
+        )
+        PanelText(
+            tile.value, type.tileLevel,
+            Modifier.padding(top = 6.dp),
+            bold = true, maxLines = 1,
+        )
     }
 }
 
@@ -54,29 +62,33 @@ fun MissingTile(label: String) {
     TileSurface(dimmed = true) {
         // The raw entity id, not a friendlier version of it: the entity is
         // absent, so the id is the only thing that says which one is wrong.
-        PanelText(label.uppercase(), type.label, muted = true, bold = true)
-        PanelText("Unavailable", type.reading, bold = true)
+        PanelText(
+            label.uppercase(), type.label,
+            bold = true, muted = true,
+            letterSpacing = type.labelTrackingWide, maxLines = 1,
+        )
+        PanelText(
+            "Unavailable", type.tileNameLarge,
+            Modifier.padding(top = 6.dp),
+            semibold = true, maxLines = 1,
+        )
     }
 }
 
+/**
+ * A tile with no control in it: canvas ground, inset only, separated from its
+ * neighbours by the grid's rules rather than by a border of its own.
+ */
 @Composable
 private fun TileSurface(dimmed: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
     val space = LocalPanelSpace.current
-    val size = LocalPanelSize.current
     val colors = LocalPanelColors.current
-    val shape = RoundedCornerShape(LocalPanelRadius.current.card)
     Column(
         Modifier.fillMaxSize()
             .alpha(if (dimmed) .55f else 1f)
-            .background(colors.card, shape)
-            .border(size.stroke, colors.line, shape)
-            .padding(
-                start = space.edge,
-                top = space.edge,
-                end = space.edge,
-                bottom = space.edge,
-            ),
-        verticalArrangement = Arrangement.Center,
+            .background(colors.canvas)
+            .padding(space.tile),
+        verticalArrangement = Arrangement.Bottom,
         content = content,
     )
 }

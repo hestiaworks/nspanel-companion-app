@@ -42,6 +42,7 @@ import dev.hacompanion.panel.ui.model.weatherModel
 import dev.hacompanion.panel.ui.pages.ControlActions
 import dev.hacompanion.panel.ui.pages.PageGrid
 import dev.hacompanion.panel.ui.pages.ThermostatPage
+import dev.hacompanion.panel.ui.slab.HeaderRow
 import dev.hacompanion.panel.ui.pages.WeatherPage
 import dev.hacompanion.panel.ui.theme.LocalPanelColors
 import dev.hacompanion.panel.ui.theme.LocalPanelSpace
@@ -192,6 +193,13 @@ private fun PageContent(
     // and carries the long press that opens administration itself.
     if (only?.type == "thermostat") {
         ThermostatBody(only, ui, entities, actions)
+        return
+    }
+    if (only?.type != "weather") {
+        Column(Modifier.fillMaxSize().background(LocalPanelColors.current.canvas)) {
+            HeaderRow(page.title, "", onLongPress = actions::openAdmin)
+            PageBody(page, ui, entities, actions)
+        }
         return
     }
 

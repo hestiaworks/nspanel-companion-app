@@ -15,6 +15,9 @@ import androidx.compose.ui.unit.sp
 import dev.hacompanion.panel.ui.components.PanelText
 import dev.hacompanion.panel.ui.model.PageCell
 import dev.hacompanion.panel.ui.theme.LocalPanelSize
+import androidx.compose.foundation.background
+import dev.hacompanion.panel.ui.slab.CellRule
+import dev.hacompanion.panel.ui.theme.LocalPanelColors
 import dev.hacompanion.panel.ui.theme.LocalPanelSpace
 import dev.hacompanion.panel.ui.theme.LocalPanelType
 
@@ -41,18 +44,23 @@ fun PageGrid(
         }
         return
     }
+    // Rules, not gaps: a tile runs to the screen edge and to its neighbour,
+    // so the fill inside it is the full width of what it represents.
+    val colors = LocalPanelColors.current
     Column(Modifier.fillMaxSize()) {
         cells.chunked(2).forEach { row ->
             val hasControl = row.any { it is PageCell.Control }
             val rowModifier =
                 if (hasControl) Modifier.fillMaxWidth().weight(1f)
                 else Modifier.fillMaxWidth().height(size.listRow)
+            Box(Modifier.fillMaxWidth().height(size.stroke).background(colors.line))
             Row(rowModifier) {
-                row.forEach { cell ->
+                row.forEachIndexed { column, cell ->
+                    if (column > 0) CellRule()
                     key(cellKey(cell)) {
-                        Box(Modifier.weight(1f).fillMaxSize().padding(space.edge)) {
+                        Box(Modifier.weight(1f).fillMaxSize()) {
                             when (cell) {
-                                is PageCell.Control -> ControlCard(cell.card, online, actions)
+                                is PageCell.Control -> ControlTile(cell.card, online, actions)
                                 is PageCell.Reading -> ReadingTile(cell.tile)
                                 is PageCell.Missing -> MissingTile(cell.label)
                             }
@@ -60,7 +68,10 @@ fun PageGrid(
                     }
                 }
                 // A lone cell keeps half the width rather than stretching.
-                if (row.size == 1) Box(Modifier.weight(1f))
+                if (row.size == 1) {
+                    CellRule()
+                    Box(Modifier.weight(1f).fillMaxSize().background(colors.canvas))
+                }
             }
         }
     }

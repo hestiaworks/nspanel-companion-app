@@ -50,6 +50,12 @@ interface ControlActions {
     fun setBrightness(entityId: String, percent: Int)
     fun openFanSpeed(entityId: String)
     fun openCover(entityId: String)
+
+    /** The sheet a dimmable light opens on a long press. */
+    fun openBrightness(entityId: String)
+
+    /** open, stop or close, from a cover tile's strip. */
+    fun moveCover(entityId: String, action: String)
     fun openSchedule(entityId: String)
     fun openTimer(entityId: String)
 

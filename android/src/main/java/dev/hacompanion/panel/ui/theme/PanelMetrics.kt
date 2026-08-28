@@ -36,6 +36,17 @@ data class PanelType(
     val note: TextUnit = 19.sp,
     /** The line under a sheet's title, saying what the choice affects. */
     val sheetSubtitle: TextUnit = 14.sp,
+    /** A tile's level, and the same reading where a cover's strip takes room. */
+    /** The reading sitting on a sheet's level band. */
+    val sheetLevel: TextUnit = 56.sp,
+    val tileLevel: TextUnit = 44.sp,
+    /** A tile's level is set at .9, as the hero is at .82. */
+    val tileLeading: Float = 0.9f,
+    val tileLevelSmall: TextUnit = 36.sp,
+    /** A tile's name: larger when no level sits above it, smaller under a strip. */
+    val tileName: TextUnit = 19.sp,
+    val tileNameLarge: TextUnit = 21.sp,
+    val tileNameSmall: TextUnit = 17.sp,
     val micro: TextUnit = 11.sp,
     val glyphLarge: TextUnit = 52.sp,
     val glyph: TextUnit = 30.sp,
@@ -73,6 +84,9 @@ data class PanelSpace(
     val strip: Dp = 20.dp,
     /** The gap between page bar segments, and the bar's own inset. */
     val hair: Dp = 2.dp,
+    /** A tile is inset less than a band: it is a quarter of the screen. */
+    val tile: Dp = 20.dp,
+    val tileDense: Dp = 18.dp,
     /**
      * How far the unit drops to sit at the numeral's cap height.
      *
@@ -129,6 +143,8 @@ data class PanelSize(
     val sheetRule: Dp = 2.dp,
     /** The rule marking the rail as the control the setpoint answers to. */
     val railRule: Dp = 4.dp,
+    /** The ▲ ■ ▼ under a cover, where another tile has a subtitle. */
+    val tileStrip: Dp = 64.dp,
 )
 
 val LocalPanelType = staticCompositionLocalOf { PanelType() }
