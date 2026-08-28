@@ -14,7 +14,8 @@ class TileModelTest {
     fun aSensorShowsItsStateUnderAName() {
         val tile = sensorTile(entity("sensor.bedroom", "21.68"), label = null)
         assertEquals("Bedroom", tile.label)
-        assertEquals("21.68", tile.value)
+        // Set to one decimal: the sensor's precision is not the panel's.
+        assertEquals("21.7", tile.value)
     }
 
     @Test
@@ -46,5 +47,30 @@ class TileModelTest {
     fun aControlMarksItsStateWithABullet() {
         assertEquals("●", controlTile(entity("light.a", "on"), null).marker)
         assertEquals("○", controlTile(entity("light.a", "off"), null).marker)
+    }
+
+    private fun sensor(state: String, attributes: String = "{}") =
+        EntityState("sensor.a", state, JSONObject(attributes))
+
+    @Test
+    fun aReadingIsTabularWithItsUnit() {
+        // 23.13 is the sensor's precision, not the panel's: a reading that
+        // changes width as its last digit moves is not one you can glance at.
+        assertEquals("23.1\u00b0C", sensorTile(sensor("23.13", """{"unit_of_measurement":"\u00b0C"}"""), null).value)
+    }
+
+    @Test
+    fun aWholeReadingKeepsItsDecimalSoTheWidthDoesNotMove() {
+        assertEquals("23.0\u00b0C", sensorTile(sensor("23", """{"unit_of_measurement":"\u00b0C"}"""), null).value)
+    }
+
+    @Test
+    fun aReadingWithNoUnitIsJustTheNumber() {
+        assertEquals("41.0", sensorTile(sensor("41"), null).value)
+    }
+
+    @Test
+    fun aTextStateIsLeftAloneRatherThanForcedIntoANumber() {
+        assertEquals("Detected", sensorTile(sensor("Detected"), null).value)
     }
 }
