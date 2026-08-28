@@ -95,11 +95,24 @@ class ControlCardModelTest {
     }
 
     @Test
-    fun tappingTheCardTogglesOnlyWhenThereIsNoRicherControl() {
+    fun theWholeTileIsTheToggle() {
+        // A card carried its own controls and so could not also be one. A tile
+        // puts the level in a sheet precisely so its surface is free to toggle.
         assertTrue(controlCard(entity("light.a", "on"), null, dense = false).cardTap)
         val dimmable = entity("light.a", "on", """{"brightness": 10}""")
-        assertFalse(controlCard(dimmable, null, dense = false).cardTap)
-        assertTrue(controlCard(dimmable, widget().copy(cardTap = true), dense = false).cardTap)
+        assertTrue(controlCard(dimmable, null, dense = false).cardTap)
+        assertTrue(controlCard(entity("switch.a", "on"), null, dense = false).cardTap)
+    }
+
+    @Test
+    fun aCoverHasAPositionRatherThanAnOnAndAnOff() {
+        assertFalse(controlCard(entity("cover.a", "open"), null, dense = false).cardTap)
+    }
+
+    @Test
+    fun theLayoutCanStillSayOtherwise() {
+        val cover = entity("cover.a", "open")
+        assertTrue(controlCard(cover, widget(entityId = "cover.a").copy(cardTap = true), dense = false).cardTap)
     }
 
     @Test

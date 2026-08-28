@@ -124,9 +124,11 @@ fun controlCard(
         showPower = entity.domain != "cover",
         showTimer = entity.domain in TIMER_DOMAINS && widget?.showTimer != false,
         showSchedule = widget?.showSchedule != false,
-        // A card whose body already has a richer control should not also
-        // toggle when tapped anywhere.
-        cardTap = widget?.cardTap ?: (body == ControlBody.BINARY),
+        // The whole tile is the toggle. That was not true of a card, which
+        // carried its own controls and could not also be one; a tile puts the
+        // level in a sheet precisely so the surface is free to toggle.
+        // A cover is the exception: it has a position, not an on and an off.
+        cardTap = widget?.cardTap ?: (entity.domain != "cover"),
         dense = dense,
         level = level,
         levelText = levelText,

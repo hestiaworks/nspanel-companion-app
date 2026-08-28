@@ -21,6 +21,8 @@ import dev.hacompanion.panel.ui.model.thermostatModel
 import dev.hacompanion.panel.ui.slab.Sheet
 import dev.hacompanion.panel.ui.slab.SheetModes
 import dev.hacompanion.panel.ui.slab.SheetLevel
+import dev.hacompanion.panel.ui.slab.SheetAction
+import dev.hacompanion.panel.ui.slab.SheetActions
 import dev.hacompanion.panel.ui.slab.SheetOptions
 import dev.hacompanion.panel.ui.slab.SheetPresets
 import dev.hacompanion.panel.ui.model.presetsFor
@@ -155,7 +157,7 @@ class PanelDashboardView(
         }
 
         override fun moveCover(entityId: String, action: String) {
-            callService("cover", "${action}_cover", entityId, JSONObject())
+            states[entityId]?.let { nudgeCover(it, action) }
         }
 
         override fun openFanSpeed(entityId: String) {
@@ -163,7 +165,7 @@ class PanelDashboardView(
         }
 
         override fun openCover(entityId: String) {
-            states[entityId]?.let { showCoverDialog(it, widgetFor(entityId)) }
+            states[entityId]?.let(::showCoverSheet)
         }
 
         override fun openSchedule(entityId: String) {
@@ -394,23 +396,55 @@ class PanelDashboardView(
     }
 
     /**
+     * The strip's arrows move a cover a step at a time.
+     *
+     * open_cover runs the blind all the way, which is almost never what a tap
+     * on a panel means — you are adjusting the light in the room, not sending
+     * it to a limit. A cover that cannot be positioned has only the limits, so
+     * there it stays a full traverse.
+     */
+    private fun nudgeCover(cover: EntityState, action: String) {
+        if (action == "stop") {
+            callService("cover", "stop_cover", cover.entityId, JSONObject())
+            return
+        }
+        val position = cover.numberAttribute("current_position")?.roundToInt()
+        val canPosition = cover.attributes.optInt("supported_features", 0) and COVER_SET_POSITION != 0
+        if (position == null || !canPosition) {
+            callService("cover", "${action}_cover", cover.entityId, JSONObject())
+            return
+        }
+        val step = if (action == "open") COVER_NUDGE else -COVER_NUDGE
+        callService(
+            "cover", "set_cover_position", cover.entityId,
+            JSONObject().put("position", (position + step).coerceIn(0, 100)),
+        )
+    }
+
+    /**
      * Brightness as a band you press rather than a thumb you find, with the
      * presets underneath for the levels worth reaching directly.
      */
     private fun showBrightnessSheet(entity: EntityState) {
-        val percent = ((entity.numberAttribute("brightness") ?: 0.0) / 255.0 * 100.0).roundToInt()
-        val name = widgetFor(entity.entityId)?.label ?: entity.friendlyName
+        val entityId = entity.entityId
+        val name = widgetFor(entityId)?.label ?: entity.friendlyName
         showPanelSheet(context, PanelTheme.isDark) { dismiss ->
+            // Read from the live map rather than the entity captured when the
+            // sheet opened: states is snapshot state, so the band follows the
+            // light instead of freezing at whatever it was on the way in.
+            val live = states[entityId]
+            val percent =
+                ((live?.numberAttribute("brightness") ?: 0.0) / 255.0 * 100.0).roundToInt()
             Sheet("Brightness", name, dismiss) {
                 SheetLevel(percent) { value ->
                     callService(
-                        "light", "turn_on", entity.entityId,
+                        "light", "turn_on", entityId,
                         JSONObject().put("brightness_pct", value),
                     )
                 }
                 SheetPresets(presetsFor("light")) { value ->
                     callService(
-                        "light", "turn_on", entity.entityId,
+                        "light", "turn_on", entityId,
                         JSONObject().put("brightness_pct", value),
                     )
                     dismiss()
@@ -671,59 +705,48 @@ class PanelDashboardView(
         }
     }
 
-    private fun showCoverDialog(entity: EntityState, widget: DashboardWidget?) {
-        val position = entity.numberAttribute("current_position")?.roundToInt() ?: 0
-        // SUPPORT_SET_POSITION. Without it the cover only opens and closes.
-        val canPosition = entity.attributes.optInt("supported_features", 0) and 4 != 0
-        showPanelDialog(context, PanelTheme.isDark) { dismiss ->
-            PanelDialogHeader("Curtains", entity.friendlyName)
-            if (canPosition) {
-                PanelText(
-                    "Position · $position%",
-                    LocalPanelType.current.reading,
-                    Modifier.fillMaxWidth(),
-                    bold = true,
-                    align = TextAlign.Center,
-                )
-                AndroidView(
-                    modifier = Modifier.fillMaxWidth().height(LocalPanelSize.current.levelBand),
-                    factory = { host ->
-                        PanelSliderView(host, position) { value ->
-                            callService("cover", "set_cover_position", entity.entityId, JSONObject().put("position", value))
-                        }
-                    },
-                )
+    /**
+     * A cover's position as a band, its quarters as presets, and the three
+     * commands that ignore position entirely.
+     *
+     * A cover with no set_position support gets the commands alone rather
+     * than a band that cannot be obeyed.
+     */
+    private fun showCoverSheet(entity: EntityState) {
+        val entityId = entity.entityId
+        val name = widgetFor(entityId)?.label ?: entity.friendlyName
+        val canPosition =
+            entity.attributes.optInt("supported_features", 0) and COVER_SET_POSITION != 0
+        showPanelSheet(context, PanelTheme.isDark) { dismiss ->
+            val live = states[entityId]
+            val position = live?.numberAttribute("current_position")?.roundToInt() ?: 0
+            val moving = live?.state in setOf("opening", "closing")
+            val subtitle = buildString {
+                append(sentenceCase(live?.state ?: "unknown"))
+                // While it travels, the number that matters is where it is
+                // going — the fill already says where it is.
+                if (moving) {
+                    live?.numberAttribute("current_position")?.let { append(" \u00b7 $position%") }
+                }
             }
-            Row(Modifier.fillMaxWidth()) {
-                listOf("Open" to "open_cover", "Stop" to "stop_cover", "Close" to "close_cover")
-                    .forEach { (label, service) ->
-                        Box(Modifier.weight(1f).padding(horizontal = 3.dp, vertical = 4.dp)) {
-                            PanelDialogButton(
-                                label = label,
-                                height = LocalPanelSize.current.presetCell,
-                                active = false,
-                                radius = LocalPanelRadius.current.card,
-                            ) {
-                                callService("cover", service, entity.entityId, JSONObject())
-                                // Stop also has to end a gradual run, or the
-                                // script keeps driving the cover afterwards.
-                                if (service == "stop_cover") {
-                                    widget?.gradualOpenScript?.let { callService("script", "turn_off", it, JSONObject()) }
-                                    widget?.gradualCloseScript?.let { callService("script", "turn_off", it, JSONObject()) }
-                                } else {
-                                    dismiss()
-                                }
-                            }
-                        }
+            Sheet(name, subtitle, dismiss) {
+                if (canPosition) {
+                    SheetLevel(position, height = LocalPanelSize.current.coverBand) { value ->
+                        callService(
+                            "cover", "set_cover_position", entityId,
+                            JSONObject().put("position", value),
+                        )
                     }
-            }
-            listOfNotNull(
-                widget?.gradualOpenScript?.let { "Gradually open" to it },
-                widget?.gradualCloseScript?.let { "Gradually close" to it },
-            ).forEach { (label, script) ->
-                PanelDialogAction(label) {
-                    callService("script", "turn_on", script, JSONObject())
-                    dismiss()
+                }
+                SheetActions(
+                    listOf(
+                        SheetAction("open", "\u25b2", "OPEN"),
+                        SheetAction("stop", "\u25a0", "STOP", weight = 1.4f, active = moving),
+                        SheetAction("close", "\u25bc", "CLOSE"),
+                    ),
+                ) { action ->
+                    callService("cover", "${action}_cover", entityId, JSONObject())
+                    if (action != "stop") dismiss()
                 }
             }
         }
@@ -843,6 +866,19 @@ class PanelDashboardView(
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object {
+        /**
+         * How far one tap on a cover's arrow moves it.
+         *
+         * A guess worth stating: five percent is small enough that a tap is an
+         * adjustment rather than a command, and large enough to see. If it
+         * wants to be per-widget it needs a field in the layout schema, which
+         * is the integration's side of the wire.
+         */
+        private const val COVER_NUDGE = 5
+
+        /** Home Assistant's SUPPORT_SET_POSITION. */
+        private const val COVER_SET_POSITION = 4
+
         private val CONTROL_DOMAINS = setOf("light", "switch", "input_boolean", "fan", "cover")
         private val TIMER_DOMAINS = setOf("light", "switch", "fan")
         private val WEEKDAY_IDS = listOf("mon", "tue", "wed", "thu", "fri", "sat", "sun")

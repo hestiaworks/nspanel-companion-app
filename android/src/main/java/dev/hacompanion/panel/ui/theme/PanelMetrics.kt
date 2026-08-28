@@ -130,6 +130,8 @@ data class PanelSize(
      */
     val modeRowCompact: Dp = 81.dp,
     val levelBand: Dp = 120.dp,
+    /** A cover's band, shorter because an action row shares the sheet. */
+    val coverBand: Dp = 110.dp,
     val rail: Dp = 132.dp,
     val icon: Dp = 30.dp,
     val dot: Dp = 10.dp,

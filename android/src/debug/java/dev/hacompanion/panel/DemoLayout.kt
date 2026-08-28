@@ -117,6 +117,8 @@ object DemoLayout {
         EntityState("cover.demo_blind", "open", JSONObject()
             .put("friendly_name", "Blind")
             .put("current_position", 65)
+            // OPEN | CLOSE | SET_POSITION | STOP, so the sheet offers a band.
+            .put("supported_features", 15)
             .put("device_class", "blind"))
 
     private fun sensor(): EntityState =

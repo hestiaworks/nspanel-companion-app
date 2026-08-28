@@ -22,8 +22,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.dp
 import dev.hacompanion.panel.ui.components.PanelText
+import dev.hacompanion.panel.ui.model.fillFraction
 import dev.hacompanion.panel.ui.installComposeHost
 import dev.hacompanion.panel.ui.theme.LocalPanelColors
 import dev.hacompanion.panel.ui.theme.LocalPanelSize
@@ -52,6 +55,8 @@ fun showPanelSheet(
     dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
     val view = ComposeView(context)
     dialog.setContentView(view)
+    // The dimmed page is still the page: pressing it is how you leave.
+    dialog.setCanceledOnTouchOutside(true)
     dialog.window?.apply {
         setBackgroundDrawableResource(android.R.color.transparent)
         setDimAmount(.65f)
@@ -208,7 +213,13 @@ fun SheetModes(cells: List<ModeCell>, onPick: (ModeCell) -> Unit) {
  * because a sheet is not something you can catch by accident.
  */
 @Composable
-fun SheetLevel(percent: Int, onSet: (Int) -> Unit) {
+fun SheetLevel(
+    percent: Int,
+    height: Dp? = null,
+    /** Where a moving cover is heading, marked while it is still short of it. */
+    target: Int? = null,
+    onSet: (Int) -> Unit,
+) {
     val colors = LocalPanelColors.current
     val type = LocalPanelType.current
     val size = LocalPanelSize.current
@@ -216,9 +227,19 @@ fun SheetLevel(percent: Int, onSet: (Int) -> Unit) {
     LevelSurface(
         percent,
         enabled = true,
-        modifier = Modifier.fillMaxWidth().height(size.levelBand),
+        modifier = Modifier.fillMaxWidth().height(height ?: size.levelBand),
         onSet = onSet,
     ) {
+        if (target != null && target != percent) {
+            // Drawn against the ink rather than the accent: it marks where the
+            // cover is going, which is the one thing the fill cannot say.
+            Box(Modifier.fillMaxWidth(fillFraction(target)).fillMaxHeight()) {
+                Box(
+                    Modifier.align(Alignment.CenterEnd)
+                        .width(size.railRule).fillMaxHeight().background(colors.ink)
+                )
+            }
+        }
         Box(
             Modifier.fillMaxWidth().padding(horizontal = LocalPanelSpace.current.edge),
             contentAlignment = Alignment.CenterStart,
@@ -245,6 +266,49 @@ fun SheetPresets(values: List<Int>, onPick: (Int) -> Unit) {
                 contentAlignment = Alignment.Center,
             ) {
                 PanelText("$value%", type.glyphMode, bold = true, muted = true, maxLines = 1)
+            }
+        }
+    }
+}
+
+/** One entry of a sheet's action row: a glyph above a name. */
+data class SheetAction(
+    val key: String,
+    val glyph: String,
+    val label: String,
+    /** Stop earns more width than the two it sits between, and fills while moving. */
+    val weight: Float = 1f,
+    val active: Boolean = false,
+)
+
+/** Commands that ignore the level entirely, as one row across the sheet. */
+@Composable
+fun SheetActions(actions: List<SheetAction>, onPick: (String) -> Unit) {
+    val colors = LocalPanelColors.current
+    val type = LocalPanelType.current
+    val size = LocalPanelSize.current
+    Box(Modifier.fillMaxWidth().height(size.stroke).background(colors.line))
+    Row(Modifier.fillMaxWidth().height(size.listRow)) {
+        actions.forEachIndexed { index, action ->
+            if (index > 0) CellRule()
+            Column(
+                Modifier.weight(action.weight).fillMaxHeight()
+                    .background(if (action.active) colors.accent else colors.canvas)
+                    .clickable { onPick(action.key) },
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                val ink = if (action.active) colors.onAccent else colors.muted
+                PanelText(action.glyph, type.title, color = ink)
+                PanelText(
+                    action.label,
+                    type.bodySmall,
+                    Modifier.padding(top = 6.dp),
+                    bold = true,
+                    color = if (action.active) colors.onAccent else colors.ink,
+                    letterSpacing = 0.08.em,
+                    maxLines = 1,
+                )
             }
         }
     }

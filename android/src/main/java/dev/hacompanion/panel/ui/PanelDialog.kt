@@ -52,6 +52,7 @@ fun showPanelDialog(
     dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
     val view = ComposeView(context)
     dialog.setContentView(view)
+    dialog.setCanceledOnTouchOutside(true)
     dialog.window?.apply {
         setBackgroundDrawableResource(android.R.color.transparent)
         setDimAmount(.65f)

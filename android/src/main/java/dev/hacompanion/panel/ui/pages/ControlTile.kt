@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import dev.hacompanion.panel.ControlIconView
 import dev.hacompanion.panel.ui.components.PanelText
+import dev.hacompanion.panel.ui.model.ControlBody
 import dev.hacompanion.panel.ui.model.ControlCardModel
 import dev.hacompanion.panel.ui.model.fillFraction
 import dev.hacompanion.panel.ui.slab.CellRule
@@ -154,8 +155,14 @@ private fun CoverStrip(card: ControlCardModel, online: Boolean, actions: Control
     }
 }
 
-private fun openLevel(card: ControlCardModel, actions: ControlActions) = when {
-    card.actionStrip -> actions.openCover(card.entityId)
-    card.entityId.startsWith("fan.") -> actions.openFanSpeed(card.entityId)
-    else -> actions.openBrightness(card.entityId)
+/**
+ * The sheet a long press opens, which only a device with something to set
+ * has: a light with no brightness has no level, and offering it a level
+ * sheet is offering a control that cannot do anything.
+ */
+private fun openLevel(card: ControlCardModel, actions: ControlActions) = when (card.body) {
+    ControlBody.COVER -> actions.openCover(card.entityId)
+    ControlBody.FAN -> actions.openFanSpeed(card.entityId)
+    ControlBody.DIMMER -> actions.openBrightness(card.entityId)
+    ControlBody.BINARY -> Unit
 }
