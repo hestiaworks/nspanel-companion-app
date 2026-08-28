@@ -201,4 +201,26 @@ class ThermostatModelTest {
                        "target_temp_high":24.0}"""
         assertEquals("HEATING \u00b7 20\u201324\u00b0", thermostatModel(ac("heat_cool", auto), null).status)
     }
+
+    @Test
+    fun heatingIsFlaggedSoTheHeaderCanRunWarmRatherThanAccent() {
+        val heating = """{"hvac_modes":["off","heat","cool"],"hvac_action":"heating",
+                          "current_temperature":19.4,"temperature":21.0}"""
+        assertTrue(thermostatModel(ac("heat", heating), null).heating)
+    }
+
+    @Test
+    fun aUnitAskedToHeatButIdleIsNotHeating() {
+        // hvac_action is what the unit is doing; the mode is only what it was told.
+        val idle = """{"hvac_modes":["off","heat"],"hvac_action":"idle",
+                       "current_temperature":22.0,"temperature":21.0}"""
+        assertFalse(thermostatModel(ac("heat", idle), null).heating)
+    }
+
+    @Test
+    fun theTwoTargetsUseTheSelectionVocabularyTheStepperAlreadySpeaks() {
+        val auto = """{"hvac_modes":["off","heat_cool"],"current_temperature":19.4,
+                       "target_temp_low":20.0,"target_temp_high":24.0}"""
+        assertEquals(listOf("heat", "cool"), thermostatModel(ac("heat_cool", auto), null).targets.map { it.key })
+    }
 }

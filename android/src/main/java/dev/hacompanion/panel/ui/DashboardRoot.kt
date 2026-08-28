@@ -172,9 +172,15 @@ private fun PageContent(
         return
     }
 
+    // A Slab page draws its own header band, so it sits outside the scaffold
+    // and carries the long press that opens administration itself.
+    if (only?.type == "thermostat") {
+        ThermostatBody(only, ui, entities, actions)
+        return
+    }
+
     PageScaffold(page.title, actions::openAdmin) {
         when (only?.type) {
-            "thermostat" -> ThermostatBody(only, ui, entities, actions)
             "weather" -> WeatherBody(only, entities)
             // Every other page is the same grid; each widget brings its own
             // form, so no page-wide type has to be inferred from the mixture.
@@ -214,6 +220,11 @@ private fun ThermostatBody(
         onTargetSelected = { actions.selectClimateTarget(climate.entityId, it) },
         onStep = { up -> actions.stepThermostat(climate.entityId, up) },
         onMode = { mode -> actions.setHvacMode(climate.entityId, mode) },
+        onLongPressTitle = actions::openAdmin,
+        // Task 11 replaces these with sheets; until then the slot and the
+        // attribute row are inert rather than absent, so the bands are real.
+        onOpenMore = {},
+        onOpenAttribute = {},
     )
 }
 

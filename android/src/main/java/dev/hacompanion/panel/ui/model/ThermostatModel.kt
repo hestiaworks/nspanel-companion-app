@@ -42,6 +42,8 @@ data class ThermostatModel(
     val modeCells: List<ModeCell>,
     /** What the MORE sheet offers. Empty when the unit reports neither. */
     val moreOptions: List<ModeCell>,
+    /** True only while the unit is actually heating, which tints the header. */
+    val heating: Boolean,
     /** False in dry and fan_only: the rail greys out rather than disappearing. */
     val targetUsable: Boolean,
 )
@@ -182,8 +184,8 @@ fun thermostatModel(
         targets = when {
             secondary -> listOf(TargetCell("temperature", "TARGET", "not used in this mode"))
             dual -> listOf(
-                TargetCell("target_temp_low", "HEAT TO", "${reading(low)}$unit"),
-                TargetCell("target_temp_high", "COOL TO", "${reading(high)}$unit"),
+                TargetCell("heat", "HEAT TO", "${reading(low)}$unit"),
+                TargetCell("cool", "COOL TO", "${reading(high)}$unit"),
             )
             else -> listOf(TargetCell("temperature", "TARGET", "${reading(target)}$unit"))
         },
@@ -192,6 +194,7 @@ fun thermostatModel(
         moreOptions = SECONDARY.filter(available::contains).map {
             cellFor(it, active = climate.state == it)
         },
+        heating = climate.attributes.optString("hvac_action") == "heating",
         targetUsable = !secondary && climate.state != "off",
     )
 }
