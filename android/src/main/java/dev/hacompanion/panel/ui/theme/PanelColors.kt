@@ -7,9 +7,11 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 /**
- * The same tokens the view-based PanelTheme holds, as a value rather than
- * mutable global state, so a theme change is a recomposition instead of an
- * Activity restart.
+ * The Slab palette: fourteen names, two themes.
+ *
+ * `panel` and `card` hold the same value. Slab has no floating card, so the
+ * distinction the old palette drew between them has no surface to describe —
+ * the field is kept so the swap compiles and every page moves at once.
  */
 @Immutable
 data class PanelColors(
@@ -23,36 +25,47 @@ data class PanelColors(
     val accentWash: Color,
     val line: Color,
     val disabled: Color,
-    /** Destructive actions: cancelling a timer, clearing a connection. */
+    /** Destructive actions: cancelling a timer, deleting a schedule. */
     val danger: Color,
-)
-
-val lightPanelColors = PanelColors(
-    canvas = Color(0xFFE8E6E2),
-    panel = Color(0xFFF8F8F5),
-    card = Color(0xFFEFEFEB),
-    cardSecondary = Color(0xFFE7E8E3),
-    ink = Color(0xFF171817),
-    muted = Color(0xFF747873),
-    accent = Color(0xFFF17832),
-    accentWash = Color(0xFFF8E0D2),
-    line = Color(0xFFDADBD6),
-    disabled = Color(0xFFB0B3AE),
-    danger = Color(0xFFD24A3F),
+    /** Reserved for heat. Never decorative. */
+    val warm: Color,
+    /** The two mic-dot states, lifted from PanelStatusView. */
+    val micActive: Color,
+    val micIdle: Color,
 )
 
 val darkPanelColors = PanelColors(
-    canvas = Color(0xFF121312),
-    panel = Color(0xFF1E1F1D),
-    card = Color(0xFF262724),
-    cardSecondary = Color(0xFF30312E),
-    ink = Color(0xFFF2F2EE),
-    muted = Color(0xFFABAEA8),
-    accent = Color(0xFFF77730),
-    accentWash = Color(0xFF59301C),
-    line = Color(0xFF3D3F3B),
-    disabled = Color(0xFF656862),
-    danger = Color(0xFFE05B4F),
+    canvas = Color(0xFF0E1012),
+    panel = Color(0xFF14171A),
+    card = Color(0xFF14171A),
+    cardSecondary = Color(0xFF1D2126),
+    ink = Color(0xFFF2F5F7),
+    muted = Color(0xFF8A9299),
+    accent = Color(0xFF4F8FFF),
+    accentWash = Color(0xFF172233),
+    line = Color(0xFF23282D),
+    disabled = Color(0xFF4A5158),
+    danger = Color(0xFFD24A3F),
+    warm = Color(0xFFFF7A3D),
+    micActive = Color(0xFF34C759),
+    micIdle = Color(0xFFFF9500),
+)
+
+val lightPanelColors = PanelColors(
+    canvas = Color(0xFFF4F5F3),
+    panel = Color(0xFFFFFFFF),
+    card = Color(0xFFFFFFFF),
+    cardSecondary = Color(0xFFECEEEA),
+    ink = Color(0xFF14171A),
+    muted = Color(0xFF6E7570),
+    accent = Color(0xFF2E6FE0),
+    accentWash = Color(0xFFE7EEFB),
+    line = Color(0xFFD9DCD8),
+    disabled = Color(0xFFA8ADA6),
+    danger = Color(0xFFC0392B),
+    warm = Color(0xFFD2551A),
+    micActive = Color(0xFF34C759),
+    micIdle = Color(0xFFFF9500),
 )
 
 val LocalPanelColors = staticCompositionLocalOf { lightPanelColors }
@@ -62,7 +75,7 @@ val LocalPanelColors = staticCompositionLocalOf { lightPanelColors }
  * different set of values passed here, not an edit spread across the pages.
  *
  * Named to avoid colliding with the existing `object PanelTheme`, which still
- * dresses the modal dialogs.
+ * dresses what is left of the view layer.
  */
 @Composable
 fun PanelThemeProvider(

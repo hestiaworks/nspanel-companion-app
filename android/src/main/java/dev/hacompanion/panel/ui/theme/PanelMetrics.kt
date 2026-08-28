@@ -5,82 +5,50 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 
 /**
- * The text sizes the panel draws, by role rather than by number.
+ * The Slab type scale: thirteen roles, nine for text and four for glyphs.
  *
- * The values are the ones the hand-built dashboard used, kept exactly, so
- * introducing these tokens changed nothing on screen. They are not a scale:
- * the old design never had one, and several roles sit a single point apart by
- * accident rather than by intent. Those are called out in
- * `docs/DESIGN-TOKENS.md`, to be resolved by a redesign rather than silently
- * here.
+ * It replaces nineteen. The pairs that sat a point apart by accident —
+ * pageTitle and cardHeadline at 17 sp, the two weather glyphs at 19 and 18 —
+ * collapse into one role each, which is what the token inventory deferred to
+ * a redesign to settle.
  */
 @Immutable
 data class PanelType(
-    val pageTitle: TextUnit = 17.sp,
-    val cardHeadline: TextUnit = 17.sp,
-    val headline: TextUnit = 18.sp,
-    val dialogChoice: TextUnit = 17.sp,
-    val dialogReading: TextUnit = 34.sp,
-    val dialogAction: TextUnit = 15.sp,
-    val reading: TextUnit = 22.sp,
-    val panelName: TextUnit = 28.sp,
-    val dialogTitle: TextUnit = 24.sp,
-    val cardTitle: TextUnit = 15.sp,
-    val body: TextUnit = 14.sp,
-    val detail: TextUnit = 13.sp,
-    val caption: TextUnit = 12.sp,
-    val label: TextUnit = 11.sp,
-    val micro: TextUnit = 10.sp,
-    val nano: TextUnit = 9.sp,
-    val weatherSymbol: TextUnit = 50.sp,
-    val weatherTemperature: TextUnit = 48.sp,
-    val forecastSymbol: TextUnit = 19.sp,
-    val hourlySymbol: TextUnit = 18.sp,
-    val stepGlyph: TextUnit = 20.sp,
-    val modeGlyph: TextUnit = 13.sp,
-    val eyebrowTracking: TextUnit = 0.1.sp,
+    val display: TextUnit = 120.sp,
+    val hero: TextUnit = 100.sp,
+    val reading: TextUnit = 34.sp,
+    val title: TextUnit = 24.sp,
+    val subtitle: TextUnit = 20.sp,
+    val body: TextUnit = 17.sp,
+    val bodySmall: TextUnit = 15.sp,
+    val label: TextUnit = 13.sp,
+    val micro: TextUnit = 11.sp,
+    val glyphLarge: TextUnit = 52.sp,
+    val glyph: TextUnit = 30.sp,
+    val glyphStep: TextUnit = 48.sp,
+    val glyphMode: TextUnit = 22.sp,
+    /** Tracking belongs to the label role now rather than being its own token. */
+    val labelTracking: TextUnit = 0.12.em,
 )
 
-/** Corner radii, by the surface each one rounds. */
+/** Slab is square. The mic dot and the status pill use CircleShape instead. */
 @Immutable
 data class PanelRadius(
-    val card: Dp = 18.dp,
-    val cardLarge: Dp = 20.dp,
-    val cardSmall: Dp = 15.dp,
-    val cardHourly: Dp = 19.dp,
-    val action: Dp = 13.dp,
-    val dialog: Dp = 24.dp,
-    val choice: Dp = 16.dp,
-    val preset: Dp = 15.dp,
+    val card: Dp = 0.dp,
+    val action: Dp = 0.dp,
 )
 
-/** Gaps and insets. */
+/**
+ * Bands run to the screen edge and are separated by a rule, not a gap, so the
+ * only inset left is the one that keeps text off the edge.
+ */
 @Immutable
 data class PanelSpace(
-    val hairline: Dp = 1.dp,
-    val tiny: Dp = 2.dp,
-    val gap: Dp = 4.dp,
-    val gapWide: Dp = 6.dp,
-    val cardInsetTight: Dp = 5.dp,
-    val cardInsetSmall: Dp = 7.dp,
-    val cardInset: Dp = 10.dp,
-    val cardInsetWide: Dp = 12.dp,
-    val thermostatInsetX: Dp = 14.dp,
-    val pillInsetY: Dp = 7.dp,
-    val forecastInset: Dp = 9.dp,
-    val columnGap: Dp = 8.dp,
-    val tileInsetStart: Dp = 14.dp,
-    val tileInsetTop: Dp = 8.dp,
-    val tileInsetEnd: Dp = 10.dp,
-    val pageStart: Dp = 12.dp,
-    val pageTop: Dp = 10.dp,
-    val pageBottom: Dp = 8.dp,
-    val titleGap: Dp = 6.dp,
-    val dialogInsetX: Dp = 20.dp,
-    val dialogInsetY: Dp = 18.dp,
+    val edge: Dp = 24.dp,
     val unconfiguredInsetX: Dp = 30.dp,
     val unconfiguredInsetY: Dp = 24.dp,
     val unconfiguredTextInset: Dp = 16.dp,
@@ -88,25 +56,27 @@ data class PanelSpace(
     val unconfiguredBodyGap: Dp = 18.dp,
 )
 
-/** Fixed component dimensions. */
+/**
+ * The layout is a stack of fixed-height bands. These are the heights, and on
+ * this hardware they are pixels too: the panel reports density 160, so
+ * 1 dp = 1 px and a measurement taken in the spec is the number to use here.
+ */
 @Immutable
 data class PanelSize(
-    val icon: Dp = 24.dp,
-    val iconGap: Dp = 5.dp,
-    val actionHeight: Dp = 42.dp,
-    val stepButton: Dp = 42.dp,
-    val stepRow: Dp = 44.dp,
-    val powerButtonWidth: Dp = 62.dp,
-    val modeButtonHeight: Dp = 48.dp,
-    val sliderHeight: Dp = 48.dp,
-    val tileHeight: Dp = 88.dp,
-    val hourlyStrip: Dp = 104.dp,
-    val thermostatHintWidth: Dp = 170.dp,
-    val denseNameHeight: Dp = 34.dp,
-    val dialogChoiceHeight: Dp = 58.dp,
-    val dialogActionHeight: Dp = 50.dp,
-    val dialogSliderHeight: Dp = 64.dp,
-    val dialogPresetHeight: Dp = 54.dp,
+    val statusBar: Dp = 34.dp,
+    val pageBar: Dp = 3.dp,
+    val headerRow: Dp = 56.dp,
+    val targetRow: Dp = 64.dp,
+    val attributeRow: Dp = 56.dp,
+    val sheetHeader: Dp = 76.dp,
+    val listRow: Dp = 88.dp,
+    val presetCell: Dp = 96.dp,
+    val confirmButton: Dp = 100.dp,
+    val modeRow: Dp = 105.dp,
+    val levelBand: Dp = 120.dp,
+    val rail: Dp = 132.dp,
+    val icon: Dp = 30.dp,
+    val dot: Dp = 10.dp,
     val stroke: Dp = 1.dp,
 )
 

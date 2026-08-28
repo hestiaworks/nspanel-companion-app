@@ -71,10 +71,10 @@ private fun TileSurface(dimmed: Boolean = false, content: @Composable ColumnScop
             .background(colors.card, shape)
             .border(size.stroke, colors.line, shape)
             .padding(
-                start = space.tileInsetStart,
-                top = space.tileInsetTop,
-                end = space.tileInsetEnd,
-                bottom = space.tileInsetTop,
+                start = space.edge,
+                top = space.edge,
+                end = space.edge,
+                bottom = space.edge,
             ),
         verticalArrangement = Arrangement.Center,
         content = content,

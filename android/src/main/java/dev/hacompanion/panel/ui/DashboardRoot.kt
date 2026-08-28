@@ -189,20 +189,20 @@ private fun PageScaffold(title: String, onLongPress: () -> Unit, content: @Compo
     val space = LocalPanelSpace.current
     Column(
         Modifier.fillMaxSize().padding(
-            start = space.pageStart,
-            top = space.pageTop,
-            end = space.pageStart,
-            bottom = space.pageBottom,
+            start = space.edge,
+            top = space.edge,
+            end = space.edge,
+            bottom = space.edge,
         ),
     ) {
         PanelText(
             title,
-            type.pageTitle,
+            type.body,
             Modifier
                 .fillMaxWidth()
                 .semantics { contentDescription = "$title. Long press for administrator controls" }
                 .combinedClickable(onClick = {}, onLongClick = onLongPress)
-                .padding(start = space.tiny, bottom = space.titleGap),
+                .padding(start = space.edge, bottom = space.edge),
             bold = true,
             maxLines = 1,
         )
@@ -238,14 +238,14 @@ private fun UnconfiguredPage(panelName: String, panelId: String, onLongPress: ()
         PanelText(
             "NSPANEL COMPANION", type.label,
             muted = true, bold = true, align = TextAlign.Center,
-            letterSpacing = type.eyebrowTracking,
+            letterSpacing = type.labelTracking,
         )
         PanelText(
-            panelName, type.panelName,
-            Modifier.padding(top = space.unconfiguredNameGap, bottom = space.columnGap),
+            panelName, type.title,
+            Modifier.padding(top = space.unconfiguredNameGap, bottom = space.edge),
             bold = true, align = TextAlign.Center,
         )
-        PanelText("Dashboard not configured", type.headline, bold = true, align = TextAlign.Center)
+        PanelText("Dashboard not configured", type.subtitle, bold = true, align = TextAlign.Center)
         PanelText(
             "Open Home Assistant \u2192 NSPanel Companion, select this panel, and create its pages.",
             type.body,

@@ -541,13 +541,13 @@ class PanelDashboardView(
             PanelDialogHeader("Fan speed", entity.friendlyName)
             PanelText(
                 "$percent%",
-                LocalPanelType.current.dialogReading,
+                LocalPanelType.current.reading,
                 Modifier.fillMaxWidth(),
                 bold = true,
                 align = TextAlign.Center,
             )
             AndroidView(
-                modifier = Modifier.fillMaxWidth().height(LocalPanelSize.current.dialogSliderHeight),
+                modifier = Modifier.fillMaxWidth().height(LocalPanelSize.current.levelBand),
                 factory = { host ->
                     PanelSliderView(host, percent) { value ->
                         callService("fan", "set_percentage", entity.entityId, JSONObject().put("percentage", value))
@@ -559,9 +559,9 @@ class PanelDashboardView(
                     Box(Modifier.weight(1f).padding(horizontal = 3.dp, vertical = 4.dp)) {
                         PanelDialogButton(
                             label = label,
-                            height = LocalPanelSize.current.dialogPresetHeight,
+                            height = LocalPanelSize.current.presetCell,
                             active = false,
-                            radius = LocalPanelRadius.current.preset,
+                            radius = LocalPanelRadius.current.card,
                         ) {
                             callService("fan", "set_percentage", entity.entityId, JSONObject().put("percentage", value))
                             dismiss()
@@ -587,7 +587,7 @@ class PanelDashboardView(
                     align = TextAlign.Center,
                 )
                 AndroidView(
-                    modifier = Modifier.fillMaxWidth().height(LocalPanelSize.current.dialogSliderHeight),
+                    modifier = Modifier.fillMaxWidth().height(LocalPanelSize.current.levelBand),
                     factory = { host ->
                         PanelSliderView(host, position) { value ->
                             callService("cover", "set_cover_position", entity.entityId, JSONObject().put("position", value))
@@ -601,9 +601,9 @@ class PanelDashboardView(
                         Box(Modifier.weight(1f).padding(horizontal = 3.dp, vertical = 4.dp)) {
                             PanelDialogButton(
                                 label = label,
-                                height = LocalPanelSize.current.dialogChoiceHeight,
+                                height = LocalPanelSize.current.presetCell,
                                 active = false,
-                                radius = LocalPanelRadius.current.preset,
+                                radius = LocalPanelRadius.current.card,
                             ) {
                                 callService("cover", service, entity.entityId, JSONObject())
                                 // Stop also has to end a gradual run, or the

@@ -56,7 +56,7 @@ fun ThermostatPage(
     val radius = LocalPanelRadius.current
     val size = LocalPanelSize.current
     PanelCard(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().padding(horizontal = space.thermostatInsetX, vertical = space.cardInsetWide)) {
+        Column(Modifier.fillMaxSize().padding(horizontal = space.edge, vertical = space.edge)) {
             Header(model)
             Box(Modifier.fillMaxWidth().weight(1f)) {
                 // The dial is Canvas drawing either way, so it stays the view
@@ -81,25 +81,25 @@ fun ThermostatPage(
                 }
             }
             Row(
-                Modifier.fillMaxWidth().height(size.stepRow),
+                Modifier.fillMaxWidth().height(size.targetRow),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 StepButton("−", online) { onStep(false) }
                 PanelText(
-                    model.hint, type.label, Modifier.width(size.thermostatHintWidth),
+                    model.hint, type.label, Modifier.width(size.rail),
                     muted = true, align = TextAlign.Center,
                 )
                 StepButton("+", online) { onStep(true) }
             }
             Row(
-                Modifier.fillMaxWidth().padding(top = space.gapWide),
+                Modifier.fillMaxWidth().padding(top = space.edge),
                 horizontalArrangement = Arrangement.Center,
             ) {
                 model.modes.forEach { mode ->
-                    val shape = RoundedCornerShape(radius.action)
+                    val shape = RoundedCornerShape(radius.card)
                     Column(
-                        Modifier.weight(1f).height(size.modeButtonHeight).padding(horizontal = space.tiny)
+                        Modifier.weight(1f).height(size.modeRow).padding(horizontal = space.edge)
                             .background(if (mode.active) colors.accentWash else colors.panel, shape)
                             .border(size.stroke, if (mode.active) colors.accentWash else colors.line, shape)
                             .clickable(enabled = online) { onMode(mode.mode) },
@@ -107,7 +107,7 @@ fun ThermostatPage(
                         verticalArrangement = Arrangement.Center,
                     ) {
                         val ink = if (mode.active) colors.accent else colors.muted
-                        PanelText(mode.glyph, type.modeGlyph, color = ink, align = TextAlign.Center)
+                        PanelText(mode.glyph, type.glyphMode, color = ink, align = TextAlign.Center)
                         PanelText(mode.label, type.micro, color = ink, align = TextAlign.Center)
                     }
                 }
@@ -123,13 +123,13 @@ private fun Header(model: ThermostatModel) {
     val space = LocalPanelSpace.current
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            PanelText(model.name, type.headline, bold = true, maxLines = 1)
+            PanelText(model.name, type.subtitle, bold = true, maxLines = 1)
             PanelText(model.action, type.label, muted = true, maxLines = 1)
         }
         Box(
             Modifier
                 .background(if (model.powered) colors.accentWash else colors.cardSecondary, CircleShape)
-                .padding(horizontal = space.cardInsetWide, vertical = space.pillInsetY),
+                .padding(horizontal = space.edge, vertical = space.edge),
         ) {
             PanelText(
                 if (model.powered) "ON" else "OFF", type.micro,
@@ -143,12 +143,12 @@ private fun Header(model: ThermostatModel) {
 private fun StepButton(glyph: String, online: Boolean, onClick: () -> Unit) {
     val colors = LocalPanelColors.current
     Box(
-        Modifier.size(LocalPanelSize.current.stepButton)
+        Modifier.size(LocalPanelSize.current.icon)
             .background(colors.cardSecondary, CircleShape)
             .clickable(enabled = online) { onClick() },
         contentAlignment = Alignment.Center,
     ) {
-        PanelText(glyph, LocalPanelType.current.stepGlyph)
+        PanelText(glyph, LocalPanelType.current.glyphStep)
     }
 }
 

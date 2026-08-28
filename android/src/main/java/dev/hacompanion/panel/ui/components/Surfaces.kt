@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.takeOrElse
 import dev.hacompanion.panel.ui.theme.LocalPanelColors
+import dev.hacompanion.panel.ui.theme.PanelFont
 import dev.hacompanion.panel.ui.theme.LocalPanelRadius
 import dev.hacompanion.panel.ui.theme.LocalPanelSize
 import dev.hacompanion.panel.ui.theme.LocalPanelType
@@ -69,7 +70,9 @@ fun PanelText(
             fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
             textAlign = align,
             letterSpacing = letterSpacing,
-            fontFamily = if (monospace) FontFamily.Monospace else null,
+            fontFamily = if (monospace) FontFamily.Monospace else PanelFont.barlow,
+            // Every reading on this panel updates in place.
+            fontFeatureSettings = PanelFont.TABULAR,
         ),
     )
 }

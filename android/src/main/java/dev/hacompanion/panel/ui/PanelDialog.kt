@@ -64,10 +64,10 @@ fun showPanelDialog(
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .background(colors.card, RoundedCornerShape(LocalPanelRadius.current.dialog))
+                    .background(colors.card, RoundedCornerShape(LocalPanelRadius.current.card))
                     .padding(
-                        horizontal = LocalPanelSpace.current.dialogInsetX,
-                        vertical = LocalPanelSpace.current.dialogInsetY,
+                        horizontal = LocalPanelSpace.current.edge,
+                        vertical = LocalPanelSpace.current.edge,
                     ),
             ) {
                 content { dialog.dismiss() }
@@ -87,11 +87,11 @@ fun showPanelDialog(
 fun PanelDialogHeader(title: String, subtitle: String) {
     val space = LocalPanelSpace.current
     val type = LocalPanelType.current
-    PanelText(title, type.dialogTitle, bold = true)
+    PanelText(title, type.title, bold = true)
     PanelText(
         subtitle,
-        type.detail,
-        Modifier.padding(top = space.tiny, bottom = space.unconfiguredBodyGap),
+        type.bodySmall,
+        Modifier.padding(top = space.edge, bottom = space.unconfiguredBodyGap),
         muted = true,
     )
 }
@@ -109,10 +109,10 @@ fun PanelDialogChoices(
         labels.chunked(2).forEach { row ->
             Row(Modifier.fillMaxWidth()) {
                 row.forEach { label ->
-                    Box(Modifier.weight(1f).padding(space.gap)) {
+                    Box(Modifier.weight(1f).padding(space.edge)) {
                         PanelDialogButton(
                             label = label,
-                            height = size.dialogChoiceHeight,
+                            height = size.presetCell,
                             active = selected(label),
                         ) { onChoose(label) }
                     }
@@ -129,10 +129,10 @@ fun PanelDialogAction(label: String, destructive: Boolean = false, onClick: () -
     val colors = LocalPanelColors.current
     val space = LocalPanelSpace.current
     val size = LocalPanelSize.current
-    Box(Modifier.fillMaxWidth().padding(top = space.cardInsetTight)) {
+    Box(Modifier.fillMaxWidth().padding(top = space.edge)) {
         PanelDialogButton(
             label = label,
-            height = size.dialogActionHeight,
+            height = size.confirmButton,
             active = false,
             ink = if (destructive) colors.danger else colors.ink,
             bold = !destructive,
@@ -153,7 +153,7 @@ fun PanelDialogButton(
     val colors = LocalPanelColors.current
     val type = LocalPanelType.current
     val size = LocalPanelSize.current
-    val shape = RoundedCornerShape(radius.takeOrElse { LocalPanelRadius.current.choice })
+    val shape = RoundedCornerShape(radius.takeOrElse { LocalPanelRadius.current.card })
     Box(
         Modifier
             .fillMaxWidth()
@@ -165,7 +165,7 @@ fun PanelDialogButton(
     ) {
         PanelText(
             label,
-            type.dialogChoice,
+            type.body,
             bold = bold,
             color = ink ?: if (active) Color.White else colors.ink,
             align = TextAlign.Center,

@@ -46,11 +46,11 @@ fun PageGrid(
             val hasControl = row.any { it is PageCell.Control }
             val rowModifier =
                 if (hasControl) Modifier.fillMaxWidth().weight(1f)
-                else Modifier.fillMaxWidth().height(size.tileHeight)
+                else Modifier.fillMaxWidth().height(size.listRow)
             Row(rowModifier) {
                 row.forEach { cell ->
                     key(cellKey(cell)) {
-                        Box(Modifier.weight(1f).fillMaxSize().padding(space.gap)) {
+                        Box(Modifier.weight(1f).fillMaxSize().padding(space.edge)) {
                             when (cell) {
                                 is PageCell.Control -> ControlCard(cell.card, online, actions)
                                 is PageCell.Reading -> ReadingTile(cell.tile)

@@ -39,7 +39,7 @@ fun WeatherPage(model: WeatherModel) {
     Column(Modifier.fillMaxSize()) {
         WeatherSummaryRow(Modifier.fillMaxWidth().weight(1f), model)
         if (model.hourly.isNotEmpty()) {
-            HourlyForecastCard(Modifier.fillMaxWidth().height(size.hourlyStrip).padding(top = space.cardInsetSmall), model)
+            HourlyForecastCard(Modifier.fillMaxWidth().height(size.levelBand).padding(top = space.edge), model)
         }
     }
 }
@@ -50,31 +50,31 @@ private fun WeatherSummaryRow(modifier: Modifier, model: WeatherModel) {
     val space = LocalPanelSpace.current
     val radius = LocalPanelRadius.current
     Row(modifier) {
-        PanelCard(Modifier.weight(1f).fillMaxSize(), radius = radius.cardLarge) {
+        PanelCard(Modifier.weight(1f).fillMaxSize(), radius = radius.card) {
             Column(
-                Modifier.fillMaxSize().padding(horizontal = space.cardInsetWide, vertical = space.cardInset),
+                Modifier.fillMaxSize().padding(horizontal = space.edge, vertical = space.edge),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
-                PanelText(model.symbol, type.weatherSymbol, align = TextAlign.Center)
-                PanelText(model.temperature, type.weatherTemperature, bold = true, align = TextAlign.Center)
-                PanelText(model.condition, type.headline, bold = true, align = TextAlign.Center, maxLines = 1)
-                PanelText(model.detail, type.detail, muted = true, align = TextAlign.Center, maxLines = 2)
+                PanelText(model.symbol, type.glyphLarge, align = TextAlign.Center)
+                PanelText(model.temperature, type.hero, bold = true, align = TextAlign.Center)
+                PanelText(model.condition, type.subtitle, bold = true, align = TextAlign.Center, maxLines = 1)
+                PanelText(model.detail, type.bodySmall, muted = true, align = TextAlign.Center, maxLines = 2)
             }
         }
-        Column(Modifier.weight(1f).fillMaxSize().padding(start = space.columnGap)) {
+        Column(Modifier.weight(1f).fillMaxSize().padding(start = space.edge)) {
             model.daily.forEach { entry ->
-                PanelCard(Modifier.fillMaxWidth().weight(1f).padding(bottom = space.gap), radius = radius.cardSmall) {
+                PanelCard(Modifier.fillMaxWidth().weight(1f).padding(bottom = space.edge), radius = radius.card) {
                     Row(
-                        Modifier.fillMaxSize().padding(horizontal = space.forecastInset, vertical = space.cardInsetTight),
+                        Modifier.fillMaxSize().padding(horizontal = space.edge, vertical = space.edge),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         PanelText(entry.label, type.label, bold = true)
                         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                            PanelText(entry.symbol, type.forecastSymbol)
+                            PanelText(entry.symbol, type.glyph)
                         }
-                        PanelText(entry.low, type.detail, muted = true)
-                        PanelText("  ${entry.high}", type.detail, bold = true)
+                        PanelText(entry.low, type.bodySmall, muted = true)
+                        PanelText("  ${entry.high}", type.bodySmall, bold = true)
                     }
                 }
             }
@@ -87,19 +87,19 @@ private fun HourlyForecastCard(modifier: Modifier, model: WeatherModel) {
     val type = LocalPanelType.current
     val space = LocalPanelSpace.current
     val radius = LocalPanelRadius.current
-    PanelCard(modifier, radius = radius.cardHourly) {
-        Column(Modifier.fillMaxSize().padding(horizontal = space.cardInset, vertical = space.cardInsetSmall)) {
+    PanelCard(modifier, radius = radius.card) {
+        Column(Modifier.fillMaxSize().padding(horizontal = space.edge, vertical = space.edge)) {
             PanelText(model.summary, type.body, muted = true, maxLines = 2)
-            Row(Modifier.fillMaxWidth().weight(1f).padding(top = space.gap)) {
+            Row(Modifier.fillMaxWidth().weight(1f).padding(top = space.edge)) {
                 model.hourly.forEach { entry ->
                     Column(
                         Modifier.weight(1f).fillMaxSize(),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
-                        PanelText(entry.label, type.nano, muted = true, align = TextAlign.Center)
-                        PanelText(entry.symbol, type.hourlySymbol, align = TextAlign.Center)
-                        PanelText(entry.high, type.detail, bold = true, align = TextAlign.Center)
+                        PanelText(entry.label, type.micro, muted = true, align = TextAlign.Center)
+                        PanelText(entry.symbol, type.glyph, align = TextAlign.Center)
+                        PanelText(entry.high, type.bodySmall, bold = true, align = TextAlign.Center)
                     }
                 }
             }
