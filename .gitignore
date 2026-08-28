@@ -13,3 +13,4 @@ release-output/
 release-signing/
 __pycache__/
 *.py[cod]
+docs/superpowers/
