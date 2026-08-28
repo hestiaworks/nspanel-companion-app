@@ -58,7 +58,7 @@ fun ControlTile(card: ControlCardModel, online: Boolean, actions: ControlActions
         Modifier.fillMaxSize()
             .background(if (card.active) colors.accentWash else colors.canvas)
             .clickable(enabled = online && card.cardTap) { actions.toggle(card.entityId) }
-            .longPressable { openLevel(card, actions) },
+            .longPressable { openSheet(card, actions) },
     ) {
         val level = card.level
         if (card.active && level != null && level > 0) {
@@ -124,6 +124,56 @@ fun ControlTile(card: ControlCardModel, online: Boolean, actions: ControlActions
             }
             if (card.actionStrip) CoverStrip(card, online, actions)
         }
+        TileMarks(card, actions, Modifier.align(Alignment.TopEnd))
+    }
+}
+
+/**
+ * What the tile says about time without giving up any of its body.
+ *
+ * Both marks sit flush in the corner on the page ground rather than the
+ * tile's, so they read as laid over the tile and never collide with the fill
+ * boundary running underneath. The countdown is accent because it is about to
+ * act; the calendar takes the tile's own on-or-off colour, because a schedule
+ * is a standing fact rather than an event.
+ */
+@Composable
+private fun TileMarks(card: ControlCardModel, actions: ControlActions, modifier: Modifier) {
+    val colors = LocalPanelColors.current
+    val type = LocalPanelType.current
+    val remaining = if (card.showTimer) actions.timerRemaining(card.entityId) else null
+    val scheduled = card.showSchedule && actions.scheduleCount(card.entityId) > 0
+    if (remaining == null && !scheduled) return
+
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(LocalPanelSize.current.stroke)) {
+        if (remaining != null) {
+            Row(
+                Modifier.background(colors.canvas).padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                MarkGlyph("clock", colors.accent)
+                PanelText(
+                    remaining, type.markLabel,
+                    Modifier.padding(start = 6.dp),
+                    bold = true, color = colors.accent, maxLines = 1,
+                )
+            }
+        }
+        if (scheduled) {
+            Box(Modifier.background(colors.canvas).padding(horizontal = 8.dp, vertical = 6.dp)) {
+                MarkGlyph("schedule", if (card.active) colors.accent else colors.muted)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MarkGlyph(name: String, tint: androidx.compose.ui.graphics.Color) {
+    key(name, tint) {
+        AndroidView(
+            modifier = Modifier.size(LocalPanelSize.current.mark),
+            factory = { context -> ControlIconView(context, name, tint.toArgb()) },
+        )
     }
 }
 
@@ -156,13 +206,14 @@ private fun CoverStrip(card: ControlCardModel, online: Boolean, actions: Control
 }
 
 /**
- * The sheet a long press opens, which only a device with something to set
- * has: a light with no brightness has no level, and offering it a level
- * sheet is offering a control that cannot do anything.
+ * The sheet a long press opens.
+ *
+ * Every control has one, including a switch with no level to set: the timer
+ * and the schedule live in there now, and a tile that could not be long
+ * pressed would be a tile whose corner marks lead nowhere.
  */
-private fun openLevel(card: ControlCardModel, actions: ControlActions) = when (card.body) {
+private fun openSheet(card: ControlCardModel, actions: ControlActions) = when (card.body) {
     ControlBody.COVER -> actions.openCover(card.entityId)
     ControlBody.FAN -> actions.openFanSpeed(card.entityId)
-    ControlBody.DIMMER -> actions.openBrightness(card.entityId)
-    ControlBody.BINARY -> Unit
+    else -> actions.openBrightness(card.entityId)
 }

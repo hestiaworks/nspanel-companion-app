@@ -57,6 +57,16 @@ class ControlIconView(context: Context, private val iconId: String, color: Int) 
             "oven", "microwave", "dishwasher", "washing-machine", "dryer", "fridge", "kitchen", "coffee", "kettle", "ups", "battery", "solar", "energy" -> appliance(canvas)
             "bedroom", "bathroom", "office", "garden" -> house(canvas)
             "power" -> power(canvas)
+            // The two marks the tile lays in its corner. Paths taken from the
+            // spec: a clock face with hands at 12 and 2, and a calendar whose
+            // header rule is what makes it read as a date rather than a box.
+            "clock" -> { canvas.drawCircle(12f, 12f, 9f, stroke); canvas.drawLine(12f, 7f, 12f, 12f, stroke); canvas.drawLine(12f, 12f, 16f, 14f, stroke) }
+            "schedule" -> {
+                canvas.drawRoundRect(RectF(3.5f, 5.5f, 20.5f, 20.5f), 1f, 1f, stroke)
+                canvas.drawLine(8f, 3f, 8f, 7f, stroke)
+                canvas.drawLine(16f, 3f, 16f, 7f, stroke)
+                canvas.drawLine(3.5f, 10.5f, 20.5f, 10.5f, stroke)
+            }
             else -> bulb(canvas)
         }
         canvas.restore()

@@ -21,6 +21,7 @@ import dev.hacompanion.panel.ui.model.thermostatModel
 import dev.hacompanion.panel.ui.slab.Sheet
 import dev.hacompanion.panel.ui.slab.SheetModes
 import dev.hacompanion.panel.ui.slab.SheetLevel
+import dev.hacompanion.panel.ui.slab.SheetLink
 import dev.hacompanion.panel.ui.slab.SheetAction
 import dev.hacompanion.panel.ui.slab.SheetActions
 import dev.hacompanion.panel.ui.slab.SheetOptions
@@ -56,6 +57,12 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
+import android.os.SystemClock
+import androidx.compose.runtime.mutableStateMapOf
+import dev.hacompanion.panel.ui.model.ControlBody
+import dev.hacompanion.panel.ui.model.ControlCardModel
+import dev.hacompanion.panel.ui.model.controlCard
+import dev.hacompanion.panel.ui.model.timerRemaining
 import org.json.JSONObject
 import org.json.JSONArray
 import java.time.OffsetDateTime
@@ -97,7 +104,14 @@ class PanelDashboardView(
     private var interactionActive = false
     private var dashboardActive = true
     private var fullRenderCount = 0
-    private val timerMinutes = mutableMapOf<String, Int>()
+    /**
+     * When each running timer fires, on the elapsed-realtime clock.
+     *
+     * A deadline rather than the duration that was chosen, because the tile
+     * shows a countdown. Snapshot state so the corner mark follows it, and
+     * elapsed-realtime so a wall-clock change cannot move a timer.
+     */
+    private val timerDeadlines = mutableStateMapOf<String, Long>()
     private val timerCallbacks = mutableMapOf<String, Runnable>()
     private var schedules = emptyList<ControlSchedule>()
     private val returnToDefault = Runnable {
@@ -153,7 +167,7 @@ class PanelDashboardView(
         }
 
         override fun openBrightness(entityId: String) {
-            states[entityId]?.let(::showBrightnessSheet)
+            states[entityId]?.let(::showControlSheet)
         }
 
         override fun moveCover(entityId: String, action: String) {
@@ -161,11 +175,11 @@ class PanelDashboardView(
         }
 
         override fun openFanSpeed(entityId: String) {
-            states[entityId]?.let(::showFanSpeedDialog)
+            states[entityId]?.let(::showControlSheet)
         }
 
         override fun openCover(entityId: String) {
-            states[entityId]?.let(::showCoverSheet)
+            states[entityId]?.let(::showControlSheet)
         }
 
         override fun openSchedule(entityId: String) {
@@ -174,12 +188,20 @@ class PanelDashboardView(
 
         override fun openTimer(entityId: String) {
             states[entityId]?.let {
-                showTimerDialog(it, widgetFor(entityId)?.timerPresets ?: listOf(5, 15, 30, 60))
+                showTimerSheet(it, widgetFor(entityId)?.timerPresets ?: listOf(5, 15, 30, 60))
             }
         }
 
-        override fun timerMinutes(entityId: String): Int? =
-            timerMinutes[entityId]?.takeIf { it > 0 }
+        override fun timerRemaining(entityId: String): String? {
+            // Read the tick so this recomposes each second while one runs.
+            ui.timerTick
+            return timerRemaining(timerDeadlines[entityId], SystemClock.elapsedRealtime())
+        }
+
+        override fun scheduleNext(entityId: String): String? =
+            schedules.filter { it.entityId == entityId && it.enabled }
+                .minByOrNull { it.time }
+                ?.let { "Next \u00b7 ${it.time} \u00b7 ${sentenceCase(it.action)}" }
 
         override fun scheduleCount(entityId: String): Int =
             schedules.count { it.entityId == entityId }
@@ -422,36 +444,119 @@ class PanelDashboardView(
     }
 
     /**
-     * Brightness as a band you press rather than a thumb you find, with the
-     * presets underneath for the levels worth reaching directly.
+     * Every control opens the same sheet; only the band in the middle differs.
+     *
+     * The variant comes from what the entity can actually do rather than from
+     * a setting, so a light that reports brightness gets a level band and one
+     * that does not gets none — and both still get the timer and schedule
+     * rows, which is where those live now that the tile carries only marks.
      */
-    private fun showBrightnessSheet(entity: EntityState) {
+    private fun showControlSheet(entity: EntityState) {
         val entityId = entity.entityId
-        val name = widgetFor(entityId)?.label ?: entity.friendlyName
+        val widget = widgetFor(entityId)
+        val name = widget?.label ?: entity.friendlyName
+        val card = controlCard(entity, widget, dense = false)
+        val canPosition =
+            entity.attributes.optInt("supported_features", 0) and COVER_SET_POSITION != 0
+
         showPanelSheet(context, PanelTheme.isDark) { dismiss ->
-            // Read from the live map rather than the entity captured when the
-            // sheet opened: states is snapshot state, so the band follows the
-            // light instead of freezing at whatever it was on the way in.
-            val live = states[entityId]
-            val percent =
-                ((live?.numberAttribute("brightness") ?: 0.0) / 255.0 * 100.0).roundToInt()
-            Sheet("Brightness", name, dismiss) {
-                SheetLevel(percent) { value ->
-                    callService(
-                        "light", "turn_on", entityId,
-                        JSONObject().put("brightness_pct", value),
-                    )
+            // The live entity, not the one captured on the way in: a band that
+            // freezes while the light it drives moves is worse than no band.
+            val live = states[entityId] ?: entity
+            val moving = live.state in setOf("opening", "closing")
+            Sheet(name, sheetSubtitle(live, card, moving), dismiss) {
+                when (card.body) {
+                    ControlBody.DIMMER -> {
+                        val percent =
+                            ((live.numberAttribute("brightness") ?: 0.0) / 255.0 * 100.0).roundToInt()
+                        SheetLevel(percent) { setBrightness(entityId, it) }
+                        SheetPresets(presetsFor("light")) {
+                            setBrightness(entityId, it)
+                            dismiss()
+                        }
+                    }
+                    ControlBody.FAN -> {
+                        val percent = live.numberAttribute("percentage")?.roundToInt() ?: 0
+                        SheetLevel(percent) { setFanSpeed(entityId, it) }
+                        SheetPresets(presetsFor("fan")) {
+                            setFanSpeed(entityId, it)
+                            dismiss()
+                        }
+                    }
+                    ControlBody.COVER -> {
+                        if (canPosition) {
+                            val position =
+                                live.numberAttribute("current_position")?.roundToInt() ?: 0
+                            SheetLevel(position, height = LocalPanelSize.current.coverBand) {
+                                callService(
+                                    "cover", "set_cover_position", entityId,
+                                    JSONObject().put("position", it),
+                                )
+                            }
+                        }
+                        SheetActions(
+                            listOf(
+                                SheetAction("open", "\u25b2", "OPEN"),
+                                SheetAction("stop", "\u25a0", "STOP", weight = 1.4f, active = moving),
+                                SheetAction("close", "\u25bc", "CLOSE"),
+                            ),
+                        ) { action ->
+                            callService("cover", "${action}_cover", entityId, JSONObject())
+                            if (action != "stop") dismiss()
+                        }
+                    }
+                    // A binary control has no level to set, so its sheet is
+                    // the two doors and the toggle it could not fit elsewhere.
+                    ControlBody.BINARY -> Unit
                 }
-                SheetPresets(presetsFor("light")) { value ->
-                    callService(
-                        "light", "turn_on", entityId,
-                        JSONObject().put("brightness_pct", value),
-                    )
-                    dismiss()
+
+                if (card.showTimer) {
+                    ui.timerTick
+                    val left = timerRemaining(timerDeadlines[entityId], SystemClock.elapsedRealtime())
+                    SheetLink(
+                        "clock",
+                        if (left == null) "Timer" else "Timer \u00b7 $left",
+                        if (left == null) "Turns it off after a while \u00b7 this panel only"
+                        else "Turns off when it ends \u00b7 this panel only",
+                        filled = left != null,
+                    ) {
+                        dismiss()
+                        showTimerSheet(live, widget?.timerPresets ?: listOf(5, 15, 30, 60))
+                    }
+                }
+                if (card.showSchedule) {
+                    val count = schedules.count { it.entityId == entityId }
+                    SheetLink(
+                        "schedule",
+                        if (count == 0) "Schedules" else "Schedules \u00b7 $count",
+                        // Home Assistant runs these, so they hold with the
+                        // panel asleep — worth saying, since the timer above
+                        // does not.
+                        dashboardActions.scheduleNext(entityId) ?: "None yet \u00b7 kept by Home Assistant",
+                    ) {
+                        dismiss()
+                        showScheduleListDialog(live, widget)
+                    }
                 }
             }
         }
     }
+
+    /** What the sheet header says the thing is doing right now. */
+    private fun sheetSubtitle(live: EntityState, card: ControlCardModel, moving: Boolean): String =
+        when {
+            moving -> sentenceCase(live.state)
+            card.levelText != null -> "${sentenceCase(live.state)} \u00b7 ${card.levelText}"
+            else -> sentenceCase(live.state)
+        }
+
+    private fun setBrightness(entityId: String, percent: Int) = callService(
+        "light", "turn_on", entityId, JSONObject().put("brightness_pct", percent),
+    )
+
+    private fun setFanSpeed(entityId: String, percent: Int) = callService(
+        "fan", "set_percentage", entityId, JSONObject().put("percentage", percent),
+    )
 
     /**
      * The modes that did not earn a cell in the row, as a sheet.
@@ -705,13 +810,6 @@ class PanelDashboardView(
         }
     }
 
-    /**
-     * A cover's position as a band, its quarters as presets, and the three
-     * commands that ignore position entirely.
-     *
-     * A cover with no set_position support gets the commands alone rather
-     * than a band that cannot be obeyed.
-     */
     private fun showCoverSheet(entity: EntityState) {
         val entityId = entity.entityId
         val name = widgetFor(entityId)?.label ?: entity.friendlyName
@@ -752,21 +850,40 @@ class PanelDashboardView(
         }
     }
 
-    private fun showTimerDialog(entity: EntityState, presets: List<Int>) {
-        val running = timerMinutes[entity.entityId]?.takeIf { it > 0 }
-        showPanelDialog(context, PanelTheme.isDark, widthFraction = .86f) { dismiss ->
-            PanelDialogHeader("Timer", entity.friendlyName)
-            PanelDialogChoices(
-                labels = presets.distinct().map { "$it min" },
-                selected = { it == "$running min" },
-            ) { label ->
-                setTimer(entity, label.substringBefore(" ").toInt())
-                dismiss()
-            }
-            if (running != null) {
-                PanelDialogAction("Cancel timer", destructive = true) {
-                    setTimer(entity, 0)
+    /**
+     * The timer as a sheet: the presets the layout chose, and a way out.
+     *
+     * The layout may name one to four of them, so the grid follows the count
+     * rather than the count following a fixed grid — SheetOptions already
+     * gives an odd one out the full width of its row.
+     */
+    private fun showTimerSheet(entity: EntityState, presets: List<Int>) {
+        val entityId = entity.entityId
+        val name = widgetFor(entityId)?.label ?: entity.friendlyName
+        showPanelSheet(context, PanelTheme.isDark) { dismiss ->
+            ui.timerTick
+            val left = timerRemaining(timerDeadlines[entityId], SystemClock.elapsedRealtime())
+            Sheet(
+                if (left == null) "Timer" else "Timer \u00b7 $left",
+                if (left == null) "$name \u00b7 turns off when it ends"
+                else "$name \u00b7 this panel only",
+                dismiss,
+            ) {
+                SheetOptions(
+                    presets.distinct().take(4).map { "$it" to "$it min" },
+                    // Nothing is selected once it is running: the running time
+                    // is in the header, and the preset that started it is no
+                    // longer the thing you are choosing between.
+                    selected = null,
+                ) { minutes ->
+                    setTimer(entity, minutes.toInt())
                     dismiss()
+                }
+                if (left != null) {
+                    SheetOptions(listOf("cancel" to "Cancel timer"), selected = null) {
+                        setTimer(entity, 0)
+                        dismiss()
+                    }
                 }
             }
         }
@@ -774,18 +891,43 @@ class PanelDashboardView(
 
     private fun setTimer(entity: EntityState, minutes: Int) {
         timerCallbacks.remove(entity.entityId)?.let(::removeCallbacks)
-        timerMinutes[entity.entityId] = minutes
-        if (minutes > 0) {
-            val callback = Runnable {
-                callService(entity.domain, "turn_off", entity.entityId, JSONObject())
-                timerMinutes[entity.entityId] = 0
-                timerCallbacks.remove(entity.entityId)
-                ui.sidecarRevision += 1
-            }
-            timerCallbacks[entity.entityId] = callback
-            postDelayed(callback, minutes * 60_000L)
+        if (minutes <= 0) {
+            timerDeadlines.remove(entity.entityId)
+            stopTimerTickIfIdle()
+            return
         }
-        ui.sidecarRevision += 1
+        timerDeadlines[entity.entityId] = SystemClock.elapsedRealtime() + minutes * 60_000L
+        val callback = Runnable {
+            callService(entity.domain, "turn_off", entity.entityId, JSONObject())
+            timerDeadlines.remove(entity.entityId)
+            timerCallbacks.remove(entity.entityId)
+            stopTimerTickIfIdle()
+        }
+        timerCallbacks[entity.entityId] = callback
+        postDelayed(callback, minutes * 60_000L)
+        startTimerTick()
+    }
+
+    /**
+     * One second is the coarsest tick a countdown can use and still be a
+     * countdown, and it runs only while a timer does — an idle panel posts
+     * nothing.
+     */
+    private val timerTick = object : Runnable {
+        override fun run() {
+            ui.timerTick += 1
+            if (timerDeadlines.isNotEmpty()) postDelayed(this, 1_000L)
+        }
+    }
+
+    private fun startTimerTick() {
+        removeCallbacks(timerTick)
+        postDelayed(timerTick, 1_000L)
+    }
+
+    private fun stopTimerTickIfIdle() {
+        ui.timerTick += 1
+        if (timerDeadlines.isEmpty()) removeCallbacks(timerTick)
     }
 
     private fun toggleEntity(entity: EntityState) {

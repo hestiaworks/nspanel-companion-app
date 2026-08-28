@@ -21,7 +21,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.key
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.viewinterop.AndroidView
+import dev.hacompanion.panel.ControlIconView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.dp
@@ -311,5 +316,55 @@ fun SheetActions(actions: List<SheetAction>, onPick: (String) -> Unit) {
                 )
             }
         }
+    }
+}
+
+/**
+ * A row that opens something else: a glyph, what it is, what it will do, and
+ * the chevron saying there is more behind it.
+ *
+ * Timer and schedule both wear this. Neither is a control the tile can hold —
+ * a countdown needs a duration and a schedule needs a whole editor — so on the
+ * tile they are marks, and here they are doors.
+ */
+@Composable
+fun SheetLink(
+    glyph: String,
+    title: String,
+    subtitle: String,
+    filled: Boolean = false,
+    onOpen: () -> Unit,
+) {
+    val colors = LocalPanelColors.current
+    val type = LocalPanelType.current
+    val size = LocalPanelSize.current
+    Box(Modifier.fillMaxWidth().height(size.stroke).background(colors.line))
+    Row(
+        Modifier.fillMaxWidth().height(size.listRow)
+            .background(if (filled) colors.cardSecondary else colors.canvas)
+            .clickable { onOpen() }
+            .padding(horizontal = LocalPanelSpace.current.edge),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SheetGlyph(glyph, colors.accent)
+        Column(Modifier.weight(1f).padding(start = 16.dp)) {
+            PanelText(title, type.subtitle, bold = true, maxLines = 1)
+            PanelText(
+                subtitle, type.sheetSubtitle,
+                Modifier.padding(top = 2.dp),
+                muted = true, maxLines = 1,
+            )
+        }
+        PanelText("›", type.glyph, muted = true)
+    }
+}
+
+@Composable
+private fun SheetGlyph(name: String, tint: Color) {
+    key(name, tint) {
+        AndroidView(
+            modifier = Modifier.size(LocalPanelSize.current.mark),
+            factory = { context -> ControlIconView(context, name, tint.toArgb()) },
+        )
     }
 }

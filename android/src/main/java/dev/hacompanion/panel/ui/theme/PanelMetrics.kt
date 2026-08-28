@@ -48,6 +48,8 @@ data class PanelType(
     val tileNameLarge: TextUnit = 21.sp,
     val tileNameSmall: TextUnit = 17.sp,
     val micro: TextUnit = 11.sp,
+    /** The countdown beside a corner mark's clock. */
+    val markLabel: TextUnit = 16.sp,
     val glyphLarge: TextUnit = 52.sp,
     val glyph: TextUnit = 30.sp,
     val glyphStep: TextUnit = 48.sp,
@@ -139,6 +141,8 @@ data class PanelSize(
     val coverBand: Dp = 110.dp,
     val rail: Dp = 132.dp,
     val icon: Dp = 30.dp,
+    /** A corner mark's glyph, smaller than the tile's own. */
+    val mark: Dp = 19.dp,
     val dot: Dp = 10.dp,
     val stroke: Dp = 1.dp,
     /**

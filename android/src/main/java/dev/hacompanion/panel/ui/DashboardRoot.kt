@@ -81,6 +81,12 @@ class DashboardUiState {
     var sidecarRevision by mutableStateOf(0)
 
     /**
+     * Bumped once a second while a timer runs, so only the corner marks that
+     * read it recompose rather than the whole page.
+     */
+    var timerTick by mutableStateOf(0)
+
+    /**
      * Which setpoint the rail adjusts, per entity.
      *
      * Snapshot state, so choosing one moves the fill on the next frame. Held
