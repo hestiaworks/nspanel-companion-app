@@ -81,4 +81,124 @@ class ThermostatModelTest {
         assertEquals("Tap a temperature, then adjust", thermostatModel(climate("heat_cool"), null).hint)
         assertEquals("Adjust target temperature", thermostatModel(climate("heat"), null).hint)
     }
+
+    private fun ac(state: String, attributes: String) =
+        EntityState("climate.ac", state, JSONObject(attributes))
+
+    private val FULL = """{
+        "hvac_modes": ["off","heat","cool","heat_cool","dry","fan_only"],
+        "fan_modes": ["auto","low","high"], "fan_mode": "low",
+        "swing_modes": ["off","vertical"], "swing_mode": "vertical",
+        "current_temperature": 19.4, "temperature": 21.0, "current_humidity": 47
+    }"""
+
+    @Test
+    fun theModeRowHoldsHeatCoolAutoTheSlotAndOff() {
+        val model = thermostatModel(ac("heat", FULL), null)
+        assertEquals(
+            listOf("heat", "cool", "heat_cool", MORE_KEY, "off"),
+            model.modeCells.map { it.key },
+        )
+    }
+
+    @Test
+    fun theSlotSaysMoreWhileNeitherSecondaryModeRuns() {
+        val model = thermostatModel(ac("cool", FULL), null)
+        val slot = model.modeCells.single { it.key == MORE_KEY }
+        assertEquals("MORE", slot.label)
+        assertFalse(slot.active)
+    }
+
+    @Test
+    fun theSlotBecomesTheModeThatIsRunning() {
+        // So the row still shows the true state at a glance.
+        val model = thermostatModel(ac("dry", FULL), null)
+        val slot = model.modeCells.single { it.key == MORE_KEY }
+        assertEquals("DRY", slot.label)
+        assertTrue(slot.active)
+    }
+
+    @Test
+    fun aUnitWithNeitherSecondaryModeDropsTheSlot() {
+        val simple = """{"hvac_modes":["off","heat","cool","heat_cool"],
+                         "current_temperature":19.4,"temperature":21.0}"""
+        val model = thermostatModel(ac("heat", simple), null)
+        assertEquals(listOf("heat", "cool", "heat_cool", "off"), model.modeCells.map { it.key })
+        assertTrue(model.moreOptions.isEmpty())
+    }
+
+    @Test
+    fun theSheetOffersOnlyWhatTheEntityReports() {
+        val onlyDry = """{"hvac_modes":["off","heat","cool","dry"],
+                          "current_temperature":19.4,"temperature":21.0}"""
+        assertEquals(listOf("dry"), thermostatModel(ac("heat", onlyDry), null).moreOptions.map { it.key })
+        assertEquals(listOf("dry", "fan_only"), thermostatModel(ac("heat", FULL), null).moreOptions.map { it.key })
+    }
+
+    @Test
+    fun theAttributeRowCarriesFanAndSwingWhenBothAreReported() {
+        val model = thermostatModel(ac("heat", FULL), null)
+        assertEquals(listOf("FAN", "SWING"), model.attributes.map { it.label })
+        assertEquals(listOf("Low", "Vertical"), model.attributes.map { it.value })
+    }
+
+    @Test
+    fun aUnitWithOnlyFanSpeedsSaysSoAndTakesTheWholeRow() {
+        val fanOnly = """{"hvac_modes":["off","cool"],"fan_modes":["low","high"],
+                          "fan_mode":"high","current_temperature":26.2,"temperature":23.0}"""
+        val model = thermostatModel(ac("cool", fanOnly), null)
+        assertEquals(listOf("FAN SPEED"), model.attributes.map { it.label })
+    }
+
+    @Test
+    fun aRadiatorValveGetsNoAttributeRowAtAll() {
+        // The layout already approved is what a simple thermostat still draws.
+        val valve = """{"hvac_modes":["off","heat"],"current_temperature":19.4,"temperature":21.0}"""
+        assertTrue(thermostatModel(ac("heat", valve), null).attributes.isEmpty())
+    }
+
+    @Test
+    fun dryShowsHumidityAsTheBigNumberWithTheRoomBeneath() {
+        val model = thermostatModel(ac("dry", FULL), null)
+        assertEquals("47", model.displayValue)
+        assertEquals("%", model.displayUnit)
+        assertEquals("HUMIDITY NOW", model.displayLabel)
+        assertEquals("19.4° room", model.displayCaption)
+    }
+
+    @Test
+    fun dryHasNoSetpointSoTheRailGreysOutRatherThanDisappearing() {
+        // The bands must not reflow between modes.
+        val model = thermostatModel(ac("dry", FULL), null)
+        assertFalse(model.targetUsable)
+        assertEquals("not used in this mode", model.targets.single().value)
+    }
+
+    @Test
+    fun heatShowsTheRoomAsTheBigNumberWithHumidityBeneath() {
+        val model = thermostatModel(ac("heat", FULL), null)
+        assertEquals("19.4", model.displayValue)
+        assertEquals("°", model.displayUnit)
+        assertEquals("ROOM NOW", model.displayLabel)
+        assertEquals("47% humidity", model.displayCaption)
+        assertTrue(model.targetUsable)
+    }
+
+    @Test
+    fun autoSplitsTheTargetRowInTwo() {
+        val auto = """{"hvac_modes":["off","heat","cool","heat_cool"],
+                       "current_temperature":19.4,"target_temp_low":20.0,
+                       "target_temp_high":24.0}"""
+        val model = thermostatModel(ac("heat_cool", auto), null)
+        assertEquals(listOf("HEAT TO", "COOL TO"), model.targets.map { it.label })
+        assertEquals(listOf("20.0\u00b0", "24.0\u00b0"), model.targets.map { it.value })
+    }
+
+    @Test
+    fun autoNamesTheBandInTheHeader() {
+        val auto = """{"hvac_modes":["off","heat_cool"],"hvac_action":"heating",
+                       "current_temperature":19.4,"target_temp_low":20.0,
+                       "target_temp_high":24.0}"""
+        assertEquals("HEATING \u00b7 20\u201324\u00b0", thermostatModel(ac("heat_cool", auto), null).status)
+    }
 }

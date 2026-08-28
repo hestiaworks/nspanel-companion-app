@@ -1,6 +1,9 @@
 package dev.hacompanion.panel.ui.model
 
 import dev.hacompanion.panel.EntityState
+import dev.hacompanion.panel.ui.slab.Attribute
+import dev.hacompanion.panel.ui.slab.ModeCell
+import dev.hacompanion.panel.ui.slab.TargetCell
 
 /** One selectable HVAC mode, with the glyph and label the panel shows. */
 data class ThermostatMode(
@@ -23,7 +26,50 @@ data class ThermostatModel(
     val cool: String,
     val hint: String,
     val modes: List<ThermostatMode>,
+
+    /** What the unit is doing, for the header: "HEATING \u00b7 20\u201324\u00b0". */
+    val status: String,
+    /** The hero reading: the room, or the humidity while drying. */
+    val displayValue: String,
+    val displayUnit: String,
+    val displayLabel: String,
+    /** The other reading, small, beneath the hero. */
+    val displayCaption: String,
+    /** One cell in heat or cool, two in auto \u2014 never zero, so the band keeps its height. */
+    val targets: List<TargetCell>,
+    /** Fan speed and swing. Empty for a valve, which is what keeps its page simple. */
+    val attributes: List<Attribute>,
+    val modeCells: List<ModeCell>,
+    /** What the MORE sheet offers. Empty when the unit reports neither. */
+    val moreOptions: List<ModeCell>,
+    /** False in dry and fan_only: the rail greys out rather than disappearing. */
+    val targetUsable: Boolean,
 )
+
+/**
+ * The mode row's fourth slot.
+ *
+ * Task 5 recognises it and opens the sheet instead of calling
+ * set_hvac_mode, because the slot is a door rather than a mode.
+ */
+const val MORE_KEY = "__more"
+
+// Modes that earn a cell of their own. Everything else lives behind the slot:
+// five cells across 480 px is the most that stays above the 64 px floor.
+private val PRIMARY = listOf("heat", "cool", "heat_cool", "off")
+private val SECONDARY = listOf("dry", "fan_only")
+
+private fun cellFor(mode: String, active: Boolean) = when (mode) {
+    "heat" -> ModeCell(mode, "\u2600\ufe0e", "HEAT", active)
+    "cool" -> ModeCell(mode, "\u2744\ufe0e", "COOL", active)
+    "heat_cool" -> ModeCell(mode, "\u2194", "AUTO", active)
+    "dry" -> ModeCell(mode, "\u25cc", "DRY", active)
+    "fan_only" -> ModeCell(mode, "\u224b", "FAN", active)
+    else -> ModeCell(mode, "\u25cb", "OFF", active)
+}
+
+/** Readings are tabular: one decimal, always, so a digit never shifts. */
+private fun reading(value: Double) = String.format(java.util.Locale.US, "%.1f", value)
 
 // The order the panel shows them in, regardless of how the device lists them.
 private val MODE_ORDER = listOf("heat", "cool", "heat_cool", "fan_only", "dry", "off")
@@ -58,6 +104,44 @@ fun thermostatModel(
         listOf(climate.state, "off").distinct()
     }
 
+    val humidity = climate.numberAttribute("current_humidity")
+    val drying = climate.state == "dry"
+    val secondary = climate.state in SECONDARY
+
+    val modeCells = buildList {
+        for (mode in PRIMARY) {
+            if (mode !in available) continue
+            // The slot sits before off, so the way out stays in the same place
+            // whatever the unit reports.
+            if (mode == "off" && available.any(SECONDARY::contains)) {
+                add(
+                    // The slot wears the running mode but keeps its key: it is still the
+                    // door to the sheet, which is where you go to leave that mode.
+                    if (secondary) cellFor(climate.state, true).copy(key = MORE_KEY)
+                    else ModeCell(MORE_KEY, "\u22ef", "MORE", false)
+                )
+            }
+            add(cellFor(mode, active = climate.state == mode))
+        }
+    }
+
+    val fan = climate.attributes.optString("fan_mode").takeIf {
+        it.isNotBlank() && climate.attributes.optJSONArray("fan_modes") != null
+    }
+    val swing = climate.attributes.optString("swing_mode").takeIf {
+        it.isNotBlank() && climate.attributes.optJSONArray("swing_modes") != null
+    }
+    // Both share the row, so both take the short label; one on its own has the
+    // width to say what it is.
+    val attributes = buildList {
+        if (fan != null) {
+            add(Attribute("fan_mode", if (swing != null) "FAN" else "FAN SPEED", sentenceCase(fan)))
+        }
+        if (swing != null) {
+            add(Attribute("swing_mode", if (fan != null) "SWING" else "SWING MODE", sentenceCase(swing)))
+        }
+    }
+
     return ThermostatModel(
         name = label ?: climate.friendlyName,
         mode = climate.state,
@@ -72,5 +156,42 @@ fun thermostatModel(
             val (glyph, text) = glyphAndLabel(mode)
             ThermostatMode(mode, glyph, text, active = climate.state == mode)
         },
+        status = buildString {
+            append(climate.attributes.optString("hvac_action").ifBlank { climate.state }
+                .replace('_', ' ').uppercase())
+            if (climate.state != "off" && !secondary) {
+                append(" \u00b7 ")
+                append(
+                    if (dual) "${formatNumber(low)}\u2013${formatNumber(high)}$unit"
+                    else "${formatNumber(target)}$unit"
+                )
+            }
+        },
+        // While drying, humidity is the number being acted on; the room is
+        // still worth knowing, so the two swap places rather than one leaving.
+        displayValue = when {
+            drying -> humidity?.let(::formatNumber) ?: "\u2014"
+            else -> current?.let(::reading) ?: "\u2014"
+        },
+        displayUnit = if (drying) "%" else "\u00b0",
+        displayLabel = if (drying) "HUMIDITY NOW" else "ROOM NOW",
+        displayCaption = when {
+            drying -> current?.let { "${reading(it)}\u00b0 room" } ?: ""
+            else -> humidity?.let { "${formatNumber(it)}% humidity" } ?: ""
+        },
+        targets = when {
+            secondary -> listOf(TargetCell("temperature", "TARGET", "not used in this mode"))
+            dual -> listOf(
+                TargetCell("target_temp_low", "HEAT TO", "${reading(low)}$unit"),
+                TargetCell("target_temp_high", "COOL TO", "${reading(high)}$unit"),
+            )
+            else -> listOf(TargetCell("temperature", "TARGET", "${reading(target)}$unit"))
+        },
+        attributes = attributes,
+        modeCells = modeCells,
+        moreOptions = SECONDARY.filter(available::contains).map {
+            cellFor(it, active = climate.state == it)
+        },
+        targetUsable = !secondary && climate.state != "off",
     )
 }
