@@ -162,6 +162,7 @@ class ThermostatModelTest {
         val model = thermostatModel(ac("dry", FULL), null)
         assertEquals("47", model.displayValue)
         assertEquals("%", model.displayUnit)
+        assertTrue(model.displayIsReading)
         assertEquals("HUMIDITY NOW", model.displayLabel)
         assertEquals("19.4° room", model.displayCaption)
     }
@@ -271,5 +272,35 @@ class ThermostatModelTest {
         assertTrue(thermostatModel(ac("heat", heat), null).targets.single().warm)
         val cool = """{"hvac_modes":["off","cool"],"current_temperature":26.2,"temperature":23.0}"""
         assertFalse(thermostatModel(ac("cool", cool), null).targets.single().warm)
+    }
+
+    @Test
+    fun anUnavailableEntityFillsNothingAndOffersNothing() {
+        // Fill means state, so a unit with no state has none. The spec has no
+        // frame for this; what it must not do is look operable.
+        val model = thermostatModel(ac("unavailable", "{}"), null)
+        assertFalse(model.available)
+        assertFalse(model.targetUsable)
+        val target = model.targets.single()
+        assertFalse(target.selected)
+        assertFalse(target.reading)
+        assertEquals("unavailable", target.value)
+    }
+
+    @Test
+    fun anUnavailableEntityDoesNotInventAReading() {
+        // 20.0 is the fallback a missing setpoint gets, and showing it here
+        // would be a number the unit never reported.
+        val model = thermostatModel(ac("unavailable", "{}"), null)
+        assertEquals("\u2014", model.displayValue)
+        assertEquals("no reading", model.displayCaption)
+        // A dash is a placeholder, not a number: at 120 px it is a grey bar.
+        assertFalse(model.displayIsReading)
+        assertEquals("", model.displayUnit)
+    }
+
+    @Test
+    fun anUnknownEntityIsTreatedAsUnavailable() {
+        assertFalse(thermostatModel(ac("unknown", "{}"), null).available)
     }
 }

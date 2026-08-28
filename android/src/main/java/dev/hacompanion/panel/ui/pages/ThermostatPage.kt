@@ -92,15 +92,30 @@ fun ThermostatPage(
                     semibold = true, muted = true,
                     letterSpacing = type.labelTrackingWide, maxLines = 1,
                 )
-                val numeral = if (dense) type.hero else type.display
+                val numeral = when {
+                    !model.displayIsReading -> type.note
+                    dense -> type.hero
+                    else -> type.display
+                }
                 Row(
-                    Modifier.padding(top = 6.dp)
-                        .lineBox(with(LocalDensity.current) {
-                            (numeral.value * type.displayLeading).sp.toDp()
-                        }),
+                    // Only a numeral is set tight; a placeholder is already
+                    // small, and tightening it would pull it into the label.
+                    Modifier.padding(top = 6.dp).then(
+                        if (model.displayIsReading) {
+                            Modifier.lineBox(with(LocalDensity.current) {
+                                (numeral.value * type.displayLeading).sp.toDp()
+                            })
+                        } else Modifier
+                    ),
                     verticalAlignment = Alignment.Top,
                 ) {
-                    PanelText(model.displayValue, numeral, bold = true, maxLines = 1)
+                    PanelText(
+                        model.displayValue, numeral,
+                        bold = model.displayIsReading,
+                        semibold = !model.displayIsReading,
+                        muted = !model.displayIsReading,
+                        maxLines = 1,
+                    )
                     PanelText(
                         model.displayUnit,
                         if (dense) type.heroUnitSmall else type.heroUnit,
@@ -132,11 +147,11 @@ fun ThermostatPage(
             onSelect = onTargetSelected,
         )
 
-        AttributeRow(model.attributes, enabled = online) { onOpenAttribute(it.key) }
+        AttributeRow(model.attributes, enabled = online && model.available) { onOpenAttribute(it.key) }
 
         ModeRow(
             model.modeCells,
-            enabled = online,
+            enabled = online && model.available,
             height = if (dense) size.modeRowCompact else size.modeRow,
         ) { cell ->
             if (cell.key == MORE_KEY) onOpenMore() else onMode(cell.key)

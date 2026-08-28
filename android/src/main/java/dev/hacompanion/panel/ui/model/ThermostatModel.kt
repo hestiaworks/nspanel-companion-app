@@ -32,6 +32,8 @@ data class ThermostatModel(
     /** The hero reading: the room, or the humidity while drying. */
     val displayValue: String,
     val displayUnit: String,
+    /** False when the hero is a placeholder, which is not set like a number. */
+    val displayIsReading: Boolean,
     val displayLabel: String,
     /** The other reading, small, beneath the hero. */
     val displayCaption: String,
@@ -46,6 +48,8 @@ data class ThermostatModel(
     val heating: Boolean,
     /** True only while it is actually cooling; idle takes neither and stays muted. */
     val cooling: Boolean,
+    /** False when the entity has no state to show — nothing then fills. */
+    val available: Boolean,
     /** False in dry and fan_only: the rail greys out rather than disappearing. */
     val targetUsable: Boolean,
 )
@@ -110,6 +114,7 @@ fun thermostatModel(
 
     val humidity = climate.numberAttribute("current_humidity")
     val drying = climate.state == "dry"
+    val live = climate.state !in setOf("unavailable", "unknown")
     val secondary = climate.state in SECONDARY
 
     val modeCells = buildList {
@@ -172,16 +177,25 @@ fun thermostatModel(
         // While drying, humidity is the number being acted on; the room is
         // still worth knowing, so the two swap places rather than one leaving.
         displayValue = when {
+            !live -> "\u2014"
             drying -> humidity?.let(::formatNumber) ?: "\u2014"
             else -> current?.let(::reading) ?: "\u2014"
         },
-        displayUnit = if (drying) "%" else "\u00b0",
+        displayUnit = when {
+            !live -> ""
+            drying -> "%"
+            else -> "\u00b0"
+        },
+        displayIsReading = live,
         displayLabel = if (drying) "HUMIDITY NOW" else "ROOM NOW",
         displayCaption = when {
+            !live -> "no reading"
             drying -> current?.let { "${reading(it)}\u00b0 room" } ?: ""
             else -> humidity?.let { "${formatNumber(it)}% humidity" } ?: ""
         },
         targets = when {
+            !live ->
+                listOf(TargetCell("temperature", "TARGET", "unavailable", reading = false))
             secondary ->
                 listOf(TargetCell("temperature", "TARGET", "not used in this mode", reading = false))
             dual -> listOf(
@@ -202,6 +216,7 @@ fun thermostatModel(
         },
         heating = climate.attributes.optString("hvac_action") == "heating",
         cooling = climate.attributes.optString("hvac_action") == "cooling",
-        targetUsable = !secondary && climate.state != "off",
+        available = live,
+        targetUsable = live && !secondary && climate.state != "off",
     )
 }
