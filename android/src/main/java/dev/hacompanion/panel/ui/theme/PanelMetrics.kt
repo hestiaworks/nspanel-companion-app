@@ -64,6 +64,8 @@ data class PanelType(
      * font's ascent and descent. Applied as a layout instead.
      */
     val displayLeading: Float = 0.82f,
+    /** The weather hero, which the spec sets a shade looser than the panel's. */
+    val heroLeading: Float = 0.86f,
 )
 
 /** Slab is square. The mic dot and the status pill use CircleShape instead. */
@@ -130,6 +132,9 @@ data class PanelSize(
      */
     val modeRowCompact: Dp = 81.dp,
     val levelBand: Dp = 120.dp,
+    /** The weather reading, and the hours under it. */
+    val weatherHero: Dp = 176.dp,
+    val weatherHours: Dp = 108.dp,
     /** A cover's band, shorter because an action row shares the sheet. */
     val coverBand: Dp = 110.dp,
     val rail: Dp = 132.dp,

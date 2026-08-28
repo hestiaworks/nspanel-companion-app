@@ -55,7 +55,7 @@ object DemoLayout {
                 id = "weather",
                 title = "Weather",
                 widgets = listOf(
-                    DashboardWidget(type = "weather", entityId = "weather.demo", label = "Outside"),
+                    DashboardWidget(type = "weather", entityId = "weather.demo", label = "Outside", forecastDays = 3),
                 ),
             ),
         ),
@@ -140,7 +140,22 @@ object DemoLayout {
                 forecastDay("2026-08-30T12:00:00+00:00", "rainy", 19.0, 12.0),
                 forecastDay("2026-08-31T12:00:00+00:00", "cloudy", 21.0, 12.0),
                 forecastDay("2026-09-01T12:00:00+00:00", "sunny", 25.0, 13.0),
+            )))
+            .put("hourly_forecast", JSONArray(listOf(
+                forecastHour("2026-08-28T15:00:00+00:00", "sunny", 22.0, 0),
+                forecastHour("2026-08-28T16:00:00+00:00", "sunny", 23.0, 0),
+                forecastHour("2026-08-28T17:00:00+00:00", "sunny", 23.0, 10),
+                forecastHour("2026-08-28T18:00:00+00:00", "cloudy", 21.0, 20),
+                forecastHour("2026-08-28T19:00:00+00:00", "cloudy", 19.0, 40),
+                forecastHour("2026-08-28T20:00:00+00:00", "rainy", 17.0, 70),
             ))))
+
+    private fun forecastHour(at: String, condition: String, temperature: Double, rain: Int): JSONObject =
+        JSONObject()
+            .put("datetime", at)
+            .put("condition", condition)
+            .put("temperature", temperature)
+            .put("precipitation_probability", rain)
 
     private fun forecastDay(at: String, condition: String, high: Double, low: Double): JSONObject =
         JSONObject()

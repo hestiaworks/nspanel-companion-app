@@ -195,21 +195,16 @@ private fun PageContent(
         ThermostatBody(only, ui, entities, actions)
         return
     }
-    if (only?.type != "weather") {
-        Column(Modifier.fillMaxSize().background(LocalPanelColors.current.canvas)) {
-            HeaderRow(page.title, "", onLongPress = actions::openAdmin)
-            PageBody(page, ui, entities, actions)
-        }
+    // Weather draws its own bands from the top edge down, so it has no header
+    // row: the reading is the page's title.
+    if (only?.type == "weather") {
+        WeatherBody(only, entities)
         return
     }
 
-    PageScaffold(page.title, actions::openAdmin) {
-        when (only?.type) {
-            "weather" -> WeatherBody(only, entities)
-            // Every other page is the same grid; each widget brings its own
-            // form, so no page-wide type has to be inferred from the mixture.
-            else -> PageBody(page, ui, entities, actions)
-        }
+    Column(Modifier.fillMaxSize().background(LocalPanelColors.current.canvas)) {
+        HeaderRow(page.title, "", onLongPress = actions::openAdmin)
+        PageBody(page, ui, entities, actions)
     }
 }
 

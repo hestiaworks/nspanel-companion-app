@@ -12,6 +12,15 @@ data class ForecastEntry(
     val symbol: String,
     val low: String,
     val high: String,
+    /**
+     * The chance of rain, where there is room to print it and something to
+     * say — a dry hour says nothing rather than 0%.
+     */
+    val precipitation: String? = null,
+    /** True for the hour happening now, which the band marks in accent. */
+    val now: Boolean = false,
+    /** Rain is the one condition worth colouring in a row of grey glyphs. */
+    val wet: Boolean = false,
 )
 
 /**
@@ -23,6 +32,9 @@ data class ForecastEntry(
 data class WeatherModel(
     val symbol: String,
     val temperature: String,
+    /** The hero split from its unit, so the numeral can be set on its own. */
+    val temperatureValue: String,
+    val unit: String,
     val condition: String,
     val detail: String,
     val summary: String,
@@ -34,6 +46,15 @@ internal fun formatNumber(value: Double): String =
     if (value == value.roundToInt().toDouble()) value.roundToInt().toString()
     else "%.1f".format(value)
 
+/**
+ * U+FE0E, the text presentation selector.
+ *
+ * Without it Android draws these code points from the colour emoji font,
+ * which ignores the colour the band sets — so a rainy hour cannot be tinted
+ * and a row of conditions arrives as stickers rather than as type.
+ */
+private const val AS_TEXT = "\ufe0e"
+
 internal fun weatherSymbol(condition: String): String = when (condition.lowercase()) {
     "sunny", "clear-night" -> if (condition == "clear-night") "☾" else "☀"
     "cloudy", "partlycloudy" -> "☁"
@@ -41,7 +62,7 @@ internal fun weatherSymbol(condition: String): String = when (condition.lowercas
     "snowy", "snowy-rainy" -> "❄"
     "fog" -> "≋"
     else -> "◌"
-}
+} + AS_TEXT
 
 internal fun forecastLabel(datetime: String, index: Int, hourly: Boolean): String = runCatching {
     val value = OffsetDateTime.parse(datetime)
@@ -53,7 +74,14 @@ internal fun forecastLabel(datetime: String, index: Int, hourly: Boolean): Strin
 private fun unitOf(entity: EntityState): String =
     entity.attributes.optString("temperature_unit", "°").let { if (it.contains('°')) "°" else it }
 
-private fun entries(entity: EntityState, attribute: String, limit: Int): List<ForecastEntry> {
+private val WET = setOf("rainy", "pouring", "lightning-rainy", "snowy-rainy", "hail")
+
+private fun entries(
+    entity: EntityState,
+    attribute: String,
+    limit: Int,
+    withPrecipitation: Boolean = false,
+): List<ForecastEntry> {
     val values = entity.attributes.optJSONArray(attribute) ?: return emptyList()
     val unit = unitOf(entity)
     fun temperature(value: Double?) = value?.let { "${formatNumber(it)}$unit" } ?: "—"
@@ -69,6 +97,13 @@ private fun entries(entity: EntityState, attribute: String, limit: Int): List<Fo
                     symbol = weatherSymbol(item.optString("condition", entity.state)),
                     low = temperature(item.optDouble("templow", Double.NaN).takeUnless(Double::isNaN)),
                     high = temperature(item.optDouble("temperature", Double.NaN).takeUnless(Double::isNaN)),
+                    precipitation = item
+                        .optDouble("precipitation_probability", Double.NaN)
+                        .takeUnless(Double::isNaN)
+                        ?.takeIf { withPrecipitation && it > 0 }
+                        ?.let { "${it.roundToInt()}%" },
+                    now = attribute == "hourly_forecast" && index == 0,
+                    wet = item.optString("condition", entity.state) in WET,
                 ),
             )
         }
@@ -83,9 +118,11 @@ fun weatherModel(entity: EntityState, forecastDays: Int, showHourly: Boolean): W
     return WeatherModel(
         symbol = weatherSymbol(entity.state),
         temperature = temperature?.let { "${formatNumber(it)}$unit" } ?: "—",
+        temperatureValue = temperature?.let(::formatNumber) ?: "—",
+        unit = unit,
         condition = condition,
         detail = buildString {
-            append("Feels like ")
+            append("feels ")
             append(
                 entity.numberAttribute("apparent_temperature")?.let(::formatNumber)
                     ?: temperature?.let(::formatNumber) ?: "—",
@@ -95,6 +132,10 @@ fun weatherModel(entity: EntityState, forecastDays: Int, showHourly: Boolean): W
         },
         summary = entity.attributes.optString("forecast_summary").ifBlank { "$condition conditions continue." },
         daily = entries(entity, "forecast", forecastDays),
-        hourly = if (showHourly) entries(entity, "hourly_forecast", 6) else emptyList(),
+        // One day gives the hours a third of the screen, which is the only
+        // density with room for a percentage under each of them.
+        hourly = if (showHourly) {
+            entries(entity, "hourly_forecast", 6, withPrecipitation = forecastDays <= 1)
+        } else emptyList(),
     )
 }
