@@ -90,7 +90,7 @@ fun HeaderRow(title: String, status: String, tint: Color? = null, onLongPress: (
                 title,
                 type.subtitle,
                 Modifier.weight(1f).then(
-                    if (onLongPress != null) Modifier.longPressable(onLongPress) else Modifier
+                    if (onLongPress != null) Modifier.pressable(onTap = null, onLongPress = onLongPress) else Modifier
                 ),
                 semibold = true,
                 maxLines = 1,

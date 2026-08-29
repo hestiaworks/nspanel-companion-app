@@ -33,10 +33,19 @@ import dev.hacompanion.panel.ui.theme.LocalPanelSize
 import dev.hacompanion.panel.ui.theme.LocalPanelSpace
 import dev.hacompanion.panel.ui.theme.LocalPanelType
 
-/** Long press without pulling in Material's combinedClickable semantics. */
-fun Modifier.longPressable(onLongPress: () -> Unit): Modifier =
-    this.pointerInput(onLongPress) {
-        detectTapGestures(onLongPress = { onLongPress() })
+/**
+ * Tap and long press from one detector, without Material's combinedClickable.
+ *
+ * They have to share one: detectTapGestures consumes every tap it sees, so a
+ * clickable underneath a long-press modifier never fires — which is exactly
+ * how a tile with both ended up ignoring taps entirely.
+ */
+fun Modifier.pressable(onTap: (() -> Unit)?, onLongPress: () -> Unit): Modifier =
+    this.pointerInput(onTap, onLongPress) {
+        detectTapGestures(
+            onTap = if (onTap == null) null else ({ onTap() }),
+            onLongPress = { onLongPress() },
+        )
     }
 
 /**
@@ -131,7 +140,7 @@ fun LevelTile(
         Column(
             Modifier.fillMaxSize()
                 .clickable(enabled = enabled) { onTap() }
-                .then(if (onLongPress != null) Modifier.longPressable(onLongPress) else Modifier)
+                .then(if (onLongPress != null) Modifier.pressable(onTap = null, onLongPress = onLongPress) else Modifier)
                 .padding(edge),
             verticalArrangement = Arrangement.Bottom,
         ) {

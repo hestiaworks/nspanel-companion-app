@@ -30,14 +30,30 @@ import dev.hacompanion.panel.ui.theme.LocalPanelType
  * The mic dot is one of the two shapes that stay round.
  */
 @Composable
-fun StatusStrip(time: String, micActive: Boolean?, pages: Int, current: Int) {
+fun StatusStrip(
+    time: String,
+    micActive: Boolean?,
+    pages: Int,
+    current: Int,
+    /**
+     * Administration. It hangs here because the strip is the one band on
+     * every page — a grid page has no header to hold it, and its tiles have
+     * spent their own long press on their sheets.
+     */
+    onLongPress: (() -> Unit)? = null,
+) {
     val colors = LocalPanelColors.current
     val size = LocalPanelSize.current
     val type = LocalPanelType.current
 
     Band(size.statusBar, rule = false, fill = colors.canvas) {
         Row(
-            Modifier.fillMaxSize().padding(horizontal = LocalPanelSpace.current.strip),
+            Modifier.fillMaxSize()
+                .then(
+                    if (onLongPress == null) Modifier
+                    else Modifier.pressable(onTap = null, onLongPress = onLongPress)
+                )
+                .padding(horizontal = LocalPanelSpace.current.strip),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             PanelText(time, type.clock, semibold = true)

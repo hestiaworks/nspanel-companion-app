@@ -123,8 +123,10 @@ fun DashboardRoot(
 ) {
     PanelThemeProvider(ui.dark) {
         Column(Modifier.fillMaxSize().background(LocalPanelColors.current.canvas)) {
+            // The strip is on every page, which is what makes it the place
+            // for administration now that a grid page has no header to press.
             if (ui.showClock || ui.showMic) {
-                PanelStatusStrip(ui)
+                PanelStatusStrip(ui, actions::openAdmin)
             }
             Box(Modifier.fillMaxWidth().weight(1f)) {
             if (!ui.configured) {
@@ -150,7 +152,7 @@ fun DashboardRoot(
  * whole strip is one recomposition a second and nothing is laid out twice.
  */
 @Composable
-private fun PanelStatusStrip(ui: DashboardUiState) {
+private fun PanelStatusStrip(ui: DashboardUiState, onLongPress: () -> Unit) {
     val context = LocalContext.current
     var elapsed by remember { mutableStateOf(SystemClock.elapsedRealtime()) }
     var micActive by remember { mutableStateOf(false) }
@@ -168,6 +170,7 @@ private fun PanelStatusStrip(ui: DashboardUiState) {
         micActive = if (ui.showMic) micActive else null,
         pages = ui.layout.pages.size,
         current = ui.pageIndex,
+        onLongPress = onLongPress,
     )
 }
 
@@ -208,8 +211,10 @@ private fun PageContent(
         return
     }
 
-    Column(Modifier.fillMaxSize().background(LocalPanelColors.current.canvas)) {
-        HeaderRow(page.title, "", onLongPress = actions::openAdmin)
+    // No header. Every tile says what it is and what it is doing, so a band
+    // repeating the page's name is a band of screen spent on nothing — and on
+    // a four-tile page it is the 56 px that were making the names clip.
+    Box(Modifier.fillMaxSize().background(LocalPanelColors.current.canvas)) {
         PageBody(page, ui, entities, actions)
     }
 }

@@ -50,6 +50,8 @@ data class PanelType(
     val micro: TextUnit = 11.sp,
     /** The countdown beside a corner mark's clock. */
     val markLabel: TextUnit = 16.sp,
+    /** A schedule's time, the reading of its row. */
+    val scheduleTime: TextUnit = 26.sp,
     val glyphLarge: TextUnit = 52.sp,
     val glyph: TextUnit = 30.sp,
     val glyphStep: TextUnit = 48.sp,
@@ -156,6 +158,8 @@ data class PanelSize(
     val railRule: Dp = 4.dp,
     /** The ▲ ■ ▼ under a cover, where another tile has a subtitle. */
     val tileStrip: Dp = 64.dp,
+    /** The row that adds a schedule, the one filled action in its sheet. */
+    val addRow: Dp = 92.dp,
 )
 
 val LocalPanelType = staticCompositionLocalOf { PanelType() }

@@ -30,7 +30,7 @@ import dev.hacompanion.panel.ui.model.ControlCardModel
 import dev.hacompanion.panel.ui.model.fillFraction
 import dev.hacompanion.panel.ui.slab.CellRule
 import dev.hacompanion.panel.ui.slab.lineBox
-import dev.hacompanion.panel.ui.slab.longPressable
+import dev.hacompanion.panel.ui.slab.pressable
 import dev.hacompanion.panel.ui.theme.LocalPanelColors
 import dev.hacompanion.panel.ui.theme.LocalPanelSize
 import dev.hacompanion.panel.ui.theme.LocalPanelSpace
@@ -58,8 +58,12 @@ fun ControlTile(card: ControlCardModel, online: Boolean, actions: ControlActions
     Box(
         Modifier.fillMaxSize()
             .background(if (card.active) colors.accentWash else colors.canvas)
-            .clickable(enabled = online && card.cardTap) { actions.toggle(card.entityId) }
-            .longPressable { openSheet(card, actions) },
+            .pressable(
+                onTap = if (online && card.cardTap) {
+                    { actions.toggle(card.entityId) }
+                } else null,
+                onLongPress = { openSheet(card, actions) },
+            ),
     ) {
         val level = card.level
         if (card.active && level != null && level > 0) {

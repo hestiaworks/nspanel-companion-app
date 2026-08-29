@@ -118,7 +118,9 @@ class ControlCardModelTest {
     @Test
     fun timersAreOfferedOnlyWhereTheyMakeSense() {
         assertTrue(controlCard(entity("light.a", "on"), null, dense = false).showTimer)
-        assertFalse(controlCard(entity("cover.a", "open"), null, dense = false).showTimer)
+        // A cover has one now: see aCoverGetsATimerNowThat... below. What
+        // still has none is anything with no off to arrive at.
+        assertFalse(controlCard(entity("sensor.a", "21.4"), null, dense = false).showTimer)
         assertFalse(controlCard(entity("light.a", "on"), widget().copy(showTimer = false), dense = false).showTimer)
     }
 
@@ -204,5 +206,34 @@ class ControlCardModelTest {
         val fan = entity("fan.a", "on", """{"percentage": 66, "supported_features": 1}""")
         assertEquals("66%", controlCard(fan, widget(entityId = "fan.a").copy(showFanSpeed = true), dense = false).levelText)
         assertEquals(null, controlCard(fan, widget(entityId = "fan.a").copy(showFanSpeed = false), dense = false).levelText)
+    }
+
+    @Test
+    fun aClosingCoverIsStillAsOpenAsItsPositionSays() {
+        // A cover on its way down is not off. Reading state alone blanked the
+        // fill for the whole descent and then snapped it back at rest.
+        val card = controlCard(
+            entity("cover.a", "closing", """{"current_position": 60}"""), null, dense = false,
+        )
+        assertTrue(card.active)
+        assertEquals(60, card.level)
+        assertEquals("60%", card.levelText)
+    }
+
+    @Test
+    fun aFullyClosedCoverIsOffHoweverItGotThere() {
+        listOf("closed", "closing", "open").forEach { state ->
+            val card = controlCard(
+                entity("cover.a", state, """{"current_position": 0}"""), null, dense = false,
+            )
+            assertFalse("$state at 0 should read as off", card.active)
+        }
+    }
+
+    @Test
+    fun aCoverGetsATimerNowThatItIsNoLongerCompetingForFooterRoom() {
+        // The admin hid this because a fourth footer button did not fit. The
+        // footer is gone; the timer lives in the sheet.
+        assertTrue(controlCard(entity("cover.a", "open"), null, dense = false).showTimer)
     }
 }

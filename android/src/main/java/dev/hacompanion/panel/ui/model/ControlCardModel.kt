@@ -49,7 +49,9 @@ data class ControlCardModel(
     val subtitle: String?,
 )
 
-private val TIMER_DOMAINS = setOf("light", "switch", "fan")
+// A cover is in here now. The admin hid its timer because a fourth footer
+// button did not fit; the footer is gone and the timer lives in the sheet.
+private val TIMER_DOMAINS = setOf("light", "switch", "fan", "cover", "input_boolean")
 
 // Home Assistant's SET_SPEED bit. A fan without it has no speed to adjust,
 // however the widget is configured.
@@ -102,7 +104,13 @@ fun controlCard(
     // Neither state carries a value, so neither can be drawn as one.
     val available = entity.state !in setOf("unavailable", "unknown")
     val moving = entity.state in setOf("opening", "closing")
-    val on = available && entity.state in setOf("on", "open", "opening")
+    // A cover is as open as its position says, whichever way it is heading.
+    // Reading state alone blanked the fill for a whole descent and then
+    // snapped it back at rest.
+    val on = available && when (entity.domain) {
+        "cover" -> (position ?: if (entity.state == "closed") 0 else 100) > 0
+        else -> entity.state in setOf("on", "open", "opening")
+    }
 
     // What proportion of the tile is filled. A device with no level of its
     // own is all or nothing, which is still a fill — it just cannot be
@@ -124,7 +132,7 @@ fun controlCard(
         name = widget?.label ?: entity.friendlyName,
         typeLabel = if (entity.domain == "fan" && widget?.showFanSpeed != true) "Fan" else deviceTypeLabel(entity),
         icon = controlIcon(entity, widget?.icon ?: "auto"),
-        active = entity.state in setOf("on", "open", "opening"),
+        active = on,
         body = body,
         bodyText = when (body) {
             ControlBody.FAN -> "Speed · ${entity.numberAttribute("percentage")?.roundToInt() ?: 0}%"

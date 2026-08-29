@@ -2,6 +2,7 @@ package dev.hacompanion.panel
 
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,6 +23,8 @@ import dev.hacompanion.panel.ui.slab.Sheet
 import dev.hacompanion.panel.ui.slab.SheetModes
 import dev.hacompanion.panel.ui.slab.SheetLevel
 import dev.hacompanion.panel.ui.slab.SheetLink
+import dev.hacompanion.panel.ui.slab.ScheduleRow
+import dev.hacompanion.panel.ui.slab.SheetAdd
 import dev.hacompanion.panel.ui.slab.SheetNote
 import dev.hacompanion.panel.ui.slab.SheetAction
 import dev.hacompanion.panel.ui.slab.SheetActions
@@ -59,6 +62,7 @@ import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
 import android.os.SystemClock
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateMapOf
 import dev.hacompanion.panel.ui.model.ControlBody
 import dev.hacompanion.panel.ui.model.ControlCardModel
@@ -115,8 +119,23 @@ class PanelDashboardView(
     private val timerDeadlines = mutableStateMapOf<String, Long>()
     private val timerCallbacks = mutableMapOf<String, Runnable>()
     private var schedules = emptyList<ControlSchedule>()
+    /**
+     * Every sheet currently on screen, outermost first.
+     *
+     * Kept so returning to the default page can clear them: that timeout is
+     * the panel deciding the interaction is over, and a sheet left open over
+     * a page nobody chose is the interaction outliving it.
+     */
+    private val openSheets = mutableListOf<Dialog>()
+
+    private fun dismissSheets() {
+        openSheets.toList().forEach(Dialog::dismiss)
+        openSheets.clear()
+    }
+
     private val returnToDefault = Runnable {
         if (!interactionActive && dashboardActive) {
+            dismissSheets()
             val defaultIndex = layout.pages.indexOfFirst { it.id == layout.defaultPageId }.coerceAtLeast(0)
             if (pageIndex != defaultIndex) setPage(defaultIndex)
         }
@@ -444,6 +463,62 @@ class PanelDashboardView(
         )
     }
 
+    /** A sheet that the panel knows about, so returning home can clear it. */
+    private fun panelSheet(content: @Composable ColumnScope.(dismiss: () -> Unit) -> Unit) =
+        showPanelSheet(
+            context, PanelTheme.isDark,
+            onShow = { openSheets += it },
+            onDismiss = { openSheets -= it },
+            content = content,
+        )
+
+    /**
+     * The schedules an entity has, and the way to another.
+     *
+     * Home Assistant keeps these, so the sheet says so: they fire with the
+     * panel asleep, which is the whole difference between one of these and
+     * the timer sitting above it.
+     */
+    private fun showScheduleSheet(entity: EntityState, widget: DashboardWidget?) {
+        val entityId = entity.entityId
+        val name = widget?.label ?: entity.friendlyName
+        panelSheet { dismiss ->
+            // sidecarRevision is what a schedule change bumps, so the list
+            // follows an edit made in the sheet stacked above this one.
+            ui.sidecarRevision
+            val values = schedules.filter { it.entityId == entityId }.sortedBy { it.time }
+            Sheet(
+                "Schedules",
+                "$name \u00b7 kept by Home Assistant",
+                dismiss,
+            ) {
+                values.forEach { schedule ->
+                    ScheduleRow(
+                        time = schedule.time,
+                        detail = "${sentenceCase(schedule.action)} \u00b7 ${weekdayLabel(schedule.weekdays)}",
+                        enabled = schedule.enabled,
+                        onToggle = { upsertSchedule(schedule.copy(enabled = !schedule.enabled)) },
+                        onOpen = { showScheduleDialog(entity, widget, schedule) },
+                    )
+                }
+                SheetAdd("\uff0b Add schedule") { showScheduleDialog(entity, widget, null) }
+            }
+        }
+    }
+
+    /** Mon-Fri rather than five names, which will not fit the row. */
+    private fun weekdayLabel(days: List<String>): String {
+        val all = listOf("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+        val chosen = all.filter { it in days.map(String::lowercase) }
+        return when {
+            chosen.size == 7 -> "Every day"
+            chosen.isEmpty() -> "Once"
+            chosen == all.take(5) -> "Weekdays"
+            chosen == all.drop(5) -> "Weekends"
+            else -> chosen.joinToString(" ") { it.replaceFirstChar(Char::uppercase) }
+        }
+    }
+
     /**
      * Every control opens the same sheet; only the band in the middle differs.
      *
@@ -460,7 +535,7 @@ class PanelDashboardView(
         val canPosition =
             entity.attributes.optInt("supported_features", 0) and COVER_SET_POSITION != 0
 
-        showPanelSheet(context, PanelTheme.isDark) { dismiss ->
+        panelSheet { dismiss ->
             // The live entity, not the one captured on the way in: a band that
             // freezes while the light it drives moves is worse than no band.
             val live = states[entityId] ?: entity
@@ -531,7 +606,6 @@ class PanelDashboardView(
                         else "Turns off when it ends \u00b7 this panel only",
                         filled = left != null,
                     ) {
-                        dismiss()
                         showTimerSheet(live, widget?.timerPresets ?: listOf(5, 15, 30, 60))
                     }
                 }
@@ -545,8 +619,7 @@ class PanelDashboardView(
                         // does not.
                         dashboardActions.scheduleNext(entityId) ?: "None yet \u00b7 kept by Home Assistant",
                     ) {
-                        dismiss()
-                        showScheduleListDialog(live, widget)
+                        showScheduleSheet(live, widget)
                     }
                 }
             }
@@ -871,7 +944,7 @@ class PanelDashboardView(
     private fun showTimerSheet(entity: EntityState, presets: List<Int>) {
         val entityId = entity.entityId
         val name = widgetFor(entityId)?.label ?: entity.friendlyName
-        showPanelSheet(context, PanelTheme.isDark) { dismiss ->
+        panelSheet { dismiss ->
             ui.timerTick
             val left = timerRemaining(timerDeadlines[entityId], SystemClock.elapsedRealtime())
             Sheet(

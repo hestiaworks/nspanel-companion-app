@@ -7,6 +7,7 @@ import android.view.Window
 import android.view.WindowManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,6 +55,9 @@ import dev.hacompanion.panel.ui.theme.PanelThemeProvider
 fun showPanelSheet(
     context: Context,
     dark: Boolean,
+    /** Told when this sheet opens and closes, so a caller can track the stack. */
+    onShow: ((Dialog) -> Unit)? = null,
+    onDismiss: ((Dialog) -> Unit)? = null,
     content: @Composable ColumnScope.(dismiss: () -> Unit) -> Unit,
 ): Dialog {
     val dialog = Dialog(context)
@@ -74,7 +78,9 @@ fun showPanelSheet(
             Column(Modifier.fillMaxWidth()) { content { dialog.dismiss() } }
         }
     }
+    dialog.setOnDismissListener { onDismiss?.invoke(dialog) }
     dialog.show()
+    onShow?.invoke(dialog)
     dialog.window?.setLayout(
         WindowManager.LayoutParams.MATCH_PARENT,
         WindowManager.LayoutParams.WRAP_CONTENT,
@@ -385,5 +391,73 @@ fun SheetNote(text: String) {
             .padding(LocalPanelSpace.current.edge),
     ) {
         PanelText(text, LocalPanelType.current.body, muted = true)
+    }
+}
+
+/**
+ * One schedule: a status dot, when and what, and the chevron into the editor.
+ *
+ * The dot is the toggle. The spec moved enabled out of the editor because
+ * seven bands do not fit 480 px above the touch floor, and this is where you
+ * already read the state — so it is where you change it.
+ */
+@Composable
+fun ScheduleRow(
+    time: String,
+    detail: String,
+    enabled: Boolean,
+    onToggle: () -> Unit,
+    onOpen: () -> Unit,
+) {
+    val colors = LocalPanelColors.current
+    val type = LocalPanelType.current
+    val size = LocalPanelSize.current
+    Box(Modifier.fillMaxWidth().height(size.stroke).background(colors.line))
+    Row(
+        Modifier.fillMaxWidth().height(size.listRow).clickable { onOpen() },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.fillMaxHeight().width(size.listRow).clickable { onToggle() },
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                Modifier.size(size.dot)
+                    .background(if (enabled) colors.micActive else colors.disabled, CircleShape)
+            )
+        }
+        Column(Modifier.weight(1f)) {
+            PanelText(
+                time, type.scheduleTime,
+                bold = true, maxLines = 1,
+                color = if (enabled) colors.ink else colors.disabled,
+            )
+            PanelText(
+                detail, type.bodySmall,
+                Modifier.padding(top = 2.dp),
+                maxLines = 1,
+                color = if (enabled) colors.muted else colors.disabled,
+            )
+        }
+        Box(
+            Modifier.fillMaxHeight().padding(end = LocalPanelSpace.current.edge),
+            contentAlignment = Alignment.Center,
+        ) { PanelText("›", type.glyph, muted = true) }
+    }
+}
+
+/** The full-width row that adds one, filled because it is the sheet's action. */
+@Composable
+fun SheetAdd(label: String, onAdd: () -> Unit) {
+    val colors = LocalPanelColors.current
+    val size = LocalPanelSize.current
+    Box(Modifier.fillMaxWidth().height(size.stroke).background(colors.line))
+    Box(
+        Modifier.fillMaxWidth().height(size.addRow)
+            .background(colors.accent)
+            .clickable { onAdd() },
+        contentAlignment = Alignment.Center,
+    ) {
+        PanelText(label, LocalPanelType.current.subtitle, bold = true, color = colors.onAccent)
     }
 }
