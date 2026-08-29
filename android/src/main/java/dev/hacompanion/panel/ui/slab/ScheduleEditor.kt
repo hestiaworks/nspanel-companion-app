@@ -59,7 +59,7 @@ fun showPanelScreen(
         }
     }
     dialog.setOnDismissListener { onDismiss?.invoke(dialog) }
-    dialog.show()
+    matchHostSystemUi(context, dialog)
     onShow?.invoke(dialog)
     dialog.window?.setLayout(
         WindowManager.LayoutParams.MATCH_PARENT,

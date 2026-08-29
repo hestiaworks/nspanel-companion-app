@@ -1,5 +1,6 @@
 package dev.hacompanion.panel.ui.slab
 
+import android.app.Activity
 import android.app.Dialog
 import android.content.Context
 import android.view.Gravity
@@ -83,7 +84,7 @@ fun showPanelSheet(
         }
     }
     dialog.setOnDismissListener { onDismiss?.invoke(dialog) }
-    dialog.show()
+    matchHostSystemUi(context, dialog)
     onShow?.invoke(dialog)
     dialog.window?.setLayout(
         WindowManager.LayoutParams.MATCH_PARENT,
@@ -504,4 +505,37 @@ fun SheetAdd(label: String, onAdd: () -> Unit) {
     ) {
         PanelText(label, LocalPanelType.current.subtitle, bold = true, color = colors.onAccent)
     }
+}
+
+/**
+ * Show a dialog without letting it reserve space for bars the panel hides.
+ *
+ * A dialog is its own window, and by default it is laid out inside the
+ * stable area — which on this hardware is 432 px of the 480, the rest held
+ * for a navigation bar that is never drawn. The cover sheet is 456 px, so
+ * its schedule row lost a quarter of its height to a bar that is not there.
+ *
+ * Copying the host's flags rather than hard-coding immersive ones is what
+ * keeps this honest when the navigation bar is configured to stay visible:
+ * the sheet then reserves the space, because there really is a bar.
+ *
+ * The window is made unfocusable for the moment it appears. Otherwise it
+ * takes focus while still carrying default visibility, and Android reads
+ * that as the app leaving immersive — the bars slide in behind the sheet.
+ */
+@Suppress("DEPRECATION")
+internal fun matchHostSystemUi(context: Context, dialog: Dialog) {
+    val host = (context as? Activity)?.window?.decorView
+    if (host == null) {
+        dialog.show()
+        return
+    }
+    val window = dialog.window
+    window?.setFlags(
+        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+    )
+    dialog.show()
+    window?.decorView?.systemUiVisibility = host.systemUiVisibility
+    window?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
 }
