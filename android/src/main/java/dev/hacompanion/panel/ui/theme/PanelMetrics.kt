@@ -19,7 +19,13 @@ import androidx.compose.ui.unit.sp
 @Immutable
 data class PanelType(
     val display: TextUnit = 120.sp,
-    val hero: TextUnit = 106.sp,
+    /**
+     * The hero numeral, at the two sizes section 7 gives it: 100 where a
+     * 176 px hero shares the page with a row stack, and 116 on the one-day
+     * weather page, where nothing competes for the height.
+     */
+    val hero: TextUnit = 100.sp,
+    val heroTall: TextUnit = 116.sp,
     val reading: TextUnit = 34.sp,
     val title: TextUnit = 24.sp,
     val subtitle: TextUnit = 20.sp,
@@ -149,6 +155,8 @@ data class PanelSize(
     val weatherHeroTall: Dp = 214.dp,
     val weatherCaption: Dp = 34.dp,
     val weatherHoursTall: Dp = 198.dp,
+    /** Hours at 5 days: no glyph, and 11 px off every day row. */
+    val weatherHoursStrip: Dp = 56.dp,
     /** A cover's band, shorter because an action row shares the sheet. */
     val coverBand: Dp = 110.dp,
     /** A travelling cover's striped zone, and the period of its bars. */

@@ -40,14 +40,22 @@ data class WeatherModel(
     val summary: String,
     val daily: List<ForecastEntry>,
     val hourly: List<ForecastEntry>,
-    /**
-     * One forecast day, so the hours take the room the day rows would have.
-     *
-     * There is nothing to list when the forecast is a single day, and a lone
-     * row stretched across that space says less than six hours do.
-     */
-    val hoursTakeTheScreen: Boolean,
+    val hourBand: HourBand,
 )
+
+/**
+ * How much room the hourly band gets, which is decided by how many days are
+ * being shown rather than by the hours themselves.
+ *
+ * Section 7 fixes the cell at two sizes and no others. [COMPACT] is the
+ * 108 px strip beneath a 3-day page. [EXPANDED] belongs only to the 1-day
+ * page, where there is no row stack competing for height and the band can
+ * carry a glyph at 30 above a reading at 34. [GLYPHLESS] is the price of
+ * having hours at 5 days at all: the condition goes, the strip drops to
+ * 56 px, and each day row gives up 11 px rather than a new component being
+ * built. [NONE] is five days as the spec draws them, all rows.
+ */
+enum class HourBand { NONE, COMPACT, EXPANDED, GLYPHLESS }
 
 /**
  * A forecast reading: whole degrees.
@@ -153,6 +161,11 @@ fun weatherModel(entity: EntityState, forecastDays: Int, showHourly: Boolean): W
         hourly = if (showHourly) {
             entries(entity, "hourly_forecast", 6, withPrecipitation = forecastDays <= 1)
         } else emptyList(),
-        hoursTakeTheScreen = forecastDays <= 1,
+        hourBand = when {
+            !showHourly -> HourBand.NONE
+            forecastDays <= 1 -> HourBand.EXPANDED
+            forecastDays >= 5 -> HourBand.GLYPHLESS
+            else -> HourBand.COMPACT
+        },
     )
 }

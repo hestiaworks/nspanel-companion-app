@@ -31,4 +31,23 @@ class WeatherBudgetTest {
         val total = (statusBar + weatherHeroTall + weatherCaption + weatherHoursTall).value.toInt()
         assertEquals(screen, total)
     }
+
+    @Test
+    fun `five days fills the screen without an hourly band`() = with(size) {
+        val rows = screen - (statusBar + weatherHero).value.toInt()
+        assertEquals(270, rows)
+        // "about 53 px each, the same height a 3-day row gets" — the row
+        // spec is identical across both, which is the point of dropping the
+        // band rather than shrinking the rows.
+        assertEquals(54, rows / 5)
+    }
+
+    @Test
+    fun `five days with hours costs each row eleven pixels`() = with(size) {
+        val rows = screen - (statusBar + weatherHero + weatherHoursStrip).value.toInt()
+        assertEquals(214, rows)
+        assertEquals(42, rows / 5)
+        // The trade the spec names: 11 px a row buys the strip.
+        assertEquals(11, 54 - 42 - 1)
+    }
 }

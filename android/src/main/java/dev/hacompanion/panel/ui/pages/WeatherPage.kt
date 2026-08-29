@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.hacompanion.panel.ui.components.PanelText
 import dev.hacompanion.panel.ui.model.ForecastEntry
+import dev.hacompanion.panel.ui.model.HourBand
 import dev.hacompanion.panel.ui.model.WeatherModel
 import dev.hacompanion.panel.ui.slab.Band
 import dev.hacompanion.panel.ui.slab.CellRule
@@ -40,23 +42,40 @@ import dev.hacompanion.panel.ui.theme.LocalPanelType
 @Composable
 fun WeatherPage(model: WeatherModel) {
     val colors = LocalPanelColors.current
+    val size = LocalPanelSize.current
     Column(Modifier.fillMaxSize().background(colors.canvas)) {
-        if (model.hoursTakeTheScreen) {
-            // One forecast day: there are no rows to list, so the hours take
-            // the space they would have had. The hero grows to carry today's
-            // range, which is the only thing the missing rows were saying.
-            TodayHero(model)
-            Caption("NEXT 6 HOURS")
-            HourBand(model.hourly, LocalPanelSize.current.weatherHoursTall)
-        } else {
-            Hero(model)
-            if (model.hourly.isNotEmpty()) HourBand(model.hourly)
-            Column(Modifier.fillMaxWidth().weight(1f)) {
-                model.daily.forEach { day ->
-                    DayRow(day, Modifier.weight(1f))
-                }
+        when (model.hourBand) {
+            // One forecast day: no rows to list, so the hours take the room
+            // they would have had and the hero grows into what is left.
+            HourBand.EXPANDED -> {
+                TodayHero(model)
+                Caption("NEXT 6 HOURS")
+                HourStrip(model.hourly, size.weatherHoursTall, expanded = true)
+            }
+            HourBand.COMPACT -> {
+                Hero(model)
+                HourStrip(model.hourly, size.weatherHours)
+                DayRows(model)
+            }
+            // Hours at five days, paid for with the condition glyph.
+            HourBand.GLYPHLESS -> {
+                Hero(model)
+                HourStrip(model.hourly, size.weatherHoursStrip, glyphless = true)
+                DayRows(model)
+            }
+            HourBand.NONE -> {
+                Hero(model)
+                DayRows(model)
             }
         }
+    }
+}
+
+/** The day rows take whatever the hero and any hourly band leave. */
+@Composable
+private fun ColumnScope.DayRows(model: WeatherModel) {
+    Column(Modifier.fillMaxWidth().weight(1f)) {
+        model.daily.forEach { day -> DayRow(day, Modifier.weight(1f)) }
     }
 }
 
@@ -88,9 +107,9 @@ private fun TodayHero(model: WeatherModel) {
                 )
                 Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.Top) {
                     PanelText(
-                        model.temperatureValue, type.hero,
+                        model.temperatureValue, type.heroTall,
                         Modifier.lineBox(with(LocalDensity.current) {
-                            (type.hero.value * type.heroLeading).sp.toDp()
+                            (type.heroTall.value * type.heroLeading).sp.toDp()
                         }),
                         bold = true, maxLines = 1,
                     )
@@ -190,12 +209,25 @@ private fun Hero(model: WeatherModel) {
     }
 }
 
-/** The next few hours, each its own cell. */
+/**
+ * The next few hours, each its own cell, at one of the two sizes section 7
+ * allows.
+ *
+ * Compact is the strip under a 3-day page. Expanded is the 1-day page only,
+ * where the band is big enough for a glyph at 30 above a reading at 34 —
+ * the same step up the hero takes there. Glyphless is how hours are had at
+ * 5 days: the condition is what pays for them.
+ */
 @Composable
-private fun HourBand(hours: List<ForecastEntry>, height: Dp? = null) {
+private fun HourStrip(
+    hours: List<ForecastEntry>,
+    height: Dp,
+    expanded: Boolean = false,
+    glyphless: Boolean = false,
+) {
     val colors = LocalPanelColors.current
     val type = LocalPanelType.current
-    Band(height ?: LocalPanelSize.current.weatherHours) {
+    Band(height) {
         Row(Modifier.fillMaxSize()) {
             hours.forEachIndexed { index, hour ->
                 if (index > 0) CellRule()
@@ -210,17 +242,22 @@ private fun HourBand(hours: List<ForecastEntry>, height: Dp? = null) {
                         color = if (hour.now) colors.accent else colors.muted,
                         letterSpacing = type.labelTracking, maxLines = 1,
                     )
+                    if (!glyphless) {
+                        PanelText(
+                            hour.symbol,
+                            if (expanded) type.glyph else type.glyphMode,
+                            Modifier.padding(top = 6.dp),
+                            // Rain is the one condition worth colouring in a
+                            // row of grey glyphs: it is the one that changes
+                            // plans.
+                            color = if (hour.wet) colors.accent else colors.muted,
+                            maxLines = 1,
+                        )
+                    }
                     PanelText(
-                        hour.symbol, type.glyphMode,
-                        Modifier.padding(top = 6.dp),
-                        // Rain is the one condition worth colouring in a row
-                        // of grey glyphs: it is the one that changes plans.
-                        color = if (hour.wet) colors.accent else colors.muted,
-                        maxLines = 1,
-                    )
-                    PanelText(
-                        hour.high, type.subtitle,
-                        Modifier.padding(top = 6.dp),
+                        hour.high,
+                        if (expanded) type.reading else type.subtitle,
+                        Modifier.padding(top = if (glyphless) 2.dp else 6.dp),
                         bold = true, maxLines = 1,
                     )
                     if (hour.precipitation != null) {

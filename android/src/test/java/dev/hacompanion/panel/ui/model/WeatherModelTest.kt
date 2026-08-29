@@ -178,12 +178,33 @@ class WeatherModelTest {
     }
 
     @Test
-    fun oneDayGivesTheHoursTheScreenInsteadOfDayRows() {
-        // 7's weather section: forecastDays 3 and 1 draw the same page with
-        // the hourly band given more or less room. At one day there are no
-        // day rows to draw, so the page says so rather than stretching a
-        // lone row across the space they would have taken.
-        assertTrue(weatherModel(sky(HOURS), forecastDays = 1, showHourly = true).hoursTakeTheScreen)
-        assertFalse(weatherModel(sky(HOURS), forecastDays = 3, showHourly = true).hoursTakeTheScreen)
+    fun eachForecastLengthPicksTheHourBandTheSpecGivesIt() {
+        // Section 7: the hourly cell has two sizes and no others. Expanded
+        // belongs only to the 1-day page, where the band is big enough to
+        // carry a glyph at 30 and a reading at 34. At 5 days the band is
+        // dropped entirely, because five rows want the height instead.
+        fun band(days: Int, hourly: Boolean = true) =
+            weatherModel(sky(HOURS), forecastDays = days, showHourly = hourly).hourBand
+        assertEquals(HourBand.EXPANDED, band(1))
+        assertEquals(HourBand.COMPACT, band(3))
+        assertEquals(HourBand.NONE, band(5, hourly = false))
+        assertEquals(HourBand.NONE, band(3, hourly = false))
+    }
+
+    @Test
+    fun askingForHoursAtFiveDaysPaysForThemWithTheGlyph() {
+        // The spec's option A: hours can still be had at 5 days, as a
+        // glyphless 56 px strip, which costs each day row 11 px rather than
+        // costing a new component. show_hourly is how they are asked for —
+        // it is the only signal the layout carries, so at 5 days it selects
+        // between this strip and no band at all.
+        val model = weatherModel(sky(HOURS), forecastDays = 5, showHourly = true)
+        assertEquals(HourBand.GLYPHLESS, model.hourBand)
+    }
+
+    @Test
+    fun onlyTheOneDayPageCarriesPrecipitation() {
+        assertTrue(weatherModel(sky(HOURS), 1, true).hourly.any { it.precipitation != null })
+        assertTrue(weatherModel(sky(HOURS), 3, true).hourly.all { it.precipitation == null })
     }
 }
