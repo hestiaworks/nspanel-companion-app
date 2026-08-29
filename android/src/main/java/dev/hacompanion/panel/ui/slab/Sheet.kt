@@ -231,6 +231,15 @@ fun SheetModes(cells: List<ModeCell>, onPick: (ModeCell) -> Unit) {
 fun SheetLevel(
     percent: Int,
     height: Dp? = null,
+    /**
+     * How far the zone stops short of the band's floor.
+     *
+     * 7e reserves 30 px on a band whose scale labels are printed inside it.
+     * This band prints none, and reserving the space anyway cuts the stripes
+     * off above the floor — which turns a leading edge into a rectangle
+     * floating over the fill, the one thing 7e says it must not look like.
+     */
+    zoneBaseline: Dp = 0.dp,
     /** Where a moving cover is heading, marked while it is still short of it. */
     target: Int? = null,
     /** A cover travelling with nothing to report, which stripes its edge. */
@@ -272,7 +281,7 @@ fun SheetLevel(
                     width = size.motionZoneBand,
                     modifier = Modifier
                         .offset(x = if (opening) edge else edge - size.motionZoneBand)
-                        .padding(bottom = size.motionBaseline),
+                        .padding(bottom = zoneBaseline),
                 )
             }
         }
