@@ -141,6 +141,14 @@ data class PanelSize(
     /** The weather reading, and the hours under it. */
     val weatherHero: Dp = 176.dp,
     val weatherHours: Dp = 108.dp,
+    /**
+     * The one-day page, where the hours take the room the day rows would
+     * have had: a taller hero carrying today's range, a caption naming what
+     * follows, and the hour band filling whatever is left (198 px).
+     */
+    val weatherHeroTall: Dp = 214.dp,
+    val weatherCaption: Dp = 34.dp,
+    val weatherHoursTall: Dp = 198.dp,
     /** A cover's band, shorter because an action row shares the sheet. */
     val coverBand: Dp = 110.dp,
     /** A travelling cover's striped zone, and the period of its bars. */

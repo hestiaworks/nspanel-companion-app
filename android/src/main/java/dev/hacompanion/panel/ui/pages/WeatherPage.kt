@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.hacompanion.panel.ui.components.PanelText
@@ -40,13 +41,94 @@ import dev.hacompanion.panel.ui.theme.LocalPanelType
 fun WeatherPage(model: WeatherModel) {
     val colors = LocalPanelColors.current
     Column(Modifier.fillMaxSize().background(colors.canvas)) {
-        Hero(model)
-        if (model.hourly.isNotEmpty()) HourBand(model.hourly)
-        Column(Modifier.fillMaxWidth().weight(1f)) {
-            model.daily.forEach { day ->
-                DayRow(day, Modifier.weight(1f))
+        if (model.hoursTakeTheScreen) {
+            // One forecast day: there are no rows to list, so the hours take
+            // the space they would have had. The hero grows to carry today's
+            // range, which is the only thing the missing rows were saying.
+            TodayHero(model)
+            Caption("NEXT 6 HOURS")
+            HourBand(model.hourly, LocalPanelSize.current.weatherHoursTall)
+        } else {
+            Hero(model)
+            if (model.hourly.isNotEmpty()) HourBand(model.hourly)
+            Column(Modifier.fillMaxWidth().weight(1f)) {
+                model.daily.forEach { day ->
+                    DayRow(day, Modifier.weight(1f))
+                }
             }
         }
+    }
+}
+
+/**
+ * The one-day hero: the reading, and under it the day it belongs to.
+ *
+ * The condition and today's range sit on one line beneath the numeral rather
+ * than beside it, because with no day rows below there is nothing else on
+ * the page saying how high and low it goes.
+ */
+@Composable
+private fun TodayHero(model: WeatherModel) {
+    val type = LocalPanelType.current
+    val today = model.daily.firstOrNull()
+    Band(LocalPanelSize.current.weatherHeroTall) {
+        Row(
+            Modifier.fillMaxSize().padding(
+                start = LocalPanelSpace.current.edge,
+                end = LocalPanelSpace.current.edge,
+                top = 16.dp,
+            ),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(Modifier.weight(1f)) {
+                PanelText(
+                    "OUTSIDE \u00b7 TODAY", type.label,
+                    semibold = true, muted = true,
+                    letterSpacing = type.labelTrackingWide, maxLines = 1,
+                )
+                Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.Top) {
+                    PanelText(
+                        model.temperatureValue, type.hero,
+                        Modifier.lineBox(with(LocalDensity.current) {
+                            (type.hero.value * type.heroLeading).sp.toDp()
+                        }),
+                        bold = true, maxLines = 1,
+                    )
+                    PanelText(
+                        model.unit, type.heroUnitSmall,
+                        Modifier.padding(start = 9.dp, top = LocalPanelSpace.current.heroUnitDropSmall),
+                        semibold = true, muted = true, maxLines = 1,
+                    )
+                }
+                PanelText(
+                    if (today == null) model.condition
+                    else "${model.condition} \u00b7 ${today.low} / ${today.high}",
+                    type.subtitle,
+                    Modifier.padding(top = 10.dp),
+                    semibold = true, maxLines = 1,
+                )
+            }
+            PanelText(
+                model.symbol, type.glyphLarge,
+                Modifier.padding(top = 26.dp),
+                muted = true, maxLines = 1,
+            )
+        }
+    }
+}
+
+/** A band that does nothing but name what follows it. */
+@Composable
+private fun Caption(text: String) {
+    val type = LocalPanelType.current
+    Band(LocalPanelSize.current.weatherCaption) {
+        PanelText(
+            text, type.label,
+            Modifier.align(Alignment.CenterStart)
+                .padding(start = LocalPanelSpace.current.edge),
+            semibold = true, muted = true,
+            letterSpacing = type.labelTrackingWide, maxLines = 1,
+        )
     }
 }
 
@@ -110,10 +192,10 @@ private fun Hero(model: WeatherModel) {
 
 /** The next few hours, each its own cell. */
 @Composable
-private fun HourBand(hours: List<ForecastEntry>) {
+private fun HourBand(hours: List<ForecastEntry>, height: Dp? = null) {
     val colors = LocalPanelColors.current
     val type = LocalPanelType.current
-    Band(LocalPanelSize.current.weatherHours) {
+    Band(height ?: LocalPanelSize.current.weatherHours) {
         Row(Modifier.fillMaxSize()) {
             hours.forEachIndexed { index, hour ->
                 if (index > 0) CellRule()

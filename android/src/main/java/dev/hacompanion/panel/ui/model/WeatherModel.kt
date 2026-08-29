@@ -40,7 +40,23 @@ data class WeatherModel(
     val summary: String,
     val daily: List<ForecastEntry>,
     val hourly: List<ForecastEntry>,
+    /**
+     * One forecast day, so the hours take the room the day rows would have.
+     *
+     * There is nothing to list when the forecast is a single day, and a lone
+     * row stretched across that space says less than six hours do.
+     */
+    val hoursTakeTheScreen: Boolean,
 )
+
+/**
+ * A forecast reading: whole degrees.
+ *
+ * Only the hero keeps a tenth, because it is the one number on the page that
+ * is measured rather than predicted. Six hour cells of differing width read
+ * as noise from across a room, which is the distance this panel is read at.
+ */
+internal fun formatDegrees(value: Double): String = value.roundToInt().toString()
 
 internal fun formatNumber(value: Double): String =
     if (value == value.roundToInt().toDouble()) value.roundToInt().toString()
@@ -84,7 +100,7 @@ private fun entries(
 ): List<ForecastEntry> {
     val values = entity.attributes.optJSONArray(attribute) ?: return emptyList()
     val unit = unitOf(entity)
-    fun temperature(value: Double?) = value?.let { "${formatNumber(it)}$unit" } ?: "—"
+    fun temperature(value: Double?) = value?.let { "${formatDegrees(it)}$unit" } ?: "—"
     return buildList {
         for (index in 0 until values.length()) {
             if (size >= limit) break
@@ -124,11 +140,11 @@ fun weatherModel(entity: EntityState, forecastDays: Int, showHourly: Boolean): W
         detail = buildString {
             append("feels ")
             append(
-                entity.numberAttribute("apparent_temperature")?.let(::formatNumber)
-                    ?: temperature?.let(::formatNumber) ?: "—",
+                entity.numberAttribute("apparent_temperature")?.let(::formatDegrees)
+                    ?: temperature?.let(::formatDegrees) ?: "—",
             )
             append(unit)
-            humidity?.let { append(" · ${formatNumber(it)}%") }
+            humidity?.let { append(" · ${formatDegrees(it)}%") }
         },
         summary = entity.attributes.optString("forecast_summary").ifBlank { "$condition conditions continue." },
         daily = entries(entity, "forecast", forecastDays),
@@ -137,5 +153,6 @@ fun weatherModel(entity: EntityState, forecastDays: Int, showHourly: Boolean): W
         hourly = if (showHourly) {
             entries(entity, "hourly_forecast", 6, withPrecipitation = forecastDays <= 1)
         } else emptyList(),
+        hoursTakeTheScreen = forecastDays <= 1,
     )
 }

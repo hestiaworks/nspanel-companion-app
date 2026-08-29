@@ -3,6 +3,7 @@ package dev.hacompanion.panel.ui.model
 import dev.hacompanion.panel.EntityState
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -32,12 +33,14 @@ class WeatherModelTest {
         val model = weatherModel(
             weather("""{"temperature":16.8,"apparent_temperature":15.2,"humidity":63}"""), 5, false,
         )
-        assertEquals("feels 15.2° · 63%", model.detail)
+        // Rounded: an apparent temperature is a modelled number, and the
+        // spec's mockups print whole degrees everywhere but the hero.
+        assertEquals("feels 15° · 63%", model.detail)
     }
 
     @Test
     fun fallsBackToTemperatureWhenApparentIsMissing() {
-        assertEquals("feels 16.8°", weatherModel(weather("""{"temperature":16.8}"""), 5, false).detail)
+        assertEquals("feels 17°", weatherModel(weather("""{"temperature":16.8}"""), 5, false).detail)
     }
 
     @Test
@@ -149,5 +152,38 @@ class WeatherModelTest {
         assertTrue(weatherSymbol("sunny").endsWith("\ufe0e"))
         assertTrue(weatherSymbol("rainy").endsWith("\ufe0e"))
         assertTrue(weatherSymbol("nonsense").endsWith("\ufe0e"))
+    }
+
+    @Test
+    fun theHeroKeepsItsDecimalWhileEveryForecastRounds() {
+        // The hero is the one number that is measured rather than predicted,
+        // so it earns its tenth. A forecast is not accurate to a tenth, and
+        // six hour cells of differing width read as noise across a room.
+        val model = weatherModel(sky(HOURS), forecastDays = 3, showHourly = true)
+        assertEquals("22", model.temperatureValue)
+        val model2 = weatherModel(
+            sky("""{"temperature": 25.8, "temperature_unit": "\u00b0C"}"""), 1, false,
+        )
+        assertEquals("25.8", model2.temperatureValue)
+    }
+
+    @Test
+    fun forecastReadingsAreWholeDegrees() {
+        val model = weatherModel(sky(HOURS), forecastDays = 3, showHourly = true)
+        model.hourly.forEach { assertFalse("hour ${it.label} kept a decimal", it.high.contains(".")) }
+        model.daily.forEach {
+            assertFalse("day ${it.label} kept a decimal", it.high.contains("."))
+            assertFalse("day ${it.label} kept a decimal", it.low.contains("."))
+        }
+    }
+
+    @Test
+    fun oneDayGivesTheHoursTheScreenInsteadOfDayRows() {
+        // 7's weather section: forecastDays 3 and 1 draw the same page with
+        // the hourly band given more or less room. At one day there are no
+        // day rows to draw, so the page says so rather than stretching a
+        // lone row across the space they would have taken.
+        assertTrue(weatherModel(sky(HOURS), forecastDays = 1, showHourly = true).hoursTakeTheScreen)
+        assertFalse(weatherModel(sky(HOURS), forecastDays = 3, showHourly = true).hoursTakeTheScreen)
     }
 }
