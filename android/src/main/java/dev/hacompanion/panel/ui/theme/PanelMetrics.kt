@@ -145,6 +145,7 @@ data class PanelSize(
     val coverBand: Dp = 110.dp,
     /** A travelling cover's striped zone, and the period of its bars. */
     val motionZone: Dp = 64.dp,
+    val motionZoneBand: Dp = 84.dp,
     val motionPeriod: Dp = 48.dp,
     /** How far a band's zone stops short of its scale labels. */
     val motionBaseline: Dp = 30.dp,

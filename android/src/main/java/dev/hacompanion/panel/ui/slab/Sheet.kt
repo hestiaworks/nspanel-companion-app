@@ -246,6 +246,7 @@ fun SheetLevel(
         percent,
         enabled = true,
         modifier = Modifier.fillMaxWidth().height(height ?: size.levelBand),
+        indeterminate = indeterminate,
         onSet = onSet,
     ) {
         if (target != null && target != percent) {
@@ -265,8 +266,12 @@ fun SheetLevel(
                 val edge = maxWidth * fillFraction(percent)
                 MotionZone(
                     opening = opening,
+                    // A band gets a wider zone than a tile: it is four times
+                    // the width, so the same 64 px would read as a smudge
+                    // rather than an edge in motion.
+                    width = size.motionZoneBand,
                     modifier = Modifier
-                        .offset(x = if (opening) edge else edge - size.motionZone)
+                        .offset(x = if (opening) edge else edge - size.motionZoneBand)
                         .padding(bottom = size.motionBaseline),
                 )
             }
@@ -279,7 +284,12 @@ fun SheetLevel(
                 levelReading(percent, indeterminate),
                 type.sheetLevel,
                 bold = true,
-                color = colors.onAccent,
+                // Dark ink is for a bright fill. The spec's own band carries
+                // only 12 px scale labels and puts the reading in the row
+                // above, so it never had a numeral sitting on the quiet tone;
+                // this sheet does, and near-black on #23406E cannot be read
+                // from across a room.
+                color = if (indeterminate) colors.ink else colors.onAccent,
             )
         }
     }

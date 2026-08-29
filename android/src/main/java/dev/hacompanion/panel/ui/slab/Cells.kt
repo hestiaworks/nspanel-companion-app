@@ -62,6 +62,15 @@ fun LevelSurface(
     percent: Int,
     enabled: Boolean,
     modifier: Modifier = Modifier,
+    /**
+     * A reading the panel is no longer sure of.
+     *
+     * The fill drops to the quieter tone while it lasts: a provisional
+     * position drawn in the same value as a confirmed one claims a certainty
+     * it does not have, and it is also what the marching bars have to read
+     * as texture against.
+     */
+    indeterminate: Boolean = false,
     onSet: (Int) -> Unit,
     content: @Composable () -> Unit = {},
 ) {
@@ -96,7 +105,13 @@ fun LevelSurface(
         Box(
             Modifier.fillMaxHeight()
                 .fillMaxWidth(fillFraction(live))
-                .background(if (enabled) colors.accent else colors.disabled)
+                .background(
+                    when {
+                        !enabled -> colors.disabled
+                        indeterminate -> colors.accentFill
+                        else -> colors.accent
+                    }
+                )
         )
         content()
     }
@@ -106,7 +121,7 @@ fun LevelSurface(
 @Composable
 fun LevelBand(percent: Int, enabled: Boolean, onSet: (Int) -> Unit) {
     Band(LocalPanelSize.current.levelBand) {
-        LevelSurface(percent, enabled, Modifier.fillMaxSize(), onSet)
+        LevelSurface(percent, enabled, Modifier.fillMaxSize(), onSet = onSet)
     }
 }
 

@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.graphics.drawscope.clipRect
 import dev.hacompanion.panel.ui.theme.LocalPanelColors
 import dev.hacompanion.panel.ui.theme.LocalPanelSize
@@ -36,7 +37,7 @@ private val BARS = listOf(0f to 14f, 24f to 38f)
  * the geometry is rebuilt from it rather than any layer being invalidated.
  */
 @Composable
-fun MotionZone(opening: Boolean, modifier: Modifier = Modifier) {
+fun MotionZone(opening: Boolean, width: Dp? = null, modifier: Modifier = Modifier) {
     val colors = LocalPanelColors.current
     val size = LocalPanelSize.current
     val transition = rememberInfiniteTransition()
@@ -52,7 +53,7 @@ fun MotionZone(opening: Boolean, modifier: Modifier = Modifier) {
 
     )
 
-    Canvas(modifier.width(size.motionZone).fillMaxHeight()) {
+    Canvas(modifier.width(width ?: size.motionZone).fillMaxHeight()) {
         val period = size.motionPeriod.toPx()
         val lean = this.size.height * LEAN
         // The strip is laid a period past both ends of its clip, so a bar
