@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
@@ -81,7 +82,11 @@ fun ControlTile(card: ControlCardModel, online: Boolean, actions: ControlActions
                 ),
                 verticalArrangement = Arrangement.Bottom,
             ) {
-                val ink = if (card.active) colors.accent else colors.muted
+                val ink = when {
+                    !card.available -> colors.disabled
+                    card.active -> colors.accent
+                    else -> colors.muted
+                }
                 key(card.icon, ink) {
                     AndroidView(
                         modifier = Modifier.size(size.icon),
@@ -110,13 +115,17 @@ fun ControlTile(card: ControlCardModel, online: Boolean, actions: ControlActions
                         maxLines = 1,
                     )
                 } else {
-                    PanelText(card.name, type.tileNameLarge, semibold = true, maxLines = 1)
+                    PanelText(
+                        card.name, type.tileNameLarge,
+                        semibold = true, maxLines = 1,
+                        color = if (card.available) colors.ink else colors.disabled,
+                    )
                     if (card.subtitle != null) {
                         PanelText(
                             card.subtitle,
                             type.bodySmall,
                             Modifier.padding(top = 2.dp),
-                            muted = true,
+                            color = if (card.available) colors.muted else colors.disabled,
                             maxLines = 1,
                         )
                     }
@@ -141,7 +150,8 @@ fun ControlTile(card: ControlCardModel, online: Boolean, actions: ControlActions
 private fun TileMarks(card: ControlCardModel, actions: ControlActions, modifier: Modifier) {
     val colors = LocalPanelColors.current
     val type = LocalPanelType.current
-    val remaining = if (card.showTimer) actions.timerRemaining(card.entityId) else null
+    val remaining =
+        if (card.showTimer && card.available) actions.timerRemaining(card.entityId) else null
     val scheduled = card.showSchedule && actions.scheduleCount(card.entityId) > 0
     if (remaining == null && !scheduled) return
 
@@ -186,19 +196,28 @@ private fun CoverStrip(card: ControlCardModel, online: Boolean, actions: Control
     val colors = LocalPanelColors.current
     val size = LocalPanelSize.current
     val type = LocalPanelType.current
+    val live = online && card.available
     Box(Modifier.fillMaxWidth().height(size.stroke).background(colors.line))
     Row(Modifier.fillMaxWidth().height(size.tileStrip - size.stroke)) {
         listOf("▲" to "open", "■" to "stop", "▼" to "close").forEachIndexed { index, (glyph, action) ->
             if (index > 0) CellRule()
+            // Stop is lit only while the cover is actually travelling: it is
+            // the one cell that has nothing to do the rest of the time.
+            val lit = action == "stop" && card.moving
             Box(
                 Modifier.weight(1f).fillMaxHeight()
-                    .clickable(enabled = online) { actions.moveCover(card.entityId, action) },
+                    .background(if (lit) colors.accent else Color.Transparent)
+                    .clickable(enabled = live) { actions.moveCover(card.entityId, action) },
                 contentAlignment = Alignment.Center,
             ) {
                 PanelText(
                     glyph,
                     type.glyphMode,
-                    color = if (online) colors.muted else colors.disabled,
+                    color = when {
+                        lit -> colors.onAccent
+                        live -> colors.muted
+                        else -> colors.disabled
+                    },
                 )
             }
         }

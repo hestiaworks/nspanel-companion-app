@@ -37,6 +37,15 @@ data class ControlCardModel(
     val levelText: String?,
     /** Covers get ▲ ■ ▼ where everything else has room for a subtitle. */
     val actionStrip: Boolean,
+    /**
+     * False when Home Assistant has nothing to report about the device.
+     *
+     * The tile and its name stay so the grid never reflows around a device
+     * that went away, but everything that would claim a state goes.
+     */
+    val available: Boolean,
+    /** A cover in travel, the one state where stop is the lit cell. */
+    val moving: Boolean,
     val subtitle: String?,
 )
 
@@ -90,12 +99,15 @@ fun controlCard(
         else -> ControlBody.BINARY
     }
     val position = entity.numberAttribute("current_position")?.roundToInt()
-    val on = entity.state in setOf("on", "open", "opening")
+    // Neither state carries a value, so neither can be drawn as one.
+    val available = entity.state !in setOf("unavailable", "unknown")
+    val moving = entity.state in setOf("opening", "closing")
+    val on = available && entity.state in setOf("on", "open", "opening")
 
     // What proportion of the tile is filled. A device with no level of its
     // own is all or nothing, which is still a fill — it just cannot be
     // anywhere in between.
-    val level: Int? = when (entity.domain) {
+    val level: Int? = if (!available) null else when (entity.domain) {
         "light" -> entity.numberAttribute("brightness")
             ?.let { if (on) (it / 255.0 * 100.0).roundToInt() else 0 }
         "cover" -> position ?: if (on) 100 else 0
@@ -128,14 +140,20 @@ fun controlCard(
         // carried its own controls and could not also be one; a tile puts the
         // level in a sheet precisely so the surface is free to toggle.
         // A cover is the exception: it has a position, not an on and an off.
-        cardTap = widget?.cardTap ?: (entity.domain != "cover"),
+        // An unavailable device cannot be toggled, whatever the layout says.
+        // Its long press survives: that sheet is the only thing that can say
+        // why the tile has gone quiet.
+        cardTap = available && (widget?.cardTap ?: (entity.domain != "cover")),
         dense = dense,
         level = level,
         levelText = levelText,
         actionStrip = entity.domain == "cover",
         // A cover says its position in the fill and its actions in the strip,
         // so it has neither room nor need for a line of prose.
+        available = available,
+        moving = moving,
         subtitle = when {
+            !available -> "Unavailable"
             entity.domain == "cover" -> null
             levelText != null -> null
             else -> entity.state.replace('_', ' ').replaceFirstChar { it.uppercase() }

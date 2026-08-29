@@ -22,6 +22,7 @@ import dev.hacompanion.panel.ui.slab.Sheet
 import dev.hacompanion.panel.ui.slab.SheetModes
 import dev.hacompanion.panel.ui.slab.SheetLevel
 import dev.hacompanion.panel.ui.slab.SheetLink
+import dev.hacompanion.panel.ui.slab.SheetNote
 import dev.hacompanion.panel.ui.slab.SheetAction
 import dev.hacompanion.panel.ui.slab.SheetActions
 import dev.hacompanion.panel.ui.slab.SheetOptions
@@ -465,7 +466,17 @@ class PanelDashboardView(
             val live = states[entityId] ?: entity
             val moving = live.state in setOf("opening", "closing")
             Sheet(name, sheetSubtitle(live, card, moving), dismiss) {
-                when (card.body) {
+                // The long press survives an unavailable device precisely so
+                // this line can exist: the tile has no room to say why it went
+                // quiet, and every control below it would be a lie.
+                when {
+                    !card.available -> SheetNote(
+                        "Home Assistant is not reporting this device. Its schedules " +
+                            "still run \u2014 they are kept there, not here.",
+                    )
+                    else -> Unit
+                }
+                if (card.available) when (card.body) {
                     ControlBody.DIMMER -> {
                         val percent =
                             ((live.numberAttribute("brightness") ?: 0.0) / 255.0 * 100.0).roundToInt()
@@ -506,11 +517,11 @@ class PanelDashboardView(
                         }
                     }
                     // A binary control has no level to set, so its sheet is
-                    // the two doors and the toggle it could not fit elsewhere.
+                    // the two doors and nothing above them.
                     ControlBody.BINARY -> Unit
                 }
 
-                if (card.showTimer) {
+                if (card.showTimer && card.available) {
                     ui.timerTick
                     val left = timerRemaining(timerDeadlines[entityId], SystemClock.elapsedRealtime())
                     SheetLink(

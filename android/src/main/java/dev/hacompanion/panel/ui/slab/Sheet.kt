@@ -368,3 +368,22 @@ private fun SheetGlyph(name: String, tint: Color) {
         )
     }
 }
+
+/**
+ * A line of prose in a sheet, for the one case with nothing to control.
+ *
+ * The only band here that is not a target. It exists because an unavailable
+ * device still opens its sheet, and a sheet with no explanation would be a
+ * worse answer than the quiet tile that led to it.
+ */
+@Composable
+fun SheetNote(text: String) {
+    val colors = LocalPanelColors.current
+    Box(Modifier.fillMaxWidth().height(LocalPanelSize.current.stroke).background(colors.line))
+    Box(
+        Modifier.fillMaxWidth().background(colors.cardSecondary)
+            .padding(LocalPanelSpace.current.edge),
+    ) {
+        PanelText(text, LocalPanelType.current.body, muted = true)
+    }
+}

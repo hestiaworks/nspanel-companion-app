@@ -46,9 +46,12 @@ object DemoLayout {
                 title = "Controls",
                 widgets = listOf(
                     DashboardWidget(type = "controls", entityId = "light.demo_ceiling", label = "Ceiling"),
-                    DashboardWidget(type = "controls", entityId = "light.demo_lamp", label = "Lamp"),
+                    DashboardWidget(type = "controls", entityId = "light.demo_porch", label = "Porch light"),
                     DashboardWidget(type = "controls", entityId = "cover.demo_blind", label = "Blind"),
-                    DashboardWidget(type = "sensor", entityId = "sensor.demo_temp", label = "Bedroom temp"),
+                    DashboardWidget(
+                        type = "controls", entityId = "fan.demo", label = "Bedroom fan",
+                        showFanSpeed = true,
+                    ),
                 ),
             ),
             DashboardPage(
@@ -64,7 +67,10 @@ object DemoLayout {
     fun states(variant: String): List<EntityState> = listOf(
         climate(variant),
         light("light.demo_ceiling", "Ceiling", on = true, brightness = 178),
-        light("light.demo_lamp", "Lamp", on = false, brightness = null),
+        // The state 7d calls the one the UI had no treatment for.
+        EntityState("light.demo_porch", "unavailable", JSONObject()
+            .put("friendly_name", "Porch light")),
+        fan(),
         cover(),
         sensor(),
         weather(),
@@ -113,10 +119,17 @@ object DemoLayout {
             .put("supported_color_modes", JSONArray(listOf("brightness")))
             .apply { if (brightness != null) put("brightness", brightness) })
 
+    private fun fan(): EntityState =
+        EntityState("fan.demo", "on", JSONObject()
+            .put("friendly_name", "Bedroom fan")
+            .put("percentage", 66)
+            // SET_SPEED, without which the widget's toggle has nothing to show.
+            .put("supported_features", 1))
+
     private fun cover(): EntityState =
-        EntityState("cover.demo_blind", "open", JSONObject()
+        EntityState("cover.demo_blind", "opening", JSONObject()
             .put("friendly_name", "Blind")
-            .put("current_position", 65)
+            .put("current_position", 60)
             // OPEN | CLOSE | SET_POSITION | STOP, so the sheet offers a band.
             .put("supported_features", 15)
             .put("device_class", "blind"))

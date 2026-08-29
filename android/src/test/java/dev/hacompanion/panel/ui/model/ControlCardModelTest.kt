@@ -164,4 +164,45 @@ class ControlCardModelTest {
         assertEquals(null, card.levelText)
         assertEquals("Off", card.subtitle)
     }
+
+    @Test
+    fun anUnavailableEntityKeepsItsTileAndLosesEverythingElse() {
+        // The grid must not reflow around a device that went away, so the
+        // tile and the name stay; the fill and the wash go, because they
+        // would claim a state nothing is reporting.
+        val card = controlCard(entity("light.a", "unavailable", """{"brightness": 200}"""), null, dense = false)
+        assertFalse(card.available)
+        assertFalse(card.active)
+        assertEquals(null, card.level)
+        assertEquals(null, card.levelText)
+        assertEquals("Unavailable", card.subtitle)
+    }
+
+    @Test
+    fun anUnknownEntityIsUnavailableTooSinceNeitherReportsAState() {
+        assertFalse(controlCard(entity("switch.a", "unknown"), null, dense = false).available)
+    }
+
+    @Test
+    fun anUnavailableEntityCannotBeTappedButCanStillBeOpened() {
+        // The long press survives: its sheet is the only thing that can say
+        // why the tile has gone quiet.
+        assertFalse(controlCard(entity("light.a", "unavailable"), null, dense = false).cardTap)
+    }
+
+    @Test
+    fun aMovingCoverIsTheOneStateWhereStopIsTheLitCell() {
+        assertTrue(controlCard(entity("cover.a", "opening"), null, dense = false).moving)
+        assertTrue(controlCard(entity("cover.a", "closing"), null, dense = false).moving)
+        assertFalse(controlCard(entity("cover.a", "open"), null, dense = false).moving)
+    }
+
+    @Test
+    fun aFanShowsItsSpeedOnlyWhereTheLayoutAskedFor() {
+        // show_fan_speed is what reveals the fill and the percentage; without
+        // it a fan is a switch, which is what the admin's toggle means.
+        val fan = entity("fan.a", "on", """{"percentage": 66, "supported_features": 1}""")
+        assertEquals("66%", controlCard(fan, widget(entityId = "fan.a").copy(showFanSpeed = true), dense = false).levelText)
+        assertEquals(null, controlCard(fan, widget(entityId = "fan.a").copy(showFanSpeed = false), dense = false).levelText)
+    }
 }
