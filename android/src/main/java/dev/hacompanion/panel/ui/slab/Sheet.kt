@@ -1,9 +1,10 @@
 package dev.hacompanion.panel.ui.slab
 
 import android.app.Activity
+import android.content.ContextWrapper
+import android.util.Log
 import android.app.Dialog
 import android.content.Context
-import android.view.Gravity
 import android.view.Window
 import android.view.WindowManager
 import androidx.compose.foundation.background
@@ -13,6 +14,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -26,6 +29,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.key
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -69,18 +73,33 @@ fun showPanelSheet(
     dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
     val view = ComposeView(context)
     dialog.setContentView(view)
-    // The dimmed page is still the page: pressing it is how you leave.
-    dialog.setCanceledOnTouchOutside(true)
     dialog.window?.apply {
         setBackgroundDrawableResource(android.R.color.transparent)
         setDimAmount(.65f)
         addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-        setGravity(Gravity.BOTTOM)
         installComposeHost(decorView)
     }
+    // The window fills the screen and the sheet sits at the bottom of it.
+    //
+    // A wrap-content window has to agree a height with the window manager,
+    // and on this panel it never got the whole 480: the frame came back
+    // [0,48][480,480] whatever flags it carried, so the cover sheet's last
+    // row lost the 24 px it was over. Filling the screen removes the
+    // negotiation — Compose measures against the real 480 and puts the
+    // sheet against the real bottom edge.
+    //
+    // The empty space above is then inside this window rather than outside
+    // it, so dismissing on a press there is ours to do; setCanceledOnTouchOutside
+    // would never fire again.
     view.setContent {
         PanelThemeProvider(dark) {
-            Column(Modifier.fillMaxWidth()) { content { dialog.dismiss() } }
+            Column(Modifier.fillMaxSize()) {
+                Box(
+                    Modifier.fillMaxWidth().weight(1f)
+                        .pointerInput(Unit) { detectTapGestures { dialog.dismiss() } },
+                )
+                content { dialog.dismiss() }
+            }
         }
     }
     dialog.setOnDismissListener { onDismiss?.invoke(dialog) }
@@ -88,7 +107,7 @@ fun showPanelSheet(
     onShow?.invoke(dialog)
     dialog.window?.setLayout(
         WindowManager.LayoutParams.MATCH_PARENT,
-        WindowManager.LayoutParams.WRAP_CONTENT,
+        WindowManager.LayoutParams.MATCH_PARENT,
     )
     return dialog
 }
@@ -525,8 +544,9 @@ fun SheetAdd(label: String, onAdd: () -> Unit) {
  */
 @Suppress("DEPRECATION")
 internal fun matchHostSystemUi(context: Context, dialog: Dialog) {
-    val host = (context as? Activity)?.window?.decorView
+    val host = hostActivity(context)?.window?.decorView
     if (host == null) {
+        Log.w("PanelSheet", "No host activity for ${context.javaClass.name}; sheet keeps default insets")
         dialog.show()
         return
     }
@@ -535,7 +555,32 @@ internal fun matchHostSystemUi(context: Context, dialog: Dialog) {
         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
     )
+    // The host activity lays out in the whole screen; a dialog by default
+    // lays out below the status bar decoration, which is where the missing
+    // 48 px came from. Comparing the two windows' flags in dumpsys, this is
+    // the only one the dialog lacked.
+    window?.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN)
+    // Matching the host's flags lets the window sit under the bars, but the
+    // decor still pads itself by the system insets — so the sheet was only
+    // ever measured into 432 of the panel's 480 px, and its last row lost
+    // the difference. Consuming them is what actually hands over the screen.
+    window?.decorView?.setOnApplyWindowInsetsListener { _, insets ->
+        insets.consumeSystemWindowInsets()
+    }
     dialog.show()
     window?.decorView?.systemUiVisibility = host.systemUiVisibility
     window?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+}
+
+/**
+ * The Activity behind a view's context.
+ *
+ * A View is rarely handed the Activity itself — Compose, dialogs and themed
+ * inflation all wrap it — so unwrapping the ContextWrapper chain is the only
+ * reliable way to reach the window whose flags this sheet has to match.
+ */
+private tailrec fun hostActivity(context: Context): Activity? = when (context) {
+    is Activity -> context
+    is ContextWrapper -> hostActivity(context.baseContext)
+    else -> null
 }
