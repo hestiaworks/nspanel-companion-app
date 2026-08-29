@@ -599,7 +599,14 @@ class PanelDashboardView(
                         if (canPosition) {
                             val position =
                                 live.numberAttribute("current_position")?.roundToInt() ?: 0
-                            SheetLevel(position, height = LocalPanelSize.current.coverBand) {
+                            SheetLevel(
+                                position,
+                                height = LocalPanelSize.current.coverBand,
+                                // The sheet is not a different device: a cover
+                                // that has gone quiet is quiet here too.
+                                indeterminate = dashboardActions.coverIndeterminate(entityId),
+                                opening = live.state == "opening",
+                            ) {
                                 callService(
                                     "cover", "set_cover_position", entityId,
                                     JSONObject().put("position", it),
@@ -856,6 +863,7 @@ class PanelDashboardView(
                             dismiss()
                         }
                     },
+                    onDiscard = dismiss,
                 ) {
                     upsertSchedule(
                         ControlSchedule(

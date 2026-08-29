@@ -207,28 +207,41 @@ fun WeekdayRow(days: List<String>, selected: Set<String>, onToggle: (String) -> 
 }
 
 /**
- * Delete and save, sharing whatever height is left.
+ * The two ways out, sharing whatever height is left.
  *
- * Destructive on the left here rather than the right: the right-hand rule is
- * for a confirm, where the two buttons are answers to one question. These are
- * not — save is the ordinary way out, and delete is a different act that gets
- * its own confirm before anything happens.
+ * There is always a left button, because a screen whose only control is Save
+ * is a screen you cannot leave without agreeing to something. On a saved
+ * schedule it deletes; on one that has never been saved there is nothing to
+ * delete, so it discards — the same act, and the honest word for it.
+ *
+ * Destructive on the left rather than the right: the right-hand rule is for a
+ * confirm, where two buttons answer one question. These do not — save is the
+ * ordinary way out, and this is a different act.
  */
 @Composable
-fun ColumnScope.EditorActions(onDelete: (() -> Unit)?, onSave: () -> Unit) {
+fun ColumnScope.EditorActions(
+    /** Null on a schedule that was never saved, which makes this Discard. */
+    onDelete: (() -> Unit)?,
+    onDiscard: () -> Unit,
+    onSave: () -> Unit,
+) {
     val colors = LocalPanelColors.current
     val type = LocalPanelType.current
     Row(Modifier.fillMaxWidth().weight(1f)) {
-        if (onDelete != null) {
-            Box(
-                Modifier.width(LocalPanelSize.current.deleteWidth).fillMaxHeight()
-                    .background(colors.cardSecondary).clickable { onDelete() },
-                contentAlignment = Alignment.Center,
-            ) {
-                PanelText("Delete", type.subtitle, semibold = true, color = colors.danger)
-            }
-            CellRule()
+        Box(
+            Modifier.width(LocalPanelSize.current.deleteWidth).fillMaxHeight()
+                .background(colors.cardSecondary)
+                .clickable { (onDelete ?: onDiscard)() },
+            contentAlignment = Alignment.Center,
+        ) {
+            PanelText(
+                if (onDelete != null) "Delete" else "Discard",
+                type.subtitle,
+                semibold = true,
+                color = if (onDelete != null) colors.danger else colors.muted,
+            )
         }
+        CellRule()
         Box(
             Modifier.weight(1f).fillMaxHeight()
                 .background(colors.accent).clickable { onSave() },

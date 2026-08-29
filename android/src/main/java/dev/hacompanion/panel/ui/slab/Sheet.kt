@@ -10,10 +10,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -33,6 +36,7 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.dp
 import dev.hacompanion.panel.ui.components.PanelText
 import dev.hacompanion.panel.ui.model.fillFraction
+import dev.hacompanion.panel.ui.model.levelReading
 import dev.hacompanion.panel.ui.installComposeHost
 import dev.hacompanion.panel.ui.theme.LocalPanelColors
 import dev.hacompanion.panel.ui.theme.LocalPanelSize
@@ -229,6 +233,9 @@ fun SheetLevel(
     height: Dp? = null,
     /** Where a moving cover is heading, marked while it is still short of it. */
     target: Int? = null,
+    /** A cover travelling with nothing to report, which stripes its edge. */
+    indeterminate: Boolean = false,
+    opening: Boolean = false,
     onSet: (Int) -> Unit,
 ) {
     val colors = LocalPanelColors.current
@@ -251,11 +258,29 @@ fun SheetLevel(
                 )
             }
         }
+        // The band's zone stops short of the baseline, so the scale labels
+        // printed inside it stay legible under a marching edge.
+        if (indeterminate) {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val edge = maxWidth * fillFraction(percent)
+                MotionZone(
+                    opening = opening,
+                    modifier = Modifier
+                        .offset(x = if (opening) edge else edge - size.motionZone)
+                        .padding(bottom = size.motionBaseline),
+                )
+            }
+        }
         Box(
             Modifier.fillMaxWidth().padding(horizontal = LocalPanelSpace.current.edge),
             contentAlignment = Alignment.CenterStart,
         ) {
-            PanelText("$percent%", type.sheetLevel, bold = true, color = colors.onAccent)
+            PanelText(
+                levelReading(percent, indeterminate),
+                type.sheetLevel,
+                bold = true,
+                color = colors.onAccent,
+            )
         }
     }
 }

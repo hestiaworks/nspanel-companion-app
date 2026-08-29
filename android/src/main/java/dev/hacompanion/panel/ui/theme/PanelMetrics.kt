@@ -146,6 +146,8 @@ data class PanelSize(
     /** A travelling cover's striped zone, and the period of its bars. */
     val motionZone: Dp = 64.dp,
     val motionPeriod: Dp = 48.dp,
+    /** How far a band's zone stops short of its scale labels. */
+    val motionBaseline: Dp = 30.dp,
     val rail: Dp = 132.dp,
     val icon: Dp = 30.dp,
     /** A corner mark's glyph, smaller than the tile's own. */
