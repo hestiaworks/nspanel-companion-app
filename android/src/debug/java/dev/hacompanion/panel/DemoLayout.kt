@@ -55,6 +55,13 @@ object DemoLayout {
                 ),
             ),
             DashboardPage(
+                id = "reading",
+                title = "Bedroom",
+                widgets = listOf(
+                    DashboardWidget(type = "sensor", entityId = "sensor.demo_temp", label = "Bedroom temp"),
+                ),
+            ),
+            DashboardPage(
                 id = "weather",
                 title = "Weather",
                 widgets = listOf(

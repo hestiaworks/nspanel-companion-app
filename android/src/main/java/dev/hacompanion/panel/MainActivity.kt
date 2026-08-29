@@ -85,6 +85,7 @@ class MainActivity : Activity() {
         installComposeHost(window.decorView)
         startPairingAdvertisement()
         enterImmersiveMode()
+        keepBarsHidden()
         refreshReport()
         connectWithSavedSettings()
         startPanelSync()
@@ -987,6 +988,19 @@ class MainActivity : Activity() {
     }
 
     @Suppress("DEPRECATION")
+    /**
+     * Sticky immersive hands the bars back on anything the platform reads as
+     * an edge gesture, and on this hardware a long press is enough. Nothing
+     * in the app wants them, so they go away again as soon as they appear.
+     */
+    private fun keepBarsHidden() {
+        window.decorView.setOnSystemUiVisibilityChangeListener { flags ->
+            if (flags and View.SYSTEM_UI_FLAG_HIDE_NAVIGATION == 0) {
+                window.decorView.postDelayed({ enterImmersiveMode() }, 1_200)
+            }
+        }
+    }
+
     private fun enterImmersiveMode() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.insetsController?.apply {

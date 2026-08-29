@@ -32,6 +32,17 @@ data class PanelColors(
      * the fill says how far, and the accent edge between them says where.
      */
     val accentFill: Color,
+    /**
+     * The bars of a travelling cover's zone.
+     *
+     * Never accent: a closing zone is anchored inside the fill and runs the
+     * full height of the tile, straight through the icon and the readout,
+     * both of which are accent — bars in the same value would drop those to
+     * zero contrast. This sits between accentWash and accent, so it reads as
+     * texture against both the fill and the empty track while leaving every
+     * accent glyph legible on top of it.
+     */
+    val motion: Color,
     val line: Color,
     val disabled: Color,
     /** Destructive actions: cancelling a timer, deleting a schedule. */
@@ -55,6 +66,7 @@ val darkPanelColors = PanelColors(
     // Dark ink on a light fill: in this theme the accent is the brighter half.
     onAccent = Color(0xFF0E1012),
     accentFill = Color(0xFF23406E),
+    motion = Color(0xFF3A6099),
     line = Color(0xFF23282D),
     disabled = Color(0xFF4A5158),
     danger = Color(0xFFD24A3F),
@@ -74,6 +86,7 @@ val lightPanelColors = PanelColors(
     accentWash = Color(0xFFE7EEFB),
     onAccent = Color(0xFFFFFFFF),
     accentFill = Color(0xFFCFE0FA),
+    motion = Color(0xFF9DBEF0),
     line = Color(0xFFD9DCD8),
     disabled = Color(0xFFA8ADA6),
     danger = Color(0xFFC0392B),

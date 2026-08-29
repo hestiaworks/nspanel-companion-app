@@ -46,6 +46,8 @@ data class ControlCardModel(
     val available: Boolean,
     /** A cover in travel, the one state where stop is the lit cell. */
     val moving: Boolean,
+    /** The raw state, for the one case that needs the direction of travel. */
+    val state: String,
     val subtitle: String?,
 )
 
@@ -160,6 +162,7 @@ fun controlCard(
         // so it has neither room nor need for a line of prose.
         available = available,
         moving = moving,
+        state = entity.state,
         subtitle = when {
             !available -> "Unavailable"
             entity.domain == "cover" -> null

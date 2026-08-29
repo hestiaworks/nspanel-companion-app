@@ -141,6 +141,9 @@ data class PanelSize(
     val weatherHours: Dp = 108.dp,
     /** A cover's band, shorter because an action row shares the sheet. */
     val coverBand: Dp = 110.dp,
+    /** A travelling cover's striped zone, and the period of its bars. */
+    val motionZone: Dp = 64.dp,
+    val motionPeriod: Dp = 48.dp,
     val rail: Dp = 132.dp,
     val icon: Dp = 30.dp,
     /** A corner mark's glyph, smaller than the tile's own. */

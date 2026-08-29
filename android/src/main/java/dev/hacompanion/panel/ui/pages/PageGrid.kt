@@ -48,13 +48,13 @@ fun PageGrid(
     // so the fill inside it is the full width of what it represents.
     val colors = LocalPanelColors.current
     Column(Modifier.fillMaxSize()) {
+        // Every row takes an equal share of what is left. A row was pinned to
+        // a list row's height unless it held a control, which is why a page
+        // with one reading on it drew an 88 px sliver and clipped the numeral
+        // that is the entire point of a reading.
         cells.chunked(2).forEach { row ->
-            val hasControl = row.any { it is PageCell.Control }
-            val rowModifier =
-                if (hasControl) Modifier.fillMaxWidth().weight(1f)
-                else Modifier.fillMaxWidth().height(size.listRow)
             Box(Modifier.fillMaxWidth().height(size.stroke).background(colors.line))
-            Row(rowModifier) {
+            Row(Modifier.fillMaxWidth().weight(1f)) {
                 row.forEachIndexed { column, cell ->
                     if (column > 0) CellRule()
                     key(cellKey(cell)) {
@@ -67,11 +67,10 @@ fun PageGrid(
                         }
                     }
                 }
-                // A lone cell keeps half the width rather than stretching.
-                if (row.size == 1) {
-                    CellRule()
-                    Box(Modifier.weight(1f).fillMaxSize().background(colors.canvas))
-                }
+                // An odd one out takes the whole width of its row rather than
+                // leaving a hole beside it — the rule a sheet's options
+                // already follow, and the reason a page holding a single
+                // reading is a single reading rather than one beside a void.
             }
         }
     }

@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -28,7 +30,9 @@ import dev.hacompanion.panel.ui.components.PanelText
 import dev.hacompanion.panel.ui.model.ControlBody
 import dev.hacompanion.panel.ui.model.ControlCardModel
 import dev.hacompanion.panel.ui.model.fillFraction
+import dev.hacompanion.panel.ui.model.levelReading
 import dev.hacompanion.panel.ui.slab.CellRule
+import dev.hacompanion.panel.ui.slab.MotionZone
 import dev.hacompanion.panel.ui.slab.lineBox
 import dev.hacompanion.panel.ui.slab.pressable
 import dev.hacompanion.panel.ui.theme.LocalPanelColors
@@ -58,14 +62,21 @@ fun ControlTile(card: ControlCardModel, online: Boolean, actions: ControlActions
     Box(
         Modifier.fillMaxSize()
             .background(if (card.active) colors.accentWash else colors.canvas)
+            // 7d's rule: card_tap on means the tile toggles and the sheet
+            // needs a long press; off means the tap opens the sheet. A cover
+            // defaults to off, which is why tapping one now shows what it can
+            // do rather than guessing which way you wanted it to go.
             .pressable(
-                onTap = if (online && card.cardTap) {
-                    { actions.toggle(card.entityId) }
-                } else null,
+                onTap = when {
+                    !online -> null
+                    card.cardTap -> ({ actions.toggle(card.entityId) })
+                    else -> ({ openSheet(card, actions) })
+                },
                 onLongPress = { openSheet(card, actions) },
             ),
     ) {
         val level = card.level
+        val indeterminate = card.moving && actions.coverIndeterminate(card.entityId)
         if (card.active && level != null && level > 0) {
             Box(Modifier.fillMaxHeight().fillMaxWidth(fillFraction(level))) {
                 Box(Modifier.fillMaxSize().background(colors.accentFill))
@@ -73,6 +84,21 @@ fun ControlTile(card: ControlCardModel, online: Boolean, actions: ControlActions
                     Modifier.fillMaxHeight().width(size.railRule)
                         .align(Alignment.CenterEnd)
                         .background(colors.accent)
+                )
+            }
+        }
+        // The zone sits on the side the edge is moving toward: outside the
+        // fill while opening, inside it while closing. Anchoring it to the
+        // boundary is what makes it read as a leading edge rather than a
+        // rectangle floating on the track.
+        if (indeterminate && level != null) {
+            val opening = card.state == "opening"
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val edge = maxWidth * fillFraction(level)
+                val zone = size.motionZone
+                MotionZone(
+                    opening = opening,
+                    modifier = Modifier.offset(x = if (opening) edge else edge - zone),
                 )
             }
         }
@@ -99,10 +125,11 @@ fun ControlTile(card: ControlCardModel, online: Boolean, actions: ControlActions
                 }
                 Box(Modifier.weight(1f))
                 if (card.levelText != null) {
+                    val reading = levelReading(card.level ?: 0, indeterminate)
                     val levelSize =
                         if (card.actionStrip) type.tileLevelSmall else type.tileLevel
                     PanelText(
-                        card.levelText,
+                        reading,
                         levelSize,
                         Modifier.lineBox(with(LocalDensity.current) {
                             (levelSize.value * type.tileLeading).sp.toDp()

@@ -28,4 +28,12 @@ interface ControlActions {
 
     /** When the next schedule fires, which is the line under that row. */
     fun scheduleNext(entityId: String): String?
+
+    /**
+     * True when a cover is travelling and has stopped saying where it is.
+     *
+     * The tile stripes a zone out of its leading edge rather than freezing
+     * or animating the fill, because both of those claim something untrue.
+     */
+    fun coverIndeterminate(entityId: String): Boolean
 }

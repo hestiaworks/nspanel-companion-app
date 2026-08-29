@@ -67,6 +67,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import dev.hacompanion.panel.ui.model.ControlBody
 import dev.hacompanion.panel.ui.model.ControlCardModel
 import dev.hacompanion.panel.ui.model.controlCard
+import dev.hacompanion.panel.ui.model.coverIndeterminate
 import dev.hacompanion.panel.ui.model.timerRemaining
 import org.json.JSONObject
 import org.json.JSONArray
@@ -216,6 +217,18 @@ class PanelDashboardView(
             // Read the tick so this recomposes each second while one runs.
             ui.timerTick
             return timerRemaining(timerDeadlines[entityId], SystemClock.elapsedRealtime())
+        }
+
+        override fun coverIndeterminate(entityId: String): Boolean {
+            // Reading the tick is what makes a tile redraw when the silence
+            // crosses 1.5 s with no new state arriving to trigger it.
+            ui.timerTick
+            val entity = states[entityId] ?: return false
+            val now = SystemClock.elapsedRealtime()
+            return coverIndeterminate(
+                moving = entity.state in setOf("opening", "closing"),
+                sincePosition = dashboardState.sincePosition(entityId, now),
+            )
         }
 
         override fun scheduleNext(entityId: String): String? =
@@ -386,6 +399,8 @@ class PanelDashboardView(
         renderPending = true
         postDelayed({
             renderPending = false
+            dashboardState.noteCoverPositions(SystemClock.elapsedRealtime())
+            startMotionTickIfMoving()
             render()
         }, 120)
     }
@@ -1000,8 +1015,20 @@ class PanelDashboardView(
     private val timerTick = object : Runnable {
         override fun run() {
             ui.timerTick += 1
-            if (timerDeadlines.isNotEmpty()) postDelayed(this, 1_000L)
+            if (timerDeadlines.isNotEmpty() || anyCoverMoving()) postDelayed(this, 1_000L)
         }
+    }
+
+    private fun anyCoverMoving() =
+        states.values.any { it.state == "opening" || it.state == "closing" }
+
+    /**
+     * A travelling cover needs the same tick a timer does: without a state
+     * arriving to trigger it, nothing would redraw at the moment the silence
+     * becomes long enough to admit to.
+     */
+    private fun startMotionTickIfMoving() {
+        if (anyCoverMoving()) startTimerTick()
     }
 
     private fun startTimerTick() {
