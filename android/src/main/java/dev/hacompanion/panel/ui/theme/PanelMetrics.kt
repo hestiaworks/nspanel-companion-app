@@ -39,6 +39,8 @@ data class PanelType(
     /** A tile's level, and the same reading where a cover's strip takes room. */
     /** The reading sitting on a sheet's level band. */
     val sheetLevel: TextUnit = 56.sp,
+    /** The time being edited, the one reading on that screen. */
+    val editorTime: TextUnit = 68.sp,
     val tileLevel: TextUnit = 44.sp,
     /** A tile's level is set at .9, as the hero is at .82. */
     val tileLeading: Float = 0.9f,
@@ -163,6 +165,12 @@ data class PanelSize(
     val tileStrip: Dp = 64.dp,
     /** The row that adds a schedule, the one filled action in its sheet. */
     val addRow: Dp = 92.dp,
+    /** The schedule editor's bands: header, the time it steps, its rows. */
+    val editorHeader: Dp = 48.dp,
+    val editorTime: Dp = 112.dp,
+    val stepColumn: Dp = 80.dp,
+    val segmentRow: Dp = 70.dp,
+    val deleteWidth: Dp = 160.dp,
 )
 
 val LocalPanelType = staticCompositionLocalOf { PanelType() }

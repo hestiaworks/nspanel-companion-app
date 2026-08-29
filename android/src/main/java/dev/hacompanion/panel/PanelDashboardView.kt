@@ -23,7 +23,14 @@ import dev.hacompanion.panel.ui.slab.Sheet
 import dev.hacompanion.panel.ui.slab.SheetModes
 import dev.hacompanion.panel.ui.slab.SheetLevel
 import dev.hacompanion.panel.ui.slab.SheetLink
+import dev.hacompanion.panel.ui.slab.EditorActions
+import dev.hacompanion.panel.ui.slab.EditorHeader
+import dev.hacompanion.panel.ui.slab.EditorPick
 import dev.hacompanion.panel.ui.slab.ScheduleRow
+import dev.hacompanion.panel.ui.slab.SegmentedRow
+import dev.hacompanion.panel.ui.slab.TimeStepper
+import dev.hacompanion.panel.ui.slab.WeekdayRow
+import dev.hacompanion.panel.ui.slab.showPanelScreen
 import dev.hacompanion.panel.ui.slab.SheetAdd
 import dev.hacompanion.panel.ui.slab.SheetNote
 import dev.hacompanion.panel.ui.slab.SheetAction
@@ -54,15 +61,19 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.Window
 import android.widget.Button
-import android.widget.ArrayAdapter
-import android.widget.CheckBox
-import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.Spinner
 import android.widget.TextView
 import android.os.SystemClock
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.mutableStateOf
+import dev.hacompanion.panel.ui.theme.LocalPanelColors
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateMapOf
 import dev.hacompanion.panel.ui.model.ControlBody
 import dev.hacompanion.panel.ui.model.ControlCardModel
@@ -772,103 +783,129 @@ class PanelDashboardView(
         }
     }
 
-    private fun showScheduleDialog(entity: EntityState, widget: DashboardWidget?, existing: ControlSchedule?) {
-        val actions = when (entity.domain) {
-            "cover" -> buildList {
-                add("open" to "Open")
-                add("close" to "Close")
-                add("set_position" to "Set position")
-                if (widget?.gradualOpenScript != null) add("gradual_open" to "Gradual open")
-                if (widget?.gradualCloseScript != null) add("gradual_close" to "Gradual close")
-            }
-            else -> listOf("turn_on" to "Turn on", "turn_off" to "Turn off", "toggle" to "Toggle")
+    /**
+     * The schedule editor, as a screen rather than a sheet.
+     *
+     * It needs the full width for its seven day cells, and no keyboard: the
+     * time is stepped, the action is picked, the days are toggled. That was
+     * the last EditText, Spinner and CheckBox on the dashboard. The ones
+     * left are in administration, where a URL and a token do need typing.
+     */
+    private fun showScheduleDialog(
+        entity: EntityState,
+        widget: DashboardWidget?,
+        existing: ControlSchedule?,
+    ) {
+        val choices = scheduleActions(entity, widget)
+        val start = existing?.time?.split(":")?.mapNotNull(String::toIntOrNull)
+        var hour by mutableStateOf(start?.getOrNull(0) ?: 7)
+        var minute by mutableStateOf(start?.getOrNull(1) ?: 0)
+        var action by mutableStateOf(existing?.action ?: choices.first().first)
+        var position by mutableStateOf(existing?.position ?: 100)
+        val days = mutableStateListOf<String>().apply {
+            addAll(existing?.weekdays ?: WEEKDAY_IDS)
         }
-        val time = EditText(context).apply {
-            hint = "07:00"
-            setText(existing?.time ?: "07:00")
-            textSize = 20f
-            setTextColor(PanelTheme.ink)
-            background = cardBackground(PanelTheme.panel, PanelTheme.line, 14)
-            setPadding(dp(14), 0, dp(14), 0)
-        }
-        val action = Spinner(context).apply {
-            adapter = ArrayAdapter(context, android.R.layout.simple_spinner_dropdown_item, actions.map { it.second })
-            setSelection(actions.indexOfFirst { it.first == existing?.action }.coerceAtLeast(0))
-            background = cardBackground(PanelTheme.panel, PanelTheme.line, 14)
-        }
-        val position = EditText(context).apply {
-            hint = "Position 0–100"
-            setText((existing?.position ?: 100).toString())
-            textSize = 16f
-            setTextColor(PanelTheme.ink)
-            background = cardBackground(PanelTheme.panel, PanelTheme.line, 14)
-            setPadding(dp(14), 0, dp(14), 0)
-            visibility = if (entity.domain == "cover") View.VISIBLE else View.GONE
-        }
-        val enabled = CheckBox(context).apply {
-            text = "Enabled"
-            textSize = 15f
-            setTextColor(PanelTheme.ink)
-            isChecked = existing?.enabled ?: true
-        }
-        val selectedDays = (existing?.weekdays ?: WEEKDAY_IDS).toMutableSet()
-        val dialog = Dialog(context)
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
-        dialog.setContentView(LinearLayout(context).apply {
-            orientation = VERTICAL
-            setPadding(dp(18), dp(16), dp(18), dp(16))
-            background = cardBackground(CARD, CARD_EDGE, 24)
-            addView(primaryText("Schedule", 23f).apply { typeface = Typeface.DEFAULT_BOLD })
-            addView(secondaryText(entity.friendlyName).apply { textSize = 12f; setPadding(0, 0, 0, dp(8)) })
-            addView(LinearLayout(context).apply {
-                addView(time, LayoutParams(0, dp(50), .8f).apply { rightMargin = dp(4) })
-                addView(action, LayoutParams(0, dp(50), 1.2f).apply { leftMargin = dp(4) })
-            })
-            if (entity.domain == "cover") addView(position, LayoutParams(LayoutParams.MATCH_PARENT, dp(46)).apply { topMargin = dp(7) })
-            addView(LinearLayout(context).apply {
-                WEEKDAY_IDS.forEach { day ->
-                    addView(CheckBox(context).apply {
-                        text = day.replaceFirstChar { it.uppercase() }
-                        textSize = 10f
-                        setTextColor(PanelTheme.ink)
-                        isChecked = day in selectedDays
-                        setOnCheckedChangeListener { _, checked -> if (checked) selectedDays.add(day) else selectedDays.remove(day) }
-                    }, LayoutParams(0, dp(42), 1f))
+
+        showPanelScreen(
+            context, PanelTheme.isDark,
+            onShow = { openSheets += it },
+            onDismiss = { openSheets -= it },
+        ) { dismiss ->
+            val name = widget?.label ?: entity.friendlyName
+            Column(Modifier.fillMaxSize().background(LocalPanelColors.current.canvas)) {
+                EditorHeader("Schedule \u00b7 $name")
+                TimeStepper(
+                    hour = hour,
+                    minute = minute,
+                    // Both wrap: a stepper that stops at midnight makes 23:00
+                    // a long way from 00:00 for no reason.
+                    onHour = { hour = (it + 24) % 24 },
+                    onMinute = { minute = (it + 60) % 60 },
+                )
+                // Three choices fit side by side; five do not, and two of a
+                // cover's five are there only when the scripts are configured.
+                if (choices.size <= 3) {
+                    SegmentedRow(choices, action) { action = it }
+                } else {
+                    EditorPick(
+                        "ACTION",
+                        choices.first { it.first == action }.second,
+                    ) {
+                        showActionPicker(choices, action) { action = it }
+                    }
                 }
-            }, LayoutParams(LayoutParams.MATCH_PARENT, dp(42)).apply { topMargin = dp(5) })
-            addView(enabled)
-            addView(LinearLayout(context).apply {
-                if (existing?.id != null) addView(modalAction("Delete") {
-                    deleteSchedule(existing.id)
-                    dialog.dismiss()
-                }, LayoutParams(0, dp(48), 1f).apply { rightMargin = dp(4) })
-                addView(modalAction("Save") {
-                    val clock = time.text.toString().trim()
-                    if (!Regex("^(?:[01]\\d|2[0-3]):[0-5]\\d$").matches(clock)) {
-                        time.error = "Use HH:MM"
-                        return@modalAction
-                    }
-                    if (selectedDays.isEmpty()) return@modalAction
-                    val selectedAction = actions[action.selectedItemPosition].first
-                    val script = when (selectedAction) {
-                        "gradual_open" -> widget?.gradualOpenScript
-                        "gradual_close" -> widget?.gradualCloseScript
-                        else -> null
-                    }
-                    upsertSchedule(ControlSchedule(existing?.id, entity.entityId, clock, WEEKDAY_IDS.filter(selectedDays::contains),
-                        selectedAction, position.text.toString().toIntOrNull()?.coerceIn(0, 100) ?: 100,
-                        script, enabled.isChecked))
-                    dialog.dismiss()
-                }, LayoutParams(0, dp(48), 1f).apply { leftMargin = dp(4) })
-            }, LayoutParams(LayoutParams.MATCH_PARENT, dp(48)).apply { topMargin = dp(7) })
-        })
-        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
-        dialog.show()
-        dialog.window?.apply {
-            setBackgroundDrawableResource(android.R.color.transparent)
-            setDimAmount(.65f)
-            addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            setLayout((resources.displayMetrics.widthPixels * .94f).roundToInt(), android.view.WindowManager.LayoutParams.WRAP_CONTENT)
+                when {
+                    action == "set_position" -> SheetLevel(
+                        position,
+                        height = LocalPanelSize.current.segmentRow,
+                    ) { position = it }
+                    action.startsWith("gradual_") -> EditorPick(
+                        "SCRIPT",
+                        scriptFor(widget, action) ?: "not configured",
+                    ) {}
+                }
+                WeekdayRow(WEEKDAY_IDS, days.toSet()) { day ->
+                    if (day in days) days.remove(day) else days.add(day)
+                }
+                EditorActions(
+                    // Only a saved schedule can be deleted, and only one with
+                    // an id has reached Home Assistant to be deleted from.
+                    onDelete = existing?.id?.let { id ->
+                        {
+                            deleteSchedule(id)
+                            dismiss()
+                        }
+                    },
+                ) {
+                    upsertSchedule(
+                        ControlSchedule(
+                            id = existing?.id,
+                            entityId = entity.entityId,
+                            time = "%02d:%02d".format(hour, minute),
+                            weekdays = WEEKDAY_IDS.filter(days::contains),
+                            action = action,
+                            position = position,
+                            scriptEntityId = scriptFor(widget, action),
+                            enabled = existing?.enabled ?: true,
+                        ),
+                    )
+                    dismiss()
+                }
+            }
+        }
+    }
+
+    /** Exactly what this entity accepts, which is what the picker lists. */
+    private fun scheduleActions(
+        entity: EntityState,
+        widget: DashboardWidget?,
+    ): List<Pair<String, String>> = when (entity.domain) {
+        "cover" -> buildList {
+            add("open" to "Open")
+            add("close" to "Close")
+            add("set_position" to "Set position")
+            if (widget?.gradualOpenScript != null) add("gradual_open" to "Gradual open")
+            if (widget?.gradualCloseScript != null) add("gradual_close" to "Gradual close")
+        }
+        else -> listOf("turn_on" to "Turn on", "turn_off" to "Turn off", "toggle" to "Toggle")
+    }
+
+    private fun scriptFor(widget: DashboardWidget?, action: String): String? = when (action) {
+        "gradual_open" -> widget?.gradualOpenScript
+        "gradual_close" -> widget?.gradualCloseScript
+        else -> null
+    }
+
+    private fun showActionPicker(
+        choices: List<Pair<String, String>>,
+        selected: String,
+        onPick: (String) -> Unit,
+    ) = panelSheet { dismiss ->
+        Sheet("Action", "What the schedule will do", dismiss) {
+            SheetOptions(choices, selected) {
+                onPick(it)
+                dismiss()
+            }
         }
     }
 
