@@ -9,8 +9,9 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.Gravity
-import android.view.SurfaceHolder
-import android.view.SurfaceView
+import android.graphics.SurfaceTexture
+import android.view.Surface
+import android.view.TextureView
 import android.widget.FrameLayout
 import android.widget.TextView
 import okhttp3.OkHttpClient
@@ -35,8 +36,22 @@ class CameraPageView(
     /** A URL warmed while the camera was one swipe away, if there is one. */
     private val claimWarmed: () -> String? = { null },
     private val openFullscreen: (DashboardWidget) -> Unit,
-) : FrameLayout(context), SurfaceHolder.Callback {
-    private val surface = SurfaceView(context)
+) : FrameLayout(context), TextureView.SurfaceTextureListener {
+    /**
+     * A TextureView, not a SurfaceView.
+     *
+     * A SurfaceView needs its own window layer punched through the hierarchy,
+     * and inside Compose's AndroidView it is never given one: measured on the
+     * panel, the view sits attached, visible and correctly sized at 472x439
+     * with its surface still invalid a second later, and surfaceCreated never
+     * arrives. Four cold starts in five stopped at "Connecting…" that way.
+     *
+     * A TextureView composites as an ordinary texture in the view hierarchy,
+     * which is what Compose is drawing anyway. It costs a GPU copy per frame
+     * that an overlay would not — cheap for one 640x480 stream on a 480 px
+     * panel, and it is what makes the page work at all.
+     */
+    private val surface = TextureView(context)
     private val handler = Handler(Looper.getMainLooper())
     private val client = OkHttpClient.Builder()
         .connectTimeout(5, TimeUnit.SECONDS)
@@ -65,7 +80,7 @@ class CameraPageView(
             status.alpha = 1f
             status.text = "Camera reconnecting…"
             releasePlayer()
-            if (surface.holder.surface.isValid) handler.postDelayed({ startPlayer(surface.holder) }, 600)
+            currentSurface()?.let { ready -> handler.postDelayed({ startPlayer(ready) }, 600) }
         }
     }
 
@@ -73,20 +88,51 @@ class CameraPageView(
         setBackgroundColor(Color.BLACK)
         addView(surface, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         addView(status, LayoutParams(LayoutParams.MATCH_PARENT, dp(38), Gravity.BOTTOM))
-        surface.holder.addCallback(this)
+        surface.surfaceTextureListener = this
         if (widget.tapAction != "none") setOnClickListener { openFullscreen(widget) }
     }
 
-    override fun surfaceCreated(holder: SurfaceHolder) = startPlayer(holder)
-    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
-    override fun surfaceDestroyed(holder: SurfaceHolder) = releasePlayer()
+    override fun onSurfaceTextureAvailable(texture: SurfaceTexture, width: Int, height: Int) =
+        startPlayer(Surface(texture))
+
+    override fun onSurfaceTextureSizeChanged(texture: SurfaceTexture, width: Int, height: Int) = Unit
+
+    override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean {
+        releasePlayer()
+        return true
+    }
+
+    override fun onSurfaceTextureUpdated(texture: SurfaceTexture) = Unit
+
+    /** The surface currently being drawn into, or null when there is none. */
+    private fun currentSurface(): Surface? =
+        surface.surfaceTexture?.let { Surface(it) }?.takeIf { surface.isAvailable }
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         attached = true
-        // Some NSPanel firmware creates the Surface before delivering callbacks
-        // registered by a dynamically inserted page. Cover that race explicitly.
-        if (surface.holder.surface.isValid) post { startPlayer(surface.holder) }
+        // The texture can already exist when a page is re-attached, in which
+        // case no listener callback is coming and nothing would start.
+        currentSurface()?.let { ready -> post { startPlayer(ready) } }
+    }
+
+    /**
+     * Let the stream go while something is covering the page.
+     *
+     * The fullscreen doorbell is a separate activity over this one, and the
+     * view stays attached underneath it — so without this the page keeps
+     * decoding and the two ask Scrypted for a session at once. The doorbell
+     * loses: measured on the panel, its player comes back 100/0, server
+     * died. One camera, one stream at a time.
+     */
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(visibility)
+        if (visibility != VISIBLE) {
+            handler.removeCallbacksAndMessages(null)
+            releasePlayer()
+        } else {
+            currentSurface()?.let { ready -> post { startPlayer(ready) } }
+        }
     }
 
     override fun onDetachedFromWindow() {
@@ -96,8 +142,8 @@ class CameraPageView(
         super.onDetachedFromWindow()
     }
 
-    private fun startPlayer(holder: SurfaceHolder) {
-        if (player != null || !holder.surface.isValid) return
+    private fun startPlayer(target: Surface) {
+        if (player != null || !target.isValid) return
         startedAt = android.os.SystemClock.elapsedRealtime()
         retriedFresh = false
         Log.i(TAG, "timing: surface ready, resolving source")
@@ -105,12 +151,12 @@ class CameraPageView(
         status.text = "Connecting to Scrypted prebuffer…"
         resolveSource(allowWarmed = true) { source ->
             Log.i(TAG, "timing: source resolved at ${since()} ms")
-            if (!attached || player != null || !holder.surface.isValid) return@resolveSource
+            if (!attached || player != null || !target.isValid) return@resolveSource
             if (source.isBlank()) {
                 status.text = "Camera not configured"
                 return@resolveSource
             }
-            beginPlayback(holder, source)
+            beginPlayback(target, source)
         }
     }
 
@@ -139,11 +185,11 @@ class CameraPageView(
         }.start()
     }
 
-    private fun beginPlayback(holder: SurfaceHolder, source: String) {
+    private fun beginPlayback(target: Surface, source: String) {
         releasePlayer()
         Log.i(TAG, "Starting camera stream ${Uri.parse(source).host}:${Uri.parse(source).port}")
         player = MediaPlayer().apply {
-            setDisplay(holder)
+            setSurface(target)
             setAudioStreamType(AudioManager.STREAM_MUSIC)
             setVolume(if (widget.incomingAudio) 1f else 0f, if (widget.incomingAudio) 1f else 0f)
             setDataSource(context, rtspUrl(source))
@@ -188,20 +234,20 @@ class CameraPageView(
      */
     private fun retryWithFreshSource(): Boolean {
         if (!playingWarmed || retriedFresh) return false
-        val holder = surface.holder
-        if (!attached || !holder.surface.isValid) return false
+        val target = currentSurface() ?: return false
+        if (!attached) return false
         retriedFresh = true
         Log.i(TAG, "Warmed session was dead; resolving a fresh one")
         releasePlayer()
         status.alpha = 1f
         status.text = "Reconnecting…"
         resolveSource(allowWarmed = false) { source ->
-            if (!attached || player != null || !holder.surface.isValid) return@resolveSource
+            if (!attached || player != null || !target.isValid) return@resolveSource
             if (source.isBlank()) {
                 status.text = "Camera not configured"
                 return@resolveSource
             }
-            beginPlayback(holder, source)
+            beginPlayback(target, source)
         }
         return true
     }
