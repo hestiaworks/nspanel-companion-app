@@ -43,42 +43,58 @@ class SystemUiPolicyTest {
         assertFalse(SystemUiPolicy.usesListener(NavBarMode.VISIBLE))
     }
 
+    private val backButton =
+        "com.eWeLinkControlPanel/com.coolkit.nspanelpro.service.accessibility.BackButtonService"
+
     @Test
-    fun `hiding the back button remembers what it replaced`() {
-        val service = "com.eWeLinkControlPanel/com.coolkit.nspanelpro.service.accessibility.BackButtonService"
-        val change = SystemUiPolicy.accessibilityChange(hide = true, current = service, remembered = null)
-        assertEquals("", change.write)
-        assertEquals(service, change.remember)
+    fun `hiding the back button leaves other accessibility services alone`() {
+        // The setting says it hides the panel's back button. Clearing the
+        // whole list would also switch off a screen reader someone depends
+        // on, which is not what the checkbox offered to do.
+        val talkback = "com.google.android.marvin.talkback/.TalkBackService"
+        val change = SystemUiPolicy.accessibilityChange(
+            hide = true, current = "$backButton:$talkback", remembered = null,
+        )
+        assertEquals(talkback, change.write)
+        assertEquals(backButton, change.remember)
     }
 
     @Test
-    fun `showing it again restores the service that was there`() {
-        val service = "com.eWeLinkControlPanel/com.coolkit.nspanelpro.service.accessibility.BackButtonService"
-        val change = SystemUiPolicy.accessibilityChange(hide = false, current = "", remembered = service)
-        assertEquals(service, change.write)
-        // Once restored there is nothing left to remember; keeping the value
-        // would let a later toggle resurrect a service the user has since
-        // turned off through Android's own settings.
+    fun `hiding it when it is the only service leaves the list empty`() {
+        val change = SystemUiPolicy.accessibilityChange(true, backButton, null)
+        assertEquals("", change.write)
+        assertEquals(backButton, change.remember)
+    }
+
+    @Test
+    fun `showing it again restores it beside whatever was added meanwhile`() {
+        val talkback = "com.google.android.marvin.talkback/.TalkBackService"
+        val change = SystemUiPolicy.accessibilityChange(
+            hide = false, current = talkback, remembered = backButton,
+        )
+        assertEquals("$talkback:$backButton", change.write)
+        // Nothing left to remember: keeping it would let a later toggle
+        // resurrect a service turned off through Android's own settings.
         assertNull(change.remember)
     }
 
     @Test
     fun `an already correct panel is left alone`() {
-        val service = "com.eWeLinkControlPanel/x"
-        // Hiding what is already hidden must not overwrite the memory with
-        // the empty value, which would lose the service for good.
-        val hidden = SystemUiPolicy.accessibilityChange(hide = true, current = "", remembered = service)
+        val talkback = "com.google.android.marvin.talkback/.TalkBackService"
+        // Nothing of the vendor's to remove, so nothing is written and the
+        // memory is not overwritten with an empty value.
+        val hidden = SystemUiPolicy.accessibilityChange(true, talkback, backButton)
         assertNull(hidden.write)
-        assertEquals(service, hidden.remember)
+        assertEquals(backButton, hidden.remember)
 
-        val shown = SystemUiPolicy.accessibilityChange(hide = false, current = service, remembered = null)
+        val shown = SystemUiPolicy.accessibilityChange(false, backButton, null)
         assertNull(shown.write)
         assertNull(shown.remember)
     }
 
     @Test
     fun `there is nothing to hide when no service is enabled`() {
-        val change = SystemUiPolicy.accessibilityChange(hide = true, current = "", remembered = null)
+        val change = SystemUiPolicy.accessibilityChange(true, "", null)
         assertNull(change.write)
         assertNull(change.remember)
     }

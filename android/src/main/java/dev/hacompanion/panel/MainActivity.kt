@@ -782,6 +782,9 @@ class MainActivity : Activity() {
             ).orEmpty(),
             remembered = store.getString(REMEMBERED_ACCESSIBILITY, null),
         )
+        // Android maintains accessibility_enabled itself, in both
+        // directions — measured on the panel, writing the list alone brings
+        // a restored service back to life.
         change.write?.let {
             Settings.Secure.putString(contentResolver, SystemUiPolicy.ACCESSIBILITY_SERVICES, it)
         }

@@ -61,25 +61,39 @@ object SystemUiPolicy {
     fun barsHidden(mode: NavBarMode): Boolean = mode != NavBarMode.VISIBLE
 
     /**
+     * The vendor's own app, whose accessibility service draws the floating
+     * back button over everything the panel shows.
+     */
+    private const val VENDOR = "com.eWeLinkControlPanel"
+
+    /**
      * Decide what to do about the vendor's floating back button, which is an
      * accessibility service rather than part of the navigation bar.
      *
-     * Hiding it means disabling the service, so the panel has to remember
-     * what was enabled in order to restore it. Two cases are worth naming:
-     * hiding something already hidden must not overwrite that memory with an
-     * empty value, which would lose the service for good; and restoring must
-     * forget it afterwards, so that a later toggle cannot resurrect a service
-     * the user has since turned off through Android's own settings.
+     * Hiding it means disabling that service, so the panel has to remember
+     * what it removed in order to put it back. It removes only the vendor's
+     * entries: the setting offers to hide a back button, and clearing the
+     * whole list would also switch off a screen reader someone depends on.
+     *
+     * Two cases earn their tests. Hiding when there is nothing of the
+     * vendor's to remove must not overwrite the memory with an empty value,
+     * which would lose the service for good. And restoring must forget it
+     * afterwards, so a later toggle cannot resurrect a service the user has
+     * since turned off through Android's own settings.
      */
     fun accessibilityChange(
         hide: Boolean,
         current: String,
         remembered: String?,
-    ): AccessibilityChange = when {
-        hide && current.isNotBlank() -> AccessibilityChange(write = "", remember = current)
-        hide -> AccessibilityChange(write = null, remember = remembered)
-        !hide && current.isBlank() && !remembered.isNullOrBlank() ->
-            AccessibilityChange(write = remembered, remember = null)
-        else -> AccessibilityChange(write = null, remember = null)
+    ): AccessibilityChange {
+        val enabled = current.split(':').filter { it.isNotBlank() }
+        if (hide) {
+            val (vendor, others) = enabled.partition { it.substringBefore('/') == VENDOR }
+            if (vendor.isEmpty()) return AccessibilityChange(null, remembered)
+            return AccessibilityChange(others.joinToString(":"), vendor.joinToString(":"))
+        }
+        val restore = remembered?.split(':')?.filter { it.isNotBlank() && it !in enabled }.orEmpty()
+        if (restore.isEmpty()) return AccessibilityChange(null, null)
+        return AccessibilityChange((enabled + restore).joinToString(":"), null)
     }
 }
