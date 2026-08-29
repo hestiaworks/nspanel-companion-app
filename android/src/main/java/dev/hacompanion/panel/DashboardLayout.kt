@@ -16,6 +16,8 @@ data class DashboardLayout(
     val micIndicatorLingerSeconds: Int = 15,
     val themeMode: String = "light",
     val themeDark: Boolean = false,
+    val navBarMode: NavBarMode = NavBarMode.LISTENER,
+    val hideAccessibilityButton: Boolean = false,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("schema_version", schemaVersion)
@@ -29,6 +31,8 @@ data class DashboardLayout(
         .put("mic_indicator_linger_seconds", micIndicatorLingerSeconds)
         .put("theme_mode", themeMode)
         .put("theme_dark", themeDark)
+        .put("nav_bar_mode", navBarMode.name.lowercase())
+        .put("hide_accessibility_button", hideAccessibilityButton)
         .put("pages", JSONArray().apply { pages.forEach { put(it.toJson()) } })
 
     companion object {
@@ -61,7 +65,13 @@ data class DashboardLayout(
             val themeMode = json.optString("theme_mode", "light")
             require(themeMode in setOf("light", "dark", "inherit")) { "Invalid panel theme" }
             val themeDark = json.optBoolean("theme_dark", false)
-            return DashboardLayout(version, revision, defaultPageId, pages, returnSeconds, cacheMinutes, keepScreenOn, showClock, showMicIndicator, micIndicatorLingerSeconds, themeMode, themeDark)
+            val navBarMode = NavBarMode.from(json.optString("nav_bar_mode", "listener"))
+            val hideAccessibilityButton = json.optBoolean("hide_accessibility_button", false)
+            return DashboardLayout(
+                version, revision, defaultPageId, pages, returnSeconds, cacheMinutes,
+                keepScreenOn, showClock, showMicIndicator, micIndicatorLingerSeconds,
+                themeMode, themeDark, navBarMode, hideAccessibilityButton,
+            )
         }
 
         fun default(): DashboardLayout = DashboardLayout(

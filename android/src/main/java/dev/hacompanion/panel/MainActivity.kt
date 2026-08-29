@@ -25,6 +25,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.Window
@@ -46,6 +47,7 @@ class MainActivity : Activity() {
     private lateinit var connectionDetail: TextView
     private lateinit var settingsStore: SecureSettingsStore
     private lateinit var layoutStore: DashboardLayoutStore
+    private var navBarMode: NavBarMode = NavBarMode.LISTENER
     private lateinit var weatherCacheStore: WeatherCacheStore
     private lateinit var dashboardView: PanelDashboardView
     private lateinit var rootView: FrameLayout
@@ -84,7 +86,7 @@ class MainActivity : Activity() {
         // SPIKE: Compose resolves its recomposer's lifecycle owner from the window root.
         installComposeHost(window.decorView)
         startPairingAdvertisement()
-        enterImmersiveMode()
+        applyBarVisibility()
         keepBarsHidden()
         refreshReport()
         connectWithSavedSettings()
@@ -95,7 +97,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        enterImmersiveMode()
+        applyBarVisibility()
         if (::dashboardView.isInitialized) dashboardView.setDashboardActive(true)
     }
 
@@ -108,7 +110,7 @@ class MainActivity : Activity() {
         super.onNewIntent(intent)
         setIntent(intent)
         applyDebugProvisioning(intent)
-        enterImmersiveMode()
+        applyBarVisibility()
         refreshReport()
         connectWithSavedSettings()
         openDebugDoorbell(intent)
@@ -116,7 +118,7 @@ class MainActivity : Activity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) enterImmersiveMode()
+        if (hasFocus) applyBarVisibility()
     }
 
     override fun onRequestPermissionsResult(
@@ -194,6 +196,9 @@ class MainActivity : Activity() {
             dashboardView.showUnconfigured("Living Room NSPanel", deviceId)
         } else if (activeLayout != null) {
             applyKeepScreenOn(activeLayout.keepScreenOn)
+            // A panel that boots before Home Assistant answers still has its
+            // saved layout, and should not spend that time in the wrong mode.
+            applySystemUi(activeLayout)
             dashboardView.setLayout(activeLayout)
             dashboardView.setCachedWeather(weatherCacheStore.load(activeLayout.weatherCacheMaxAgeMinutes))
         } else if (credentials != null) {
@@ -726,12 +731,65 @@ class MainActivity : Activity() {
             rootView.setBackgroundColor(PanelTheme.canvas)
             (dashboardView.parent as? View)?.setBackgroundColor(PanelTheme.canvas)
             applyKeepScreenOn(layout.keepScreenOn)
+            applySystemUi(layout)
             dashboardView.setLayout(layout)
             if (PanelProvisioningStore(this).load() != null) connectWithSavedSettings()
             Toast.makeText(this, "Layout updated", Toast.LENGTH_SHORT).show()
         } catch (error: Exception) {
             Toast.makeText(this, error.message ?: "Layout update failed", Toast.LENGTH_LONG).show()
         }
+    }
+
+    /**
+     * Put the two Android system-UI settings into the state the layout asks
+     * for.
+     *
+     * Both writes need WRITE_SECURE_SETTINGS, which a normal install cannot
+     * request; the updater add-on grants it over ADB. Without it the settings
+     * are inert, which is a panel that behaves exactly as it did before they
+     * existed — so this logs and moves on rather than failing the layout.
+     */
+    private fun applySystemUi(layout: DashboardLayout) {
+        navBarMode = layout.navBarMode
+        applyBarVisibility()
+        if (checkSelfPermission(SystemUiPolicy.PERMISSION) != PackageManager.PERMISSION_GRANTED) {
+            Log.i(TAG, "System UI settings ignored: ${SystemUiPolicy.PERMISSION} not granted")
+            return
+        }
+        try {
+            Settings.Global.putString(
+                contentResolver,
+                SystemUiPolicy.POLICY_CONTROL,
+                SystemUiPolicy.policyControlValue(navBarMode),
+            )
+            applyAccessibilityButton(layout.hideAccessibilityButton)
+        } catch (error: SecurityException) {
+            Log.w(TAG, "System UI settings refused by Android", error)
+        }
+    }
+
+    /**
+     * The vendor's floating back button is an accessibility service rather
+     * than part of the navigation bar, so hiding it means disabling that
+     * service — and restoring it means having remembered which one it was.
+     */
+    private fun applyAccessibilityButton(hide: Boolean) {
+        val store = getSharedPreferences(SYSTEM_UI_STORE, Context.MODE_PRIVATE)
+        val change = SystemUiPolicy.accessibilityChange(
+            hide = hide,
+            current = Settings.Secure.getString(
+                contentResolver, SystemUiPolicy.ACCESSIBILITY_SERVICES,
+            ).orEmpty(),
+            remembered = store.getString(REMEMBERED_ACCESSIBILITY, null),
+        )
+        change.write?.let {
+            Settings.Secure.putString(contentResolver, SystemUiPolicy.ACCESSIBILITY_SERVICES, it)
+        }
+        store.edit().putString(REMEMBERED_ACCESSIBILITY, change.remember).apply()
+    }
+
+    private fun applyBarVisibility() {
+        if (SystemUiPolicy.barsHidden(navBarMode)) enterImmersiveMode() else exitImmersiveMode()
     }
 
     private fun applyKeepScreenOn(enabled: Boolean) {
@@ -995,7 +1053,9 @@ class MainActivity : Activity() {
      */
     private fun keepBarsHidden() {
         window.decorView.setOnSystemUiVisibilityChangeListener { flags ->
-            if (flags and View.SYSTEM_UI_FLAG_HIDE_NAVIGATION == 0) {
+            if (SystemUiPolicy.usesListener(navBarMode) &&
+                flags and View.SYSTEM_UI_FLAG_HIDE_NAVIGATION == 0
+            ) {
                 window.decorView.postDelayed({ enterImmersiveMode() }, 1_200)
             }
         }
@@ -1033,6 +1093,9 @@ class MainActivity : Activity() {
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object {
+        private const val TAG = "NSPanelMain"
+        private const val SYSTEM_UI_STORE = "panel_system_ui"
+        private const val REMEMBERED_ACCESSIBILITY = "remembered_accessibility_services"
         private const val EXTRA_PREVIEW_UNCONFIGURED = "dev.hacompanion.panel.PREVIEW_UNCONFIGURED"
         private const val EXTRA_PREVIEW_THEME = "dev.hacompanion.panel.PREVIEW_THEME"
         private const val MICROPHONE_REQUEST = 10

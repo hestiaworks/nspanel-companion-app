@@ -1,6 +1,8 @@
 package dev.hacompanion.panel
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -187,5 +189,27 @@ class DashboardLayoutTest {
         } finally {
             directory.deleteRecursively()
         }
+    }
+
+    @Test
+    fun `system UI settings default to what the app has always done`() {
+        val layout = DashboardLayout.parse(
+            """{"schema_version":1,"revision":"r","pages":[{"id":"p","widgets":[]}]}"""
+        )
+        assertEquals(NavBarMode.LISTENER, layout.navBarMode)
+        assertFalse(layout.hideAccessibilityButton)
+    }
+
+    @Test
+    fun `system UI settings survive a round trip`() {
+        val layout = DashboardLayout.parse(
+            """{"schema_version":1,"revision":"r","nav_bar_mode":"immersive",""" +
+                """"hide_accessibility_button":true,"pages":[{"id":"p","widgets":[]}]}"""
+        )
+        assertEquals(NavBarMode.IMMERSIVE, layout.navBarMode)
+        assertTrue(layout.hideAccessibilityButton)
+        val again = DashboardLayout.parse(layout.toJson())
+        assertEquals(NavBarMode.IMMERSIVE, again.navBarMode)
+        assertTrue(again.hideAccessibilityButton)
     }
 }
