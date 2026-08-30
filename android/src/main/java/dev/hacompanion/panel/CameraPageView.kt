@@ -263,6 +263,7 @@ class CameraPageView(
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         attached = true
+        if (talkButton != null) prepareTalkback()
         // The texture can already exist when a page is re-attached, in which
         // case no listener callback is coming and nothing would start.
         currentSurface()?.let { ready -> post { startPlayer(ready) } }
@@ -421,15 +422,34 @@ class CameraPageView(
             )
             return
         }
-        if (talkback == null) {
-            talkback = PcmTalkbackStreamer(endpoint, key) { message ->
-                handler.post { if (message.contains("failed", true)) say("talkback failed") }
-            }
-        }
+        prepareTalkback()
         talkback?.setTalking(true)
         MicUsageTracker.setActive(context, true)
         onTalkingChanged(true)
         talkButton?.text = "RELEASE TO STOP"
+    }
+
+    /**
+     * Open the talkback session, ready for the first press.
+     *
+     * start() is what spawns the thread that streams; setTalking only flips
+     * a flag it reads. Creating the streamer without starting it left the
+     * microphone closed and the button silent.
+     *
+     * It is prepared as soon as the page attaches, because the session has
+     * to warm up and the first thing anyone says is the thing they most
+     * want heard.
+     */
+    private fun prepareTalkback() {
+        if (talkback != null) return
+        val endpoint = widget.talkbackUrl?.takeIf(String::isNotBlank) ?: return
+        val key = widget.talkbackKey?.takeIf(String::isNotBlank) ?: return
+        if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) !=
+            PackageManager.PERMISSION_GRANTED
+        ) return
+        talkback = PcmTalkbackStreamer(endpoint, key) { message ->
+            handler.post { if (message.contains("failed", true)) say("talkback failed") }
+        }.also { it.start() }
     }
 
     private fun stopTalking() {
