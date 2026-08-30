@@ -102,26 +102,64 @@ class CameraPageView(
     /** Starts wherever quiet mode left it, and is changeable from here on. */
     private var muted = !widget.incomingAudio
 
-    private fun secondary(label: String, onTap: () -> Unit) = TextView(context).apply {
-        text = label
-        gravity = Gravity.CENTER
-        textSize = 18f
-        letterSpacing = .08f
-        typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-        setTextColor(Color.parseColor("#F2F5F7"))
-        setBackgroundColor(Color.parseColor("#14171A"))
-        setOnClickListener { onTap() }
+    /**
+     * A secondary button, built the way the intercom call screen builds its
+     * pair: a 26 px glyph over a 16 px label, centred, 8 px apart.
+     *
+     * Destructive is the only coloured one and sits on the right, which is
+     * the rule the whole design follows for a confirm.
+     */
+    private fun secondary(
+        glyph: String,
+        label: String,
+        danger: Boolean = false,
+        onTap: () -> Unit,
+    ): LinearLayout {
+        val ink = if (danger) "#0E1012" else "#F2F5F7"
+        val mark = TextView(context).apply {
+            // Text presentation, or Android draws these from the colour
+            // emoji font and the tint is ignored.
+            text = glyph + "\ufe0e"
+            textSize = 26f
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor(if (danger) ink else "#8A9299"))
+        }
+        val caption = TextView(context).apply {
+            text = label
+            textSize = 16f
+            letterSpacing = .08f
+            gravity = Gravity.CENTER
+            typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
+            setTextColor(Color.parseColor(ink))
+        }
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setBackgroundColor(Color.parseColor(if (danger) "#D24A3F" else "#14171A"))
+            addView(mark, LinearLayout.LayoutParams(-2, -2))
+            addView(
+                caption,
+                LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(8) },
+            )
+            setOnClickListener { onTap() }
+        }
     }
 
-    private val muteButton: TextView? =
-        if (!showMute) null else secondary(if (muted) "UNMUTE" else "MUTE") { toggleMute() }
+    private val muteButton: LinearLayout? =
+        if (!showMute) null
+        else secondary("\u2298", if (muted) "UNMUTE" else "MUTE") { toggleMute() }
 
-    private val closeButton: TextView? = onClose?.let { close -> secondary("CLOSE") { close() } }
+    /** The caption inside the mute button, which changes with its state. */
+    private val muteLabel: TextView?
+        get() = muteButton?.getChildAt(1) as? TextView
+
+    private val closeButton: LinearLayout? =
+        onClose?.let { close -> secondary("\u2715", "CLOSE", danger = true) { close() } }
 
     private fun toggleMute() {
         muted = !muted
         applyVolume()
-        muteButton?.text = if (muted) "UNMUTE" else "MUTE"
+        muteLabel?.text = if (muted) "UNMUTE" else "MUTE"
     }
 
     private fun applyVolume() {
