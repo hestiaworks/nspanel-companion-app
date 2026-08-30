@@ -20,6 +20,7 @@ class PanelApiClient(
     private val onEntityChanged: (EntityState) -> Unit,
     private val onDoorbellEvent: (DoorbellEvent) -> Unit,
     private val onRestart: () -> Unit = {},
+    private val onRevoked: () -> Unit = {},
     private val onWeatherForecast: (String, String, org.json.JSONArray) -> Unit = { _, _, _ -> },
     private val onSchedules: (List<ControlSchedule>) -> Unit = {},
     private val onServerTime: (Long, String) -> Unit = { _, _ -> },
@@ -115,6 +116,11 @@ class PanelApiClient(
                 // arrives while the socket is being read, which is exactly
                 // the case the add-on's ADB path exists to cover.
                 "restart" -> handler.post { onRestart() }
+                // Unpaired from Home Assistant, said while the panel is
+                // still listening. Without this it carries on showing a
+                // dashboard it is no longer entitled to until something
+                // makes it reconnect and be refused.
+                "revoked" -> handler.post { onRevoked() }
             }
         }
 

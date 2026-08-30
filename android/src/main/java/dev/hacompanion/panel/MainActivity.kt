@@ -708,6 +708,7 @@ class MainActivity : Activity() {
                 onEntityChanged = ::activateEntityState,
                 onDoorbellEvent = ::showDoorbellEvent,
                 onRestart = ::restartPanel,
+                onRevoked = ::handlePairingRevoked,
                 onWeatherForecast = dashboardView::updateWeatherForecast,
                 onSchedules = dashboardView::setSchedules,
                 onServerTime = { millis, timezone ->
