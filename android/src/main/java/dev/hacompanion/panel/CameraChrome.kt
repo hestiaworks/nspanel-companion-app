@@ -24,11 +24,25 @@ import android.widget.TextView
  */
 class StripedBackground(context: Context) : View(context) {
 
-    private val dark = Paint().apply { color = Color.parseColor("#141414") }
-    private val light = Paint().apply { color = Color.parseColor("#191919") }
+    /**
+     * Two tones a few points apart, sitting just off the page's own ground.
+     *
+     * Section 7 draws this on a dark frame and gives #141414 over #191919.
+     * Those are the dark theme's, and printing them under a light theme
+     * puts a black rectangle in the middle of a pale page — which reads as
+     * a fault rather than as a camera waiting. The light pair keeps the same
+     * relationship the other way up: barely recessed from the canvas, with
+     * the stripe a shade lighter than the ground it lies on.
+     */
+    private val ground = Paint().apply {
+        color = if (PanelTheme.isDark) Color.parseColor("#141414") else Color.parseColor("#E3E1DD")
+    }
+    private val stripe = Paint().apply {
+        color = if (PanelTheme.isDark) Color.parseColor("#191919") else Color.parseColor("#EAE8E4")
+    }
 
     override fun onDraw(canvas: Canvas) {
-        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), dark)
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), ground)
         // 135° runs down-left, so the band's x offset decreases as y grows.
         // Stepping along the diagonal by the period and drawing a
         // parallelogram tall enough to cross the view covers it exactly once.
@@ -44,7 +58,7 @@ class StripedBackground(context: Context) : View(context) {
             path.lineTo(x + band - height, height.toFloat())
             path.lineTo(x - height, height.toFloat())
             path.close()
-            canvas.drawPath(path, light)
+            canvas.drawPath(path, stripe)
             x += period
         }
     }

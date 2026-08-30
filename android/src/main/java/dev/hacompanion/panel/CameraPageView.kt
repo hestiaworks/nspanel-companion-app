@@ -182,7 +182,11 @@ class CameraPageView(
      */
     private fun say(state: String, live: Boolean = false) {
         badge.show("$name · $state", live)
-        stripes.visibility = if (live) GONE else VISIBLE
+        // The stripes are not the badge's to hide. A player reports prepared
+        // before it has drawn anything, so clearing the ground here left a
+        // black rectangle until the first frame arrived — invisible on a
+        // dark theme, a black flash on a light one.
+        if (!live) stripes.visibility = VISIBLE
     }
     private var player: MediaPlayer? = null
 
@@ -353,11 +357,18 @@ class CameraPageView(
                 Log.i(TAG, "timing: prepared at ${since()} ms")
                 handler.removeCallbacks(connectTimeout)
                 it.start()
-                say("live", live = true)
+                // Prepared is not live. The stream is connected and has
+                // drawn nothing yet, and a badge saying live over a striped
+                // ground contradicts itself.
+                say("connecting")
             }
             setOnInfoListener { _, what, _ ->
                 if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
                     Log.i(TAG, "timing: first frame at ${since()} ms")
+                    // There is a picture now: the ground goes and the badge
+                    // can honestly say so.
+                    stripes.visibility = GONE
+                    say("live", live = true)
                 }
                 if (what == MediaPlayer.MEDIA_INFO_BUFFERING_START) {
                     say("buffering")
