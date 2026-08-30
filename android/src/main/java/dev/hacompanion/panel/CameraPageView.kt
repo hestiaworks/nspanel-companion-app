@@ -1,5 +1,10 @@
 package dev.hacompanion.panel
 
+import android.Manifest
+import android.app.Activity
+import android.content.ContextWrapper
+import android.content.pm.PackageManager
+import android.view.MotionEvent
 import android.content.Context
 import android.graphics.Color
 import android.media.AudioManager
@@ -35,7 +40,6 @@ class CameraPageView(
     private val widget: DashboardWidget,
     /** A URL warmed while the camera was one swipe away, if there is one. */
     private val claimWarmed: () -> String? = { null },
-    private val openFullscreen: (DashboardWidget) -> Unit,
 ) : FrameLayout(context), TextureView.SurfaceTextureListener {
     /**
      * A TextureView, not a SurfaceView.
@@ -57,12 +61,44 @@ class CameraPageView(
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(5, TimeUnit.SECONDS)
         .build()
-    private val status = TextView(context).apply {
-        setTextColor(Color.WHITE)
-        textSize = 12f
-        gravity = Gravity.CENTER
-        setBackgroundColor(0x66000000)
-        text = if (widget.streamBaseUrl.isNullOrBlank()) "Camera not configured" else "Connecting…"
+    private var talkback: PcmTalkbackStreamer? = null
+
+    /**
+     * The hold-to-talk button, when the page is configured to offer one.
+     *
+     * The page is already full-bleed, so the button lives on it rather than
+     * behind a tap that opens the same picture again — which is what the
+     * fullscreen action it replaced did.
+     */
+    private val talkButton: TextView? =
+        if (!widget.showIntercom || widget.talkbackUrl.isNullOrBlank() ||
+            widget.talkbackKey.isNullOrBlank()
+        ) null else TextView(context).apply {
+            text = "HOLD TO TALK"
+            gravity = Gravity.CENTER
+            textSize = 18f
+            letterSpacing = .08f
+            typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
+            setTextColor(Color.parseColor("#0E1012"))
+            setBackgroundColor(Color.parseColor("#4F8FFF"))
+        }
+
+    private val stripes = StripedBackground(context)
+    private val badge = LiveBadge(context)
+
+    /** The camera's name, which the badge says the state of. */
+    private val name = widget.label?.takeIf(String::isNotBlank) ?: "Camera"
+
+    /**
+     * Say what the stream is doing, in the corner rather than along the foot.
+     *
+     * The stripes go once there is a picture to cover them, and come back
+     * whenever there is not — so the page never shows a black rectangle and
+     * leaves you guessing whether it is loading or broken.
+     */
+    private fun say(state: String, live: Boolean = false) {
+        badge.show("$name · $state", live)
+        stripes.visibility = if (live) GONE else VISIBLE
     }
     private var player: MediaPlayer? = null
 
@@ -77,8 +113,7 @@ class CameraPageView(
     private var attached = false
     private val connectTimeout = Runnable {
         if (attached && player != null) {
-            status.alpha = 1f
-            status.text = "Camera reconnecting…"
+            say("reconnecting")
             releasePlayer()
             currentSurface()?.let { ready -> handler.postDelayed({ startPlayer(ready) }, 600) }
         }
@@ -86,10 +121,27 @@ class CameraPageView(
 
     init {
         setBackgroundColor(Color.BLACK)
-        addView(surface, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        addView(status, LayoutParams(LayoutParams.MATCH_PARENT, dp(38), Gravity.BOTTOM))
+        // The picture gives up the button row's height rather than being
+        // covered by it: a talk button over the doorstep is a talk button
+        // you cannot see past.
+        val below = if (talkButton == null) 0 else dp(88)
+        fun picture() = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
+            .apply { bottomMargin = below }
+        addView(stripes, picture())
+        addView(surface, picture())
+        addView(badge, LiveBadge.layout(context))
+        talkButton?.let { button ->
+            addView(button, LayoutParams(LayoutParams.MATCH_PARENT, dp(88), Gravity.BOTTOM))
+            button.setOnTouchListener { _, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> startTalking()
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> stopTalking()
+                }
+                true
+            }
+        }
         surface.surfaceTextureListener = this
-        if (widget.tapAction != "none") setOnClickListener { openFullscreen(widget) }
+        say(if (widget.streamBaseUrl.isNullOrBlank()) "not configured" else "connecting")
     }
 
     override fun onSurfaceTextureAvailable(texture: SurfaceTexture, width: Int, height: Int) =
@@ -138,6 +190,9 @@ class CameraPageView(
     override fun onDetachedFromWindow() {
         attached = false
         handler.removeCallbacksAndMessages(null)
+        stopTalking()
+        talkback?.stop()
+        talkback = null
         releasePlayer()
         super.onDetachedFromWindow()
     }
@@ -147,13 +202,12 @@ class CameraPageView(
         startedAt = android.os.SystemClock.elapsedRealtime()
         retriedFresh = false
         Log.i(TAG, "timing: surface ready, resolving source")
-        status.alpha = 1f
-        status.text = "Connecting to Scrypted prebuffer…"
+        say("connecting")
         resolveSource(allowWarmed = true) { source ->
             Log.i(TAG, "timing: source resolved at ${since()} ms")
             if (!attached || player != null || !target.isValid) return@resolveSource
             if (source.isBlank()) {
-                status.text = "Camera not configured"
+                say("not configured")
                 return@resolveSource
             }
             beginPlayback(target, source)
@@ -197,19 +251,16 @@ class CameraPageView(
                 Log.i(TAG, "timing: prepared at ${since()} ms")
                 handler.removeCallbacks(connectTimeout)
                 it.start()
-                status.text = "Live"
-                status.postDelayed({ status.alpha = 0f }, 1_200)
+                say("live", live = true)
             }
             setOnInfoListener { _, what, _ ->
                 if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
                     Log.i(TAG, "timing: first frame at ${since()} ms")
                 }
                 if (what == MediaPlayer.MEDIA_INFO_BUFFERING_START) {
-                    status.alpha = 1f
-                    status.text = "Buffering…"
+                    say("buffering")
                 } else if (what == MediaPlayer.MEDIA_INFO_BUFFERING_END) {
-                    status.text = "Live"
-                    status.postDelayed({ status.alpha = 0f }, 1_200)
+                    say("live", live = true)
                 }
                 false
             }
@@ -217,8 +268,7 @@ class CameraPageView(
                 handler.removeCallbacks(connectTimeout)
                 Log.w(TAG, "Camera stream failed: $what/$extra")
                 if (retryWithFreshSource()) return@setOnErrorListener true
-                status.alpha = 1f
-                status.text = "Stream unavailable · $what/$extra"
+                say("unavailable")
                 true
             }
             Log.i(TAG, "timing: prepareAsync at ${since()} ms")
@@ -239,18 +289,60 @@ class CameraPageView(
         retriedFresh = true
         Log.i(TAG, "Warmed session was dead; resolving a fresh one")
         releasePlayer()
-        status.alpha = 1f
-        status.text = "Reconnecting…"
+        say("reconnecting")
         resolveSource(allowWarmed = false) { source ->
             if (!attached || player != null || !target.isValid) return@resolveSource
             if (source.isBlank()) {
-                status.text = "Camera not configured"
+                say("not configured")
                 return@resolveSource
             }
             beginPlayback(target, source)
         }
         return true
     }
+
+    /**
+     * Begin talking, asking for the microphone the first time.
+     *
+     * A View cannot request a permission, so the request goes through the
+     * activity hosting the page; the button does nothing until it is
+     * granted, and the next press works.
+     */
+    private fun startTalking() {
+        val endpoint = widget.talkbackUrl ?: return
+        val key = widget.talkbackKey ?: return
+        if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            say("microphone not allowed")
+            hostActivity()?.requestPermissions(
+                arrayOf(Manifest.permission.RECORD_AUDIO), MainActivity.MICROPHONE_REQUEST,
+            )
+            return
+        }
+        if (talkback == null) {
+            talkback = PcmTalkbackStreamer(endpoint, key) { message ->
+                handler.post { if (message.contains("failed", true)) say("talkback failed") }
+            }
+        }
+        talkback?.setTalking(true)
+        MicUsageTracker.setActive(context, true)
+        talkButton?.text = "RELEASE TO STOP"
+    }
+
+    private fun stopTalking() {
+        talkback?.setTalking(false)
+        MicUsageTracker.setActive(context, false)
+        talkButton?.text = "HOLD TO TALK"
+    }
+
+    private tailrec fun Context.unwrap(): Activity? = when (this) {
+        is Activity -> this
+        is ContextWrapper -> baseContext.unwrap()
+        else -> null
+    }
+
+    private fun hostActivity(): Activity? = context.unwrap()
 
     private fun rtspUrl(source: String): Uri {
         val uri = Uri.parse(source)

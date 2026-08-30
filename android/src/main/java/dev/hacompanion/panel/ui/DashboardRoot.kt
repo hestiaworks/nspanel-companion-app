@@ -99,7 +99,6 @@ class DashboardUiState {
 /** Everything the dashboard's pages call back into. */
 interface DashboardActions : ControlActions {
     fun openAdmin()
-    fun openCamera(widget: DashboardWidget)
 
     /** A stream URL warmed while this camera was one swipe away, if any. */
     fun claimWarmedStream(widget: DashboardWidget): String?
@@ -192,7 +191,7 @@ private fun PageContent(
                     context,
                     only,
                     claimWarmed = { actions.claimWarmedStream(only) },
-                ) { actions.openCamera(only) }
+                )
             },
         )
         return

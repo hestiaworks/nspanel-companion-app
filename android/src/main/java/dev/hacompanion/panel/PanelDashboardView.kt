@@ -96,7 +96,6 @@ class PanelDashboardView(
         data: JSONObject,
     ) -> Boolean,
     private val openAdmin: () -> Unit = {},
-    private val openCamera: (DashboardWidget) -> Unit = {},
     private val upsertSchedule: (ControlSchedule) -> Boolean = { false },
     private val deleteSchedule: (String) -> Boolean = { false },
 ) : LinearLayout(context) {
@@ -160,9 +159,6 @@ class PanelDashboardView(
      */
     private val dashboardActions = object : DashboardActions {
         override fun openAdmin() = this@PanelDashboardView.openAdmin()
-
-        override fun openCamera(widget: DashboardWidget) =
-            this@PanelDashboardView.openCamera(widget)
 
         override fun claimWarmedStream(widget: DashboardWidget): String? =
             streamWarmer.claim(widget)

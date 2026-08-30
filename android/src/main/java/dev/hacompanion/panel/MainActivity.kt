@@ -180,7 +180,6 @@ class MainActivity : Activity() {
                     ?: (haClient?.callService(domain, service, entityId, data) == true)
             },
             ::showAdminDialog,
-            ::showCamera,
             { schedule -> panelApiClient?.upsertSchedule(schedule) == true },
             { scheduleId -> panelApiClient?.deleteSchedule(scheduleId) == true },
         )
@@ -848,19 +847,6 @@ class MainActivity : Activity() {
         startActivity(doorbellIntent())
     }
 
-    private fun showCamera(widget: DashboardWidget) {
-        val intent = rtspDoorbellIntent()
-            .putExtra(DoorbellActivity.EXTRA_AUTO_CLOSE_MS, 0L)
-            .putExtra(DoorbellActivity.EXTRA_QUIET_MODE, !widget.incomingAudio)
-        widget.streamBaseUrl?.let { intent.putExtra(DoorbellActivity.EXTRA_STREAM_BASE_URL, it) }
-        widget.streamName?.let { intent.putExtra(DoorbellActivity.EXTRA_STREAM_NAME, it) }
-        if (widget.tapAction == "intercom") {
-            widget.talkbackUrl?.let { intent.putExtra(DoorbellActivity.EXTRA_TALKBACK_URL, it) }
-            widget.talkbackKey?.let { intent.putExtra(DoorbellActivity.EXTRA_TALKBACK_KEY, it) }
-        }
-        startActivity(intent)
-    }
-
     private fun showDoorbellEvent(event: DoorbellEvent) {
         val intent = rtspDoorbellIntent()
             .putExtra(DoorbellActivity.EXTRA_QUIET_MODE, event.quietMode)
@@ -1101,7 +1087,7 @@ class MainActivity : Activity() {
         private const val REMEMBERED_ACCESSIBILITY = "remembered_accessibility_services"
         private const val EXTRA_PREVIEW_UNCONFIGURED = "dev.hacompanion.panel.PREVIEW_UNCONFIGURED"
         private const val EXTRA_PREVIEW_THEME = "dev.hacompanion.panel.PREVIEW_THEME"
-        private const val MICROPHONE_REQUEST = 10
+        internal const val MICROPHONE_REQUEST = 10
         private const val HOME_ROLE_REQUEST = 11
         private const val EXTRA_HA_URL = "dev.hacompanion.panel.HA_URL"
         private const val EXTRA_HA_TOKEN = "dev.hacompanion.panel.HA_TOKEN"

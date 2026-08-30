@@ -131,7 +131,14 @@ data class DashboardWidget(
     val talkbackUrl: String? = null,
     val talkbackKey: String? = null,
     val incomingAudio: Boolean = false,
-    val tapAction: String = "fullscreen",
+    /**
+     * Whether the camera page offers a hold-to-talk button.
+     *
+     * This replaced a tap_action of none/fullscreen/intercom. Fullscreen
+     * meant nothing on a page that is already full-bleed, so the only choice
+     * that carried information was the intercom, and a checkbox says it.
+     */
+    val showIntercom: Boolean = false,
     val showSchedule: Boolean = true,
     val gradualOpenScript: String? = null,
     val gradualCloseScript: String? = null,
@@ -156,7 +163,7 @@ data class DashboardWidget(
         if (type == "camera") {
             streamBaseUrl?.let { put("stream_base_url", it) }; streamName?.let { put("stream_name", it) }
             talkbackUrl?.let { put("talkback_url", it) }; talkbackKey?.let { put("talkback_key", it) }
-            put("incoming_audio", incomingAudio); put("tap_action", tapAction)
+            put("incoming_audio", incomingAudio); put("show_intercom", showIntercom)
         }
     }
 
@@ -196,12 +203,22 @@ data class DashboardWidget(
             val talkbackUrl = json.optString("talkback_url").takeIf(String::isNotBlank)
             val talkbackKey = json.optString("talkback_key").takeIf(String::isNotBlank)
             val incomingAudio = json.optBoolean("incoming_audio", false)
-            val tapAction = json.optString("tap_action", "fullscreen")
-            require(type != "camera" || tapAction in setOf("none", "fullscreen", "intercom")) { "Invalid camera tap action" }
+            // A layout written before the checkbox existed still answers
+            // the question, in the old language.
+            // optBoolean would read "yes" as true; the shared fixture calls
+            // a non-boolean here invalid, so the type is checked rather than
+            // coerced.
+            val showIntercom = if (json.has("show_intercom")) {
+                val raw = json.get("show_intercom")
+                require(raw is Boolean) { "show_intercom must be a boolean" }
+                raw
+            } else {
+                json.optString("tap_action") == "intercom"
+            }
             require(type != "camera" || streamBaseUrl == null || streamBaseUrl.startsWith("rtsp://") ||
                 streamBaseUrl.startsWith("rtsps://") || streamBaseUrl.startsWith("http://") ||
                 streamBaseUrl.startsWith("https://")) { "Invalid camera stream URL" }
-            return DashboardWidget(type, entityId, label, forecastDays, showHourly, icon, showTimer, timerPresets, cardTap, showFanSpeed, streamBaseUrl, streamName, talkbackUrl, talkbackKey, incomingAudio, tapAction, showSchedule, gradualOpenScript, gradualCloseScript)
+            return DashboardWidget(type, entityId, label, forecastDays, showHourly, icon, showTimer, timerPresets, cardTap, showFanSpeed, streamBaseUrl, streamName, talkbackUrl, talkbackKey, incomingAudio, showIntercom, showSchedule, gradualOpenScript, gradualCloseScript)
         }
 
         val CONTROL_ICONS = setOf(
