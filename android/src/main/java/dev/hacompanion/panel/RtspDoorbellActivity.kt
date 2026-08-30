@@ -31,10 +31,10 @@ class RtspDoorbellActivity : Activity() {
     private var pausedCloseRemainingMs = 0L
 
     private val autoCloseMs by lazy {
-        intent.getLongExtra(DoorbellActivity.EXTRA_AUTO_CLOSE_MS, 60_000L)
+        intent.getLongExtra(DoorbellIntent.EXTRA_AUTO_CLOSE_MS, 60_000L)
     }
     private val talkExtendMs by lazy {
-        intent.getLongExtra(DoorbellActivity.EXTRA_TALK_EXTEND_MS, 15_000L).coerceIn(0L, 60_000L)
+        intent.getLongExtra(DoorbellIntent.EXTRA_TALK_EXTEND_MS, 15_000L).coerceIn(0L, 60_000L)
     }
 
     /**
@@ -46,17 +46,17 @@ class RtspDoorbellActivity : Activity() {
     private val widget by lazy {
         DashboardWidget(
             type = "camera",
-            label = intent.getStringExtra(DoorbellActivity.EXTRA_STREAM_NAME)
+            label = intent.getStringExtra(DoorbellIntent.EXTRA_STREAM_NAME)
                 ?.replace('_', ' ')
                 ?.replaceFirstChar { it.uppercase() },
-            streamBaseUrl = intent.getStringExtra(DoorbellActivity.EXTRA_STREAM_BASE_URL)
-                ?: DoorbellActivity.DEFAULT_STREAM_BASE_URL,
-            streamName = intent.getStringExtra(DoorbellActivity.EXTRA_STREAM_NAME)
-                ?: DoorbellActivity.DEFAULT_STREAM_NAME,
-            talkbackUrl = intent.getStringExtra(DoorbellActivity.EXTRA_TALKBACK_URL)?.trim(),
-            talkbackKey = intent.getStringExtra(DoorbellActivity.EXTRA_TALKBACK_KEY)?.trim(),
+            streamBaseUrl = intent.getStringExtra(DoorbellIntent.EXTRA_STREAM_BASE_URL)
+                ?: DoorbellIntent.DEFAULT_STREAM_BASE_URL,
+            streamName = intent.getStringExtra(DoorbellIntent.EXTRA_STREAM_NAME)
+                ?: DoorbellIntent.DEFAULT_STREAM_NAME,
+            talkbackUrl = intent.getStringExtra(DoorbellIntent.EXTRA_TALKBACK_URL)?.trim(),
+            talkbackKey = intent.getStringExtra(DoorbellIntent.EXTRA_TALKBACK_KEY)?.trim(),
             // Quiet mode is a ring you can see but not hear.
-            incomingAudio = !intent.getBooleanExtra(DoorbellActivity.EXTRA_QUIET_MODE, false),
+            incomingAudio = !intent.getBooleanExtra(DoorbellIntent.EXTRA_QUIET_MODE, false),
             showIntercom = true,
         )
     }

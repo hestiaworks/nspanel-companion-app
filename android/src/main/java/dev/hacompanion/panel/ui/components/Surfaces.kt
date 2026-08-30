@@ -24,24 +24,6 @@ import dev.hacompanion.panel.ui.theme.PanelFont
 import dev.hacompanion.panel.ui.theme.LocalPanelRadius
 import dev.hacompanion.panel.ui.theme.LocalPanelSize
 import dev.hacompanion.panel.ui.theme.LocalPanelType
-
-/** The rounded, outlined surface every widget sits on. */
-@Composable
-fun PanelCard(
-    modifier: Modifier = Modifier,
-    radius: Dp = Dp.Unspecified,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    val colors = LocalPanelColors.current
-    val shape = RoundedCornerShape(radius.takeOrElse { LocalPanelRadius.current.card })
-    Column(
-        modifier
-            .background(colors.card, shape)
-            .border(LocalPanelSize.current.stroke, colors.line, shape),
-        content = content,
-    )
-}
-
 /** Panel text. `muted` selects the secondary ink used for supporting detail. */
 @Composable
 fun PanelText(

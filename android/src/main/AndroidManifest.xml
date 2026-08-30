@@ -56,23 +56,6 @@
         </activity>
 
         <activity
-            android:name=".DoorbellActivity"
-            android:configChanges="keyboardHidden|orientation|screenSize"
-            android:exported="false"
-            android:launchMode="singleTop"
-            android:process=":doorbell"
-            android:screenOrientation="reversePortrait"
-            android:theme="@style/AppTheme" />
-
-        <activity
-            android:name=".WebViewDoorbellActivity"
-            android:configChanges="keyboardHidden|orientation|screenSize"
-            android:exported="false"
-            android:process=":doorbell"
-            android:screenOrientation="reversePortrait"
-            android:theme="@style/AppTheme" />
-
-        <activity
             android:name=".RtspDoorbellActivity"
             android:configChanges="keyboardHidden|orientation|screenSize"
             android:exported="false"

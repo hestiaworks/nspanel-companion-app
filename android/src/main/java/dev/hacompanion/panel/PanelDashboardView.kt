@@ -735,36 +735,6 @@ class PanelDashboardView(
     private fun widgetFor(entityId: String): DashboardWidget? =
         layout.pages.flatMap { it.widgets }.firstOrNull { it.entityId == entityId }
 
-    private fun primaryText(value: String, size: Float): TextView =
-        TextView(context).apply {
-            text = value
-            textSize = size
-            setTextColor(PanelTheme.ink)
-        }
-
-    private fun secondaryText(value: String): TextView =
-        TextView(context).apply {
-            text = value
-            textSize = 13f
-            setTextColor(MUTED)
-        }
-
-    /** The flat button the modal dialogs are built from. */
-    private fun modalAction(label: String, action: () -> Unit): TextView = TextView(context).apply {
-        text = label
-        textSize = 12f
-        typeface = Typeface.DEFAULT_BOLD
-        gravity = Gravity.CENTER
-        setTextColor(PanelTheme.ink)
-        background = cardBackground(PanelTheme.panel, PanelTheme.line, 13)
-        isClickable = true
-        isFocusable = true
-        setOnClickListener { action() }
-    }
-
-    private fun deviceSeekBar(value: Int, onChanged: (Int) -> Unit): View =
-        PanelSliderView(context, value, onChanged).apply { isEnabled = online }
-
     private fun showScheduleListDialog(entity: EntityState, widget: DashboardWidget?) {
         val values = schedules.filter { it.entityId == entity.entityId }.sortedBy { it.time }
         if (values.isEmpty()) {
@@ -913,83 +883,6 @@ class PanelDashboardView(
         }
     }
 
-    private fun showFanSpeedDialog(entity: EntityState) {
-        val percent = entity.numberAttribute("percentage")?.roundToInt() ?: 0
-        showPanelDialog(context, PanelTheme.isDark) { dismiss ->
-            PanelDialogHeader("Fan speed", entity.friendlyName)
-            PanelText(
-                "$percent%",
-                LocalPanelType.current.reading,
-                Modifier.fillMaxWidth(),
-                bold = true,
-                align = TextAlign.Center,
-            )
-            AndroidView(
-                modifier = Modifier.fillMaxWidth().height(LocalPanelSize.current.levelBand),
-                factory = { host ->
-                    PanelSliderView(host, percent) { value ->
-                        callService("fan", "set_percentage", entity.entityId, JSONObject().put("percentage", value))
-                    }
-                },
-            )
-            Row(Modifier.fillMaxWidth()) {
-                listOf(25 to "Low", 50 to "Medium", 100 to "High").forEach { (value, label) ->
-                    Box(Modifier.weight(1f).padding(horizontal = 3.dp, vertical = 4.dp)) {
-                        PanelDialogButton(
-                            label = label,
-                            height = LocalPanelSize.current.presetCell,
-                            active = false,
-                            radius = LocalPanelRadius.current.card,
-                        ) {
-                            callService("fan", "set_percentage", entity.entityId, JSONObject().put("percentage", value))
-                            dismiss()
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private fun showCoverSheet(entity: EntityState) {
-        val entityId = entity.entityId
-        val name = widgetFor(entityId)?.label ?: entity.friendlyName
-        val canPosition =
-            entity.attributes.optInt("supported_features", 0) and COVER_SET_POSITION != 0
-        showPanelSheet(context, PanelTheme.isDark) { dismiss ->
-            val live = states[entityId]
-            val position = live?.numberAttribute("current_position")?.roundToInt() ?: 0
-            val moving = live?.state in setOf("opening", "closing")
-            val subtitle = buildString {
-                append(sentenceCase(live?.state ?: "unknown"))
-                // While it travels, the number that matters is where it is
-                // going — the fill already says where it is.
-                if (moving) {
-                    live?.numberAttribute("current_position")?.let { append(" \u00b7 $position%") }
-                }
-            }
-            Sheet(name, subtitle, dismiss) {
-                if (canPosition) {
-                    SheetLevel(position, height = LocalPanelSize.current.coverBand) { value ->
-                        callService(
-                            "cover", "set_cover_position", entityId,
-                            JSONObject().put("position", value),
-                        )
-                    }
-                }
-                SheetActions(
-                    listOf(
-                        SheetAction("open", "\u25b2", "OPEN"),
-                        SheetAction("stop", "\u25a0", "STOP", weight = 1.4f, active = moving),
-                        SheetAction("close", "\u25bc", "CLOSE"),
-                    ),
-                ) { action ->
-                    callService("cover", "${action}_cover", entityId, JSONObject())
-                    if (action != "stop") dismiss()
-                }
-            }
-        }
-    }
-
     /**
      * The timer as a sheet: the presets the layout chose, and a way out.
      *
@@ -1094,10 +987,6 @@ class PanelDashboardView(
         }
     }
 
-    private fun resolveEntity(widget: DashboardWidget, fallbackDomain: String? = null): EntityState? =
-        widget.entityId?.let(states::get)
-            ?: fallbackDomain?.let { domain -> states.values.firstOrNull { it.domain == domain } }
-
     private fun changeTemperature(climate: EntityState, value: Double) {
         val min = climate.numberAttribute("min_temp") ?: 7.0
         val max = climate.numberAttribute("max_temp") ?: 35.0
@@ -1126,26 +1015,6 @@ class PanelDashboardView(
 
     private fun temperatureStep(climate: EntityState): Double =
         climate.numberAttribute("target_temp_step") ?: 0.5
-
-    private fun roundActionButton(
-        label: String,
-        size: Int = 48,
-        action: () -> Unit,
-    ): Button =
-        Button(context).apply {
-            text = label
-            textSize = 26f
-            isAllCaps = false
-            setTextColor(PanelTheme.ink)
-            background = cardBackground(CONTROL)
-            minWidth = 0
-            minimumWidth = 0
-            setPadding(0, 0, 0, 0)
-            setOnClickListener { action() }
-            isEnabled = online
-            alpha = if (online) 1f else .55f
-            layoutParams = LayoutParams(dp(size), dp(size)).apply { setMargins(dp(5), 0, dp(5), 0) }
-        }
 
     private fun cardBackground(
         color: Int,

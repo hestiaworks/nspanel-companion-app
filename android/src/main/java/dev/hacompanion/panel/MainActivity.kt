@@ -920,78 +920,77 @@ class MainActivity : Activity() {
         Toast.makeText(this, "Panel was unpaired from Home Assistant", Toast.LENGTH_LONG).show()
     }
 
-    private fun showDoorbell() {
-        startActivity(doorbellIntent())
+    private fun showDoorbell(quiet: Boolean = false) {
+        val camera = layoutStore.loadOrNull()?.pages
+            ?.flatMap { it.widgets }
+            ?.firstOrNull { it.type == "camera" && !it.streamBaseUrl.isNullOrBlank() }
+        val intent = rtspDoorbellIntent()
+            .putExtra(DoorbellIntent.EXTRA_QUIET_MODE, quiet)
+            // A test ring should not wander off on a timer while it is being
+            // looked at; a real one still closes itself.
+            .putExtra(DoorbellIntent.EXTRA_AUTO_CLOSE_MS, 0L)
+        camera?.streamBaseUrl?.let { intent.putExtra(DoorbellIntent.EXTRA_STREAM_BASE_URL, it) }
+        camera?.streamName?.let { intent.putExtra(DoorbellIntent.EXTRA_STREAM_NAME, it) }
+        camera?.talkbackUrl?.let { intent.putExtra(DoorbellIntent.EXTRA_TALKBACK_URL, it) }
+        camera?.talkbackKey?.let { intent.putExtra(DoorbellIntent.EXTRA_TALKBACK_KEY, it) }
+        startActivity(intent)
     }
 
     private fun showDoorbellEvent(event: DoorbellEvent) {
         val intent = rtspDoorbellIntent()
-            .putExtra(DoorbellActivity.EXTRA_QUIET_MODE, event.quietMode)
+            .putExtra(DoorbellIntent.EXTRA_QUIET_MODE, event.quietMode)
         event.streamBaseUrl?.let {
-            intent.putExtra(DoorbellActivity.EXTRA_STREAM_BASE_URL, it)
+            intent.putExtra(DoorbellIntent.EXTRA_STREAM_BASE_URL, it)
         }
         event.streamName?.let {
-            intent.putExtra(DoorbellActivity.EXTRA_STREAM_NAME, it)
+            intent.putExtra(DoorbellIntent.EXTRA_STREAM_NAME, it)
         }
         event.talkbackUrl?.let {
-            intent.putExtra(DoorbellActivity.EXTRA_TALKBACK_URL, it)
+            intent.putExtra(DoorbellIntent.EXTRA_TALKBACK_URL, it)
         }
         event.talkbackKey?.let {
-            intent.putExtra(DoorbellActivity.EXTRA_TALKBACK_KEY, it)
+            intent.putExtra(DoorbellIntent.EXTRA_TALKBACK_KEY, it)
         }
         event.talkbackTestUrl?.let {
-            intent.putExtra(DoorbellActivity.EXTRA_TALKBACK_TEST_URL, it)
+            intent.putExtra(DoorbellIntent.EXTRA_TALKBACK_TEST_URL, it)
         }
         event.autoCloseMs?.let {
-            intent.putExtra(DoorbellActivity.EXTRA_AUTO_CLOSE_MS, it)
+            intent.putExtra(DoorbellIntent.EXTRA_AUTO_CLOSE_MS, it)
         }
-        intent.putExtra(DoorbellActivity.EXTRA_TALK_EXTEND_MS, event.talkExtendMs)
+        intent.putExtra(DoorbellIntent.EXTRA_TALK_EXTEND_MS, event.talkExtendMs)
         startActivity(intent)
     }
 
-    private fun showQuietDoorbell() {
-        startActivity(
-            doorbellIntent().putExtra(DoorbellActivity.EXTRA_QUIET_MODE, true),
-        )
-    }
+    private fun showQuietDoorbell() = showDoorbell(quiet = true)
 
     private fun openDebugDoorbell(intent: Intent?) {
         if (!BuildConfig.DEBUG || intent == null) return
-        val baseUrl = intent.getStringExtra(DoorbellActivity.EXTRA_STREAM_BASE_URL) ?: return
-        val streamName = intent.getStringExtra(DoorbellActivity.EXTRA_STREAM_NAME) ?: return
-        intent.removeExtra(DoorbellActivity.EXTRA_STREAM_BASE_URL)
-        intent.removeExtra(DoorbellActivity.EXTRA_STREAM_NAME)
+        val baseUrl = intent.getStringExtra(DoorbellIntent.EXTRA_STREAM_BASE_URL) ?: return
+        val streamName = intent.getStringExtra(DoorbellIntent.EXTRA_STREAM_NAME) ?: return
+        intent.removeExtra(DoorbellIntent.EXTRA_STREAM_BASE_URL)
+        intent.removeExtra(DoorbellIntent.EXTRA_STREAM_NAME)
         startActivity(
             rtspDoorbellIntent()
-                .putExtra(DoorbellActivity.EXTRA_STREAM_BASE_URL, baseUrl)
-                .putExtra(DoorbellActivity.EXTRA_STREAM_NAME, streamName)
+                .putExtra(DoorbellIntent.EXTRA_STREAM_BASE_URL, baseUrl)
+                .putExtra(DoorbellIntent.EXTRA_STREAM_NAME, streamName)
                 .putExtra(
-                    DoorbellActivity.EXTRA_START_TALKING,
-                    intent.getBooleanExtra(DoorbellActivity.EXTRA_START_TALKING, false),
+                    DoorbellIntent.EXTRA_START_TALKING,
+                    intent.getBooleanExtra(DoorbellIntent.EXTRA_START_TALKING, false),
                 )
                 .putExtra(
-                    DoorbellActivity.EXTRA_USE_WEBVIEW,
-                    intent.getBooleanExtra(DoorbellActivity.EXTRA_USE_WEBVIEW, false),
+                    DoorbellIntent.EXTRA_AUTO_CLOSE_MS,
+                    intent.getLongExtra(DoorbellIntent.EXTRA_AUTO_CLOSE_MS, 60_000L),
                 )
                 .putExtra(
-                    DoorbellActivity.EXTRA_AUTO_CLOSE_MS,
-                    intent.getLongExtra(DoorbellActivity.EXTRA_AUTO_CLOSE_MS, 60_000L),
+                    DoorbellIntent.EXTRA_TALK_EXTEND_MS,
+                    intent.getLongExtra(DoorbellIntent.EXTRA_TALK_EXTEND_MS, 15_000L),
                 )
                 .putExtra(
-                    DoorbellActivity.EXTRA_TALK_EXTEND_MS,
-                    intent.getLongExtra(DoorbellActivity.EXTRA_TALK_EXTEND_MS, 15_000L),
-                )
-                .putExtra(
-                    DoorbellActivity.EXTRA_QUIET_MODE,
-                    intent.getBooleanExtra(DoorbellActivity.EXTRA_QUIET_MODE, false),
+                    DoorbellIntent.EXTRA_QUIET_MODE,
+                    intent.getBooleanExtra(DoorbellIntent.EXTRA_QUIET_MODE, false),
                 ),
         )
     }
-
-    private fun doorbellIntent(): Intent =
-        Intent(this, DoorbellActivity::class.java).addFlags(
-            Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP,
-        )
 
     private fun rtspDoorbellIntent(): Intent =
         Intent(this, RtspDoorbellActivity::class.java).addFlags(
