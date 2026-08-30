@@ -18,6 +18,7 @@ import android.graphics.SurfaceTexture
 import android.view.Surface
 import android.view.TextureView
 import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.widget.TextView
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -40,6 +41,21 @@ class CameraPageView(
     private val widget: DashboardWidget,
     /** A URL warmed while the camera was one swipe away, if there is one. */
     private val claimWarmed: () -> String? = { null },
+    /**
+     * Shown as a CLOSE button beside the talk button when the page is a
+     * doorbell rather than a dashboard page: a ring is something you finish
+     * with, where a page is something you swipe away from.
+     */
+    private val onClose: (() -> Unit)? = null,
+    /**
+     * Offer a mute toggle beside the talk button.
+     *
+     * A ring is the one place incoming audio needs turning off mid-call —
+     * the layout's quiet mode only decides how it starts.
+     */
+    private val showMute: Boolean = false,
+    /** Told while the microphone is live, so a ring can hold its timer open. */
+    private val onTalkingChanged: (Boolean) -> Unit = {},
 ) : FrameLayout(context), TextureView.SurfaceTextureListener {
     /**
      * A TextureView, not a SurfaceView.
@@ -83,6 +99,36 @@ class CameraPageView(
             setBackgroundColor(Color.parseColor("#4F8FFF"))
         }
 
+    /** Starts wherever quiet mode left it, and is changeable from here on. */
+    private var muted = !widget.incomingAudio
+
+    private fun secondary(label: String, onTap: () -> Unit) = TextView(context).apply {
+        text = label
+        gravity = Gravity.CENTER
+        textSize = 18f
+        letterSpacing = .08f
+        typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+        setTextColor(Color.parseColor("#F2F5F7"))
+        setBackgroundColor(Color.parseColor("#14171A"))
+        setOnClickListener { onTap() }
+    }
+
+    private val muteButton: TextView? =
+        if (!showMute) null else secondary(if (muted) "UNMUTE" else "MUTE") { toggleMute() }
+
+    private val closeButton: TextView? = onClose?.let { close -> secondary("CLOSE") { close() } }
+
+    private fun toggleMute() {
+        muted = !muted
+        applyVolume()
+        muteButton?.text = if (muted) "UNMUTE" else "MUTE"
+    }
+
+    private fun applyVolume() {
+        val level = if (muted) 0f else 1f
+        runCatching { player?.setVolume(level, level) }
+    }
+
     private val stripes = StripedBackground(context)
     private val badge = LiveBadge(context)
 
@@ -124,21 +170,37 @@ class CameraPageView(
         // The picture gives up the button row's height rather than being
         // covered by it: a talk button over the doorstep is a talk button
         // you cannot see past.
-        val below = if (talkButton == null) 0 else dp(88)
+        // Talk takes the width it can get and close takes a fixed 132 px
+        // beside it, so the thing you reach for in a hurry is the big one.
+        val row = if (talkButton == null && muteButton == null && closeButton == null) null
+        else LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            talkButton?.let {
+                addView(it, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 2f))
+            }
+            listOfNotNull(muteButton, closeButton).forEach {
+                val width = if (talkButton == null) 0 else dp(132)
+                addView(
+                    it,
+                    LinearLayout.LayoutParams(width, LayoutParams.MATCH_PARENT).apply {
+                        if (talkButton == null) weight = 1f
+                    },
+                )
+            }
+        }
+        val below = if (row == null) 0 else dp(88)
         fun picture() = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
             .apply { bottomMargin = below }
         addView(stripes, picture())
         addView(surface, picture())
         addView(badge, LiveBadge.layout(context))
-        talkButton?.let { button ->
-            addView(button, LayoutParams(LayoutParams.MATCH_PARENT, dp(88), Gravity.BOTTOM))
-            button.setOnTouchListener { _, event ->
-                when (event.action) {
-                    MotionEvent.ACTION_DOWN -> startTalking()
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> stopTalking()
-                }
-                true
+        row?.let { addView(it, LayoutParams(LayoutParams.MATCH_PARENT, dp(88), Gravity.BOTTOM)) }
+        talkButton?.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> startTalking()
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> stopTalking()
             }
+            true
         }
         surface.surfaceTextureListener = this
         say(if (widget.streamBaseUrl.isNullOrBlank()) "not configured" else "connecting")
@@ -245,7 +307,8 @@ class CameraPageView(
         player = MediaPlayer().apply {
             setSurface(target)
             setAudioStreamType(AudioManager.STREAM_MUSIC)
-            setVolume(if (widget.incomingAudio) 1f else 0f, if (widget.incomingAudio) 1f else 0f)
+            val level = if (muted) 0f else 1f
+            setVolume(level, level)
             setDataSource(context, rtspUrl(source))
             setOnPreparedListener {
                 Log.i(TAG, "timing: prepared at ${since()} ms")
@@ -327,12 +390,14 @@ class CameraPageView(
         }
         talkback?.setTalking(true)
         MicUsageTracker.setActive(context, true)
+        onTalkingChanged(true)
         talkButton?.text = "RELEASE TO STOP"
     }
 
     private fun stopTalking() {
         talkback?.setTalking(false)
         MicUsageTracker.setActive(context, false)
+        onTalkingChanged(false)
         talkButton?.text = "HOLD TO TALK"
     }
 
