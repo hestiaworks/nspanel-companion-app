@@ -834,7 +834,10 @@ class MainActivity : Activity() {
      * to no purpose.
      */
     private fun applyProximityWake(layout: DashboardLayout) {
-        proximityWake.setEnabled(layout.wakeOnApproach && !layout.keepScreenOn)
+        proximityWake.setEnabled(
+            layout.wakeOnApproach && !layout.keepScreenOn,
+            layout.wakeSensitivity,
+        )
     }
 
     private fun applyKeepScreenOn(enabled: Boolean) {
