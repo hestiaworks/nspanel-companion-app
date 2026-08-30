@@ -8,6 +8,9 @@ import dev.hacompanion.panel.ui.PanelDialogAction
 import dev.hacompanion.panel.ui.PanelDialogHeader
 import dev.hacompanion.panel.ui.showPanelDialog
 import dev.hacompanion.panel.ui.installComposeHost
+import dev.hacompanion.panel.ui.slab.AdminAction
+import dev.hacompanion.panel.ui.slab.AdminScreen
+import dev.hacompanion.panel.ui.slab.showPanelScreen
 
 import android.Manifest
 import android.app.Activity
@@ -329,55 +332,79 @@ class MainActivity : Activity() {
     }
 
     private fun showAdminDialog() {
-        val actions = arrayOf(
-            getString(R.string.configure_ha),
-            getString(R.string.request_microphone),
-            getString(R.string.open_home_settings),
-            "Open Android settings",
-            "Show diagnostics",
-            "Show panel identity",
-            "Pair panel with Home Assistant",
-            getString(R.string.copy_report),
-            "Test doorbell",
-            "Test doorbell (quiet)",
-            "Clear HA connection",
-            "Exit immersive mode",
+        val paired = PanelProvisioningStore(this).load()
+        val manual = settingsStore.load()
+        val actions = listOfNotNull(
+            // What the panel is connected to, said rather than asked. A
+            // paired panel already holds a token the integration minted for
+            // it; offering a blank token box made it look as though the
+            // connection had been forgotten.
+            AdminAction(
+                label = if (paired != null) "Home Assistant" else getString(R.string.configure_ha),
+                detail = when {
+                    paired != null -> "Paired \u00b7 ${paired.baseUrl}"
+                    manual != null -> "Manual \u00b7 ${manual.baseUrl}"
+                    else -> "Not connected"
+                },
+            ) { if (paired != null) showConnectionInfo(paired) else showConnectionDialog() },
+            AdminAction(getString(R.string.request_microphone)) { requestMicrophone() },
+            AdminAction(getString(R.string.open_home_settings)) { requestHomeRole() },
+            AdminAction("Android settings") { startActivity(Intent(Settings.ACTION_SETTINGS)) },
+            AdminAction("Diagnostics") { showDiagnostics() },
+            AdminAction("Panel identity", PanelIdentityStore(this).deviceId.take(20) + "\u2026") {
+                showPanelIdentity()
+            },
+            AdminAction("Pair with Home Assistant") { discoverForPairing() }
+                .takeIf { paired == null },
+            AdminAction(getString(R.string.copy_report)) { copyReport() },
+            AdminAction("Test doorbell") { showDoorbell() },
+            AdminAction("Test doorbell (quiet)") { showQuietDoorbell() },
+            AdminAction("Restart panel", "Relaunches the app") { restartPanel() },
+            AdminAction("Exit immersive mode") { exitImmersiveMode() },
+            AdminAction("Clear HA connection", destructive = true) { clearConnection() },
         )
+        showPanelScreen(this, PanelTheme.isDark) { dismiss -> AdminScreen(actions, dismiss) }
+    }
 
-        val run: (Int) -> Unit = { which ->
-            when (which) {
-                0 -> showConnectionDialog()
-                1 -> requestMicrophone()
-                2 -> requestHomeRole()
-                3 -> startActivity(Intent(Settings.ACTION_SETTINGS))
-                4 -> showDiagnostics()
-                5 -> showPanelIdentity()
-                6 -> discoverForPairing()
-                7 -> copyReport()
-                8 -> showDoorbell()
-                9 -> showQuietDoorbell()
-                10 -> clearConnection()
-                11 -> exitImmersiveMode()
-            }
-        }
-        showPanelDialog(this, PanelTheme.isDark) { dismiss ->
-            PanelDialogHeader("Administrator controls", "Panel setup and diagnostics")
-            // Scrollable: twelve actions do not fit a 480 pixel screen, and the
-            // platform dialog this replaced scrolled its list for the same reason.
-            Column(
-                Modifier
-                    .weight(1f, fill = false)
-                    .verticalScroll(rememberScrollState()),
-            ) {
-                actions.forEachIndexed { index, label ->
-                    PanelDialogAction(label) {
-                        dismiss()
-                        run(index)
-                    }
-                }
-            }
-            PanelDialogAction("Close") { dismiss() }
-        }
+    /**
+     * What the panel is paired to, read-only.
+     *
+     * The token is the integration's to issue and the keystore's to hold; it
+     * is never shown, and there is nothing here for anyone to retype.
+     */
+    private fun showConnectionInfo(credentials: PanelCredentials) {
+        AlertDialog.Builder(this)
+            .setTitle("Home Assistant")
+            .setMessage(
+                "Paired.\n\nAddress\n${credentials.baseUrl}\n\nPanel\n${credentials.panelId}",
+            )
+            .setNegativeButton("Close", null)
+            .setPositiveButton("Connect manually") { _, _ -> showConnectionDialog() }
+            .show()
+    }
+
+    /**
+     * Relaunch the app.
+     *
+     * A panel that has lost Home Assistant, or wedged its dashboard, is
+     * otherwise fixed by walking to the wall — which is the one thing a wall
+     * panel should not need. Android gives an app no way to reboot the
+     * device, so this restarts the process: the alarm relaunches it a moment
+     * after this one exits, because a process cannot start itself.
+     */
+    private fun restartPanel() {
+        val intent = Intent(this, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        val pending = android.app.PendingIntent.getActivity(
+            this, RESTART_REQUEST, intent, android.app.PendingIntent.FLAG_CANCEL_CURRENT,
+        )
+        (getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager).set(
+            android.app.AlarmManager.ELAPSED_REALTIME,
+            android.os.SystemClock.elapsedRealtime() + 400,
+            pending,
+        )
+        finishAffinity()
+        Runtime.getRuntime().exit(0)
     }
 
     private fun showPanelIdentity() {
@@ -1088,6 +1115,7 @@ class MainActivity : Activity() {
         private const val EXTRA_PREVIEW_UNCONFIGURED = "dev.hacompanion.panel.PREVIEW_UNCONFIGURED"
         private const val EXTRA_PREVIEW_THEME = "dev.hacompanion.panel.PREVIEW_THEME"
         internal const val MICROPHONE_REQUEST = 10
+        private const val RESTART_REQUEST = 91
         private const val HOME_ROLE_REQUEST = 11
         private const val EXTRA_HA_URL = "dev.hacompanion.panel.HA_URL"
         private const val EXTRA_HA_TOKEN = "dev.hacompanion.panel.HA_TOKEN"
