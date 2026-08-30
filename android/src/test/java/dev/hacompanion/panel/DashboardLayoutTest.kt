@@ -1,6 +1,8 @@
 package dev.hacompanion.panel
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -141,8 +143,24 @@ class DashboardLayoutTest {
         assertEquals("camera", widget.type)
         assertEquals("rtsp://192.0.2.76:46211/prebuffer", widget.streamBaseUrl)
         assertEquals(true, widget.incomingAudio)
-        assertEquals("intercom", widget.tapAction)
+        // Written before the checkbox existed: the old tap_action still
+        // answers the question, so the page keeps its talk button.
+        assertEquals(true, widget.showIntercom)
         assertEquals(widget, DashboardWidget.parse(widget.toJson()))
+    }
+
+    @Test
+    fun theIntercomCheckboxWinsOverTheActionItReplaced() {
+        fun camera(fields: String) = DashboardLayout.parse(
+            """{"schema_version":1,"revision":"c","pages":[{"id":"c","widgets":[{"type":"camera",""" +
+                """"stream_base_url":"rtsp://192.0.2.76:46211/prebuffer",$fields}]}]}""",
+        ).pages.single().widgets.single()
+
+        assertEquals(true, camera(""""tap_action":"none","show_intercom":true""").showIntercom)
+        assertEquals(false, camera(""""tap_action":"intercom","show_intercom":false""").showIntercom)
+        // Fullscreen meant nothing on a page that is already full-bleed.
+        assertEquals(false, camera(""""tap_action":"fullscreen"""").showIntercom)
+        assertEquals(false, camera(""""stream_name":"doorbell_sub"""").showIntercom)
     }
 
     @Test
@@ -187,5 +205,38 @@ class DashboardLayoutTest {
         } finally {
             directory.deleteRecursively()
         }
+    }
+
+    @Test
+    fun `system UI settings default to what the app has always done`() {
+        val layout = DashboardLayout.parse(
+            """{"schema_version":1,"revision":"r","pages":[{"id":"p","widgets":[]}]}"""
+        )
+        assertEquals(NavBarMode.LISTENER, layout.navBarMode)
+        assertFalse(layout.hideAccessibilityButton)
+    }
+
+    @Test
+    fun `system UI settings survive a round trip`() {
+        val layout = DashboardLayout.parse(
+            """{"schema_version":1,"revision":"r","nav_bar_mode":"immersive",""" +
+                """"hide_accessibility_button":true,"pages":[{"id":"p","widgets":[]}]}"""
+        )
+        assertEquals(NavBarMode.IMMERSIVE, layout.navBarMode)
+        assertTrue(layout.hideAccessibilityButton)
+        val again = DashboardLayout.parse(layout.toJson())
+        assertEquals(NavBarMode.IMMERSIVE, again.navBarMode)
+        assertTrue(again.hideAccessibilityButton)
+    }
+
+    @Test
+    fun `waking on approach is off unless the layout asks for it`() {
+        fun panel(fields: String) = DashboardLayout.parse(
+            """{"schema_version":1,"revision":"r"$fields,"pages":[{"id":"p","widgets":[]}]}""",
+        )
+        assertFalse(panel("").wakeOnApproach)
+        assertTrue(panel(""","wake_on_approach":true""").wakeOnApproach)
+        assertTrue(panel(""","wake_on_approach":true""").toJson()
+            .getBoolean("wake_on_approach"))
     }
 }

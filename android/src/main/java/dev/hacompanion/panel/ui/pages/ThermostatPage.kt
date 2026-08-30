@@ -1,46 +1,44 @@
 package dev.hacompanion.panel.ui.pages
 
-import android.content.Context
-import android.view.View
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
-import dev.hacompanion.panel.DashboardWidget
-import dev.hacompanion.panel.DualThermostatDialView
-import dev.hacompanion.panel.EntityState
-import dev.hacompanion.panel.ui.components.PanelCard
 import dev.hacompanion.panel.ui.components.PanelText
+import dev.hacompanion.panel.ui.model.MORE_KEY
 import dev.hacompanion.panel.ui.model.ThermostatModel
-import dev.hacompanion.panel.ui.model.resolveEntity
-import dev.hacompanion.panel.ui.model.thermostatModel
+import dev.hacompanion.panel.ui.slab.AttributeRow
+import dev.hacompanion.panel.ui.slab.HeaderRow
+import dev.hacompanion.panel.ui.slab.lineBox
+import dev.hacompanion.panel.ui.slab.ModeRow
+import dev.hacompanion.panel.ui.slab.StepperRail
+import dev.hacompanion.panel.ui.slab.TargetRow
 import dev.hacompanion.panel.ui.theme.LocalPanelColors
-import dev.hacompanion.panel.ui.theme.LocalPanelRadius
 import dev.hacompanion.panel.ui.theme.LocalPanelSize
 import dev.hacompanion.panel.ui.theme.LocalPanelSpace
 import dev.hacompanion.panel.ui.theme.LocalPanelType
-import dev.hacompanion.panel.ui.theme.PanelThemeProvider
 
+/**
+ * The thermostat as a column of bands.
+ *
+ * Only the reading block is weighted; every other band states its height, so
+ * the column sums to the screen whatever the unit reports and an attribute row
+ * that is present or absent moves nothing but the size of the gap above it.
+ *
+ * The rail stays put in dry and fan_only rather than leaving with the
+ * setpoint — a band that disappears reflows the four below it, and a mode
+ * change would then move every target the user was aiming for.
+ */
 @Composable
 fun ThermostatPage(
     model: ThermostatModel,
@@ -49,137 +47,114 @@ fun ThermostatPage(
     onTargetSelected: (String) -> Unit,
     onStep: (Boolean) -> Unit,
     onMode: (String) -> Unit,
+    onOpenMore: () -> Unit,
+    onOpenAttribute: (String) -> Unit,
+    onLongPressTitle: () -> Unit,
 ) {
     val colors = LocalPanelColors.current
     val type = LocalPanelType.current
-    val space = LocalPanelSpace.current
-    val radius = LocalPanelRadius.current
+    val usable = online && model.targetUsable
+    // The rail belongs to whichever setpoint it is adjusting, so it takes that
+    // setpoint's colour: warm for a heating one, accent for a cooling one.
+    val adjusting =
+        if (model.targets.size > 1) model.targets.firstOrNull { it.key == selectedTarget }
+        else model.targets.firstOrNull()
+    val railTint = if (adjusting?.warm == true) colors.warm else colors.accent
+    // An attribute row costs 56 px, and the spec takes it from the numeral and
+    // the mode row rather than from the block that has to hold the caption.
+    val dense = model.attributes.isNotEmpty()
     val size = LocalPanelSize.current
-    PanelCard(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().padding(horizontal = space.thermostatInsetX, vertical = space.cardInsetWide)) {
-            Header(model)
-            Box(Modifier.fillMaxWidth().weight(1f)) {
-                // The dial is Canvas drawing either way, so it stays the view
-                // that was validated on this hardware. Keyed on what it draws,
-                // because it takes its values at construction.
-                key(model.mode, model.action, model.current, model.heat, model.cool, selectedTarget) {
-                    AndroidView(
-                        modifier = Modifier.fillMaxSize(),
-                        factory = { context ->
-                            DualThermostatDialView(
-                                context,
-                                mode = model.mode,
-                                action = model.action,
-                                current = model.current,
-                                heat = model.heat,
-                                cool = model.cool,
-                                selectedTarget = selectedTarget,
-                                onTargetSelected = onTargetSelected,
-                            )
-                        },
-                    )
-                }
-            }
-            Row(
-                Modifier.fillMaxWidth().height(size.stepRow),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
+
+    Column(Modifier.fillMaxSize().background(colors.canvas)) {
+        HeaderRow(
+            model.name,
+            model.status,
+            // Idle takes neither colour: the header says what the unit is
+            // doing, and doing nothing is not worth an accent.
+            tint = when {
+                model.heating -> colors.warm
+                model.cooling -> colors.accent
+                else -> null
+            },
+            onLongPress = onLongPressTitle,
+        )
+
+        Row(Modifier.fillMaxWidth().weight(1f)) {
+            Column(
+                // Inset on the left only: the rail closes the right edge, and
+                // padding there would put a gap where a rule belongs.
+                Modifier.weight(1f).fillMaxHeight()
+                    .padding(start = LocalPanelSpace.current.edge),
+                verticalArrangement = Arrangement.Center,
             ) {
-                StepButton("−", online) { onStep(false) }
                 PanelText(
-                    model.hint, type.label, Modifier.width(size.thermostatHintWidth),
-                    muted = true, align = TextAlign.Center,
+                    model.displayLabel, type.label,
+                    semibold = true, muted = true,
+                    letterSpacing = type.labelTrackingWide, maxLines = 1,
                 )
-                StepButton("+", online) { onStep(true) }
-            }
-            Row(
-                Modifier.fillMaxWidth().padding(top = space.gapWide),
-                horizontalArrangement = Arrangement.Center,
-            ) {
-                model.modes.forEach { mode ->
-                    val shape = RoundedCornerShape(radius.action)
-                    Column(
-                        Modifier.weight(1f).height(size.modeButtonHeight).padding(horizontal = space.tiny)
-                            .background(if (mode.active) colors.accentWash else colors.panel, shape)
-                            .border(size.stroke, if (mode.active) colors.accentWash else colors.line, shape)
-                            .clickable(enabled = online) { onMode(mode.mode) },
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        val ink = if (mode.active) colors.accent else colors.muted
-                        PanelText(mode.glyph, type.modeGlyph, color = ink, align = TextAlign.Center)
-                        PanelText(mode.label, type.micro, color = ink, align = TextAlign.Center)
-                    }
+                val numeral = when {
+                    !model.displayIsReading -> type.note
+                    dense -> type.hero
+                    else -> type.display
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun Header(model: ThermostatModel) {
-    val colors = LocalPanelColors.current
-    val type = LocalPanelType.current
-    val space = LocalPanelSpace.current
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            PanelText(model.name, type.headline, bold = true, maxLines = 1)
-            PanelText(model.action, type.label, muted = true, maxLines = 1)
-        }
-        Box(
-            Modifier
-                .background(if (model.powered) colors.accentWash else colors.cardSecondary, CircleShape)
-                .padding(horizontal = space.cardInsetWide, vertical = space.pillInsetY),
-        ) {
-            PanelText(
-                if (model.powered) "ON" else "OFF", type.micro,
-                bold = true, color = if (model.powered) colors.accent else colors.muted,
-            )
-        }
-    }
-}
-
-@Composable
-private fun StepButton(glyph: String, online: Boolean, onClick: () -> Unit) {
-    val colors = LocalPanelColors.current
-    Box(
-        Modifier.size(LocalPanelSize.current.stepButton)
-            .background(colors.cardSecondary, CircleShape)
-            .clickable(enabled = online) { onClick() },
-        contentAlignment = Alignment.Center,
-    ) {
-        PanelText(glyph, LocalPanelType.current.stepGlyph)
-    }
-}
-
-/** Hosts the page in a View so the existing pager can hold it. */
-fun thermostatPageView(
-    context: Context,
-    entities: Map<String, EntityState>,
-    widget: DashboardWidget,
-    selectedTarget: (String) -> String,
-    online: Boolean,
-    dark: Boolean,
-    onTargetSelected: (String, String) -> Unit,
-    onStep: (EntityState, Boolean) -> Unit,
-    onMode: (EntityState, String) -> Unit,
-): View = ComposeView(context).apply {
-    setContent {
-        PanelThemeProvider(dark) {
-            Box(Modifier.fillMaxSize().background(LocalPanelColors.current.canvas)) {
-                val climate = resolveEntity(entities, widget, "climate")
-                if (climate != null) {
-                    val selected = selectedTarget(climate.entityId)
-                    ThermostatPage(
-                        model = thermostatModel(climate, widget.label),
-                        selectedTarget = selected,
-                        online = online,
-                        onTargetSelected = { onTargetSelected(climate.entityId, it) },
-                        onStep = { up -> onStep(climate, up) },
-                        onMode = { mode -> onMode(climate, mode) },
+                Row(
+                    // Only a numeral is set tight; a placeholder is already
+                    // small, and tightening it would pull it into the label.
+                    Modifier.padding(top = 6.dp).then(
+                        if (model.displayIsReading) {
+                            Modifier.lineBox(with(LocalDensity.current) {
+                                (numeral.value * type.displayLeading).sp.toDp()
+                            })
+                        } else Modifier
+                    ),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    PanelText(
+                        model.displayValue, numeral,
+                        bold = model.displayIsReading,
+                        semibold = !model.displayIsReading,
+                        muted = !model.displayIsReading,
+                        maxLines = 1,
+                    )
+                    PanelText(
+                        model.displayUnit,
+                        if (dense) type.heroUnitSmall else type.heroUnit,
+                        Modifier.padding(
+                            start = 9.dp,
+                            top = with(LocalPanelSpace.current) {
+                                if (dense) heroUnitDropSmall else heroUnitDrop
+                            },
+                        ),
+                        semibold = true, muted = true, maxLines = 1,
+                    )
+                }
+                if (model.displayCaption.isNotBlank()) {
+                    PanelText(
+                        model.displayCaption, type.caption,
+                        Modifier.padding(top = if (dense) 10.dp else 12.dp),
+                        muted = true, maxLines = 1,
                     )
                 }
             }
+            StepperRail(enabled = usable, tint = railTint) { up -> onStep(up) }
+        }
+
+        TargetRow(
+            model.targets.map {
+                if (model.targets.size > 1) it.copy(selected = it.key == selectedTarget) else it
+            },
+            enabled = usable,
+            onSelect = onTargetSelected,
+        )
+
+        AttributeRow(model.attributes, enabled = online && model.available) { onOpenAttribute(it.key) }
+
+        ModeRow(
+            model.modeCells,
+            enabled = online && model.available,
+            height = if (dense) size.modeRowCompact else size.modeRow,
+        ) { cell ->
+            if (cell.key == MORE_KEY) onOpenMore() else onMode(cell.key)
         }
     }
 }

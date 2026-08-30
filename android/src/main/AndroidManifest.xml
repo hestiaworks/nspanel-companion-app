@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.INTERNET" />
@@ -7,6 +8,15 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!--
+      Lets the panel suppress Android's navigation bar outright and hide the
+      vendor's floating back button, instead of re-hiding them after the fact.
+      A normal install cannot hold this; it is a development permission, which
+      the updater add-on grants over ADB when it installs the app. Without the
+      grant the app runs exactly as before and the settings are inert.
+    -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
 
     <uses-feature
         android:name="android.hardware.microphone"
@@ -44,23 +54,6 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
-
-        <activity
-            android:name=".DoorbellActivity"
-            android:configChanges="keyboardHidden|orientation|screenSize"
-            android:exported="false"
-            android:launchMode="singleTop"
-            android:process=":doorbell"
-            android:screenOrientation="reversePortrait"
-            android:theme="@style/AppTheme" />
-
-        <activity
-            android:name=".WebViewDoorbellActivity"
-            android:configChanges="keyboardHidden|orientation|screenSize"
-            android:exported="false"
-            android:process=":doorbell"
-            android:screenOrientation="reversePortrait"
-            android:theme="@style/AppTheme" />
 
         <activity
             android:name=".RtspDoorbellActivity"

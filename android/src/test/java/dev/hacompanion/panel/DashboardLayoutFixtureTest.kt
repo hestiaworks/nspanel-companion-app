@@ -77,6 +77,6 @@ class DashboardLayoutFixtureTest {
         // Recorded so a one-sided edit fails here instead of silently diverging
         // from the integration. Update it with nspanel-companion/schema/sync.sh.
         const val LAYOUT_FIXTURE_SHA256 =
-            "93b98b6b3b64afc19ccdcad3e91a48aae8d6016a3e0f881a5a724178464fc36a"
+            "136f9aa3ce9b31ff60d8d2bc25d3dae93cc414ae1c03717efba244827dbb2a6c"
     }
 }

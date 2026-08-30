@@ -1,57 +1,64 @@
 package dev.hacompanion.panel
 
-import android.Manifest
 import android.app.Activity
-import android.content.pm.PackageManager
-import android.graphics.Color
-import android.media.AudioManager
-import android.media.MediaPlayer
-import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.Gravity
-import android.view.MotionEvent
-import android.view.SurfaceHolder
-import android.view.SurfaceView
 import android.view.View
-import android.widget.Button
 import android.widget.FrameLayout
-import android.widget.LinearLayout
-import android.widget.TextView
 
-/** Receive-only native RTSP player backed by Scrypted's go2rtc prebuffer. */
-class RtspDoorbellActivity : Activity(), SurfaceHolder.Callback {
+/**
+ * The screen a ring puts in front of you.
+ *
+ * It draws the same view the camera page does. The two were separate
+ * implementations of one thing and drifted: the page asks the bridge for a
+ * live session and prefers a warmed one, while this screen replayed whatever
+ * URL the layout was configured with — a Scrypted session that had long
+ * since expired, which negotiated correctly and then never produced a frame.
+ *
+ * What is genuinely a ring's own stays here: waking the display, a timer
+ * that closes the screen when nobody answers, and a CLOSE button, because a
+ * ring is something you finish with where a page is something you swipe
+ * away from.
+ */
+class RtspDoorbellActivity : Activity() {
+
     private val handler = Handler(Looper.getMainLooper())
-    private lateinit var surface: SurfaceView
-    private lateinit var status: TextView
-    private var player: MediaPlayer? = null
-    private var muted = false
-    private var talkback: PcmTalkbackStreamer? = null
-    private lateinit var talkButton: Button
     private val autoClose = Runnable { finish() }
     private var closeDeadline = 0L
     private var pausedCloseRemainingMs = 0L
 
-    private val baseUrl by lazy {
-        intent.getStringExtra(DoorbellActivity.EXTRA_STREAM_BASE_URL)
-            ?: DoorbellActivity.DEFAULT_STREAM_BASE_URL
-    }
-    private val streamName by lazy {
-        intent.getStringExtra(DoorbellActivity.EXTRA_STREAM_NAME)
-            ?: DoorbellActivity.DEFAULT_STREAM_NAME
-    }
     private val autoCloseMs by lazy {
-        intent.getLongExtra(DoorbellActivity.EXTRA_AUTO_CLOSE_MS, 60_000L)
+        intent.getLongExtra(DoorbellIntent.EXTRA_AUTO_CLOSE_MS, 60_000L)
     }
     private val talkExtendMs by lazy {
-        intent.getLongExtra(DoorbellActivity.EXTRA_TALK_EXTEND_MS, 15_000L).coerceIn(0L, 60_000L)
+        intent.getLongExtra(DoorbellIntent.EXTRA_TALK_EXTEND_MS, 15_000L).coerceIn(0L, 60_000L)
     }
-    private val talkbackUrl by lazy {
-        intent.getStringExtra(DoorbellActivity.EXTRA_TALKBACK_URL)?.trim()
-    }
-    private val talkbackKey by lazy {
-        intent.getStringExtra(DoorbellActivity.EXTRA_TALKBACK_KEY)?.trim()
+
+    /**
+     * The ring, described the way a camera widget is.
+     *
+     * The view takes its configuration from a widget, so the extras are
+     * turned into one rather than the view learning a second vocabulary.
+     */
+    private val widget by lazy {
+        DashboardWidget(
+            type = "camera",
+            label = intent.getStringExtra(DoorbellIntent.EXTRA_STREAM_NAME)
+                ?.replace('_', ' ')
+                ?.replaceFirstChar { it.uppercase() },
+            streamBaseUrl = intent.getStringExtra(DoorbellIntent.EXTRA_STREAM_BASE_URL)
+                ?: DoorbellIntent.DEFAULT_STREAM_BASE_URL,
+            streamName = intent.getStringExtra(DoorbellIntent.EXTRA_STREAM_NAME)
+                ?: DoorbellIntent.DEFAULT_STREAM_NAME,
+            talkbackUrl = intent.getStringExtra(DoorbellIntent.EXTRA_TALKBACK_URL)?.trim(),
+            talkbackKey = intent.getStringExtra(DoorbellIntent.EXTRA_TALKBACK_KEY)?.trim(),
+            // Quiet mode is a ring you can see but not hear.
+            incomingAudio = !intent.getBooleanExtra(DoorbellIntent.EXTRA_QUIET_MODE, false),
+            showIntercom = true,
+        )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -66,176 +73,59 @@ class RtspDoorbellActivity : Activity(), SurfaceHolder.Callback {
         window.decorView.systemUiVisibility =
             View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
                 View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-        setContentView(buildContent())
-        muted = intent.getBooleanExtra(DoorbellActivity.EXTRA_QUIET_MODE, false)
-        surface.holder.addCallback(this)
-        prepareTalkback()
+        val camera = CameraPageView(
+            this,
+            widget,
+            onClose = { finish() },
+            // Quiet mode only says how the ring starts; muting mid-call is
+            // the thing you reach for when the dog is barking.
+            showMute = true,
+            // Talking is answering: the screen must not close under you
+            // mid-sentence, and it gets a grace period afterwards.
+            onTalkingChanged = { talking ->
+                if (talking) pauseAutoClose() else resumeAutoCloseWithGrace()
+            },
+        )
+        setContentView(
+            FrameLayout(this).apply {
+                addView(camera, FrameLayout.LayoutParams(-1, -1))
+                // The clock, and the microphone indicator. This screen is the
+                // one that opens the microphone, so the indicator saying so
+                // belongs here more than anywhere else in the app.
+                addView(
+                    PanelStatusView(this@RtspDoorbellActivity).apply {
+                        configure(
+                            intent.getBooleanExtra(EXTRA_SHOW_CLOCK, true),
+                            intent.getBooleanExtra(EXTRA_SHOW_MIC_INDICATOR, true),
+                            intent.getIntExtra(EXTRA_MIC_LINGER_SECONDS, 15),
+                        )
+                        synchronize(
+                            intent.getLongExtra(EXTRA_SERVER_TIME_MS, System.currentTimeMillis()),
+                            intent.getStringExtra(EXTRA_SERVER_TIMEZONE)
+                                ?: java.util.TimeZone.getDefault().id,
+                        )
+                    },
+                    FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply {
+                        val d = resources.displayMetrics.density
+                        topMargin = (18 * d).toInt()
+                        marginEnd = (20 * d).toInt()
+                    },
+                )
+            },
+        )
         if (autoCloseMs > 0) scheduleAutoClose(autoCloseMs)
     }
-
-    override fun surfaceCreated(holder: SurfaceHolder) = startPlayer(holder)
-    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
-    override fun surfaceDestroyed(holder: SurfaceHolder) = releasePlayer()
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         MicUsageTracker.setActive(this, false)
-        talkback?.stop()
-        releasePlayer()
         super.onDestroy()
-    }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray,
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == MICROPHONE_PERMISSION_REQUEST &&
-            grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
-        ) prepareTalkback()
-    }
-
-    private fun startPlayer(holder: SurfaceHolder) {
-        releasePlayer()
-        status.text = "Connecting to Scrypted prebuffer…"
-        player = MediaPlayer().apply {
-            setDisplay(holder)
-            setAudioStreamType(AudioManager.STREAM_MUSIC)
-            val volume = if (muted) 0f else 1f
-            setVolume(volume, volume)
-            setDataSource(this@RtspDoorbellActivity, rtspUrl())
-            setOnPreparedListener {
-                it.start()
-                status.text = "Live · Scrypted prebuffer"
-            }
-            setOnInfoListener { _, what, _ ->
-                when (what) {
-                    MediaPlayer.MEDIA_INFO_BUFFERING_START -> status.text = "Buffering…"
-                    MediaPlayer.MEDIA_INFO_BUFFERING_END -> status.text = "Live · Scrypted prebuffer"
-                }
-                false
-            }
-            setOnErrorListener { _, what, extra ->
-                status.text = "Stream unavailable · $what/$extra"
-                true
-            }
-            prepareAsync()
-        }
-    }
-
-    private fun rtspUrl(): Uri {
-        val source = Uri.parse(baseUrl)
-        if (source.scheme == "rtsp") return source
-        if (!source.path.isNullOrBlank() && source.path != "/" && source.port != 1984) {
-            return source.buildUpon().scheme("rtsp").build()
-        }
-        return source.buildUpon()
-            .scheme("rtsp")
-            .encodedAuthority("${source.host}:8554")
-            .path("/$streamName")
-            .clearQuery()
-            .build()
-    }
-
-    private fun buildContent(): View = FrameLayout(this).apply {
-        setBackgroundColor(Color.BLACK)
-        surface = SurfaceView(this@RtspDoorbellActivity)
-        addView(surface, FrameLayout.LayoutParams(-1, -1))
-
-        addView(LinearLayout(this@RtspDoorbellActivity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(24, 18, 24, 18)
-            setBackgroundColor(0xAA111111.toInt())
-            status = TextView(this@RtspDoorbellActivity).apply {
-                text = "Doorbell"
-                textSize = 18f
-                setTextColor(Color.WHITE)
-            }
-            addView(status, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(Button(this@RtspDoorbellActivity).apply {
-                text = "Mute"
-                setOnClickListener {
-                    muted = !muted
-                    val volume = if (muted) 0f else 1f
-                    player?.setVolume(volume, volume)
-                    text = if (muted) "Unmute" else "Mute"
-                }
-            })
-            addView(Button(this@RtspDoorbellActivity).apply {
-                text = "Close"
-                setOnClickListener { finish() }
-            })
-        }, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
-
-        talkButton = Button(this@RtspDoorbellActivity).apply {
-            text = if (talkbackConfigured()) "Hold to talk" else "Talkback not configured"
-            isEnabled = talkbackConfigured()
-            setOnTouchListener { _, event ->
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> {
-                        startTalking()
-                        true
-                    }
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                        stopTalking()
-                        true
-                    }
-                    else -> true
-                }
-            }
-        }
-        addView(talkButton, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
-        addView(PanelStatusView(this@RtspDoorbellActivity).apply {
-            configure(
-                intent.getBooleanExtra(EXTRA_SHOW_CLOCK, true),
-                intent.getBooleanExtra(EXTRA_SHOW_MIC_INDICATOR, true),
-                intent.getIntExtra(EXTRA_MIC_LINGER_SECONDS, 15),
-            )
-            synchronize(
-                intent.getLongExtra(EXTRA_SERVER_TIME_MS, System.currentTimeMillis()),
-                intent.getStringExtra(EXTRA_SERVER_TIMEZONE) ?: java.util.TimeZone.getDefault().id,
-            )
-        }, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply {
-            topMargin = 76
-            marginEnd = 10
-        })
-    }
-
-    private fun releasePlayer() {
-        player?.runCatching { stop() }
-        player?.release()
-        player = null
-    }
-
-    private fun talkbackConfigured(): Boolean =
-        !talkbackUrl.isNullOrBlank() && !talkbackKey.isNullOrBlank()
-
-    private fun startTalking() {
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            status.text = "Microphone permission required"
-            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), MICROPHONE_PERMISSION_REQUEST)
-            return
-        }
-        prepareTalkback()
-        talkback?.setTalking(true)
-        MicUsageTracker.setActive(this, true)
-        pauseAutoClose()
-        talkButton.text = "Talking · release to stop"
-    }
-
-    private fun stopTalking() {
-        talkback?.setTalking(false)
-        MicUsageTracker.setActive(this, false)
-        resumeAutoCloseWithGrace()
-        talkButton.text = "Hold to talk"
     }
 
     private fun pauseAutoClose() {
         if (autoCloseMs == 0L) return
         pausedCloseRemainingMs =
-            (closeDeadline - android.os.SystemClock.elapsedRealtime()).coerceAtLeast(1_000L)
+            (closeDeadline - SystemClock.elapsedRealtime()).coerceAtLeast(1_000L)
         handler.removeCallbacks(autoClose)
     }
 
@@ -248,26 +138,8 @@ class RtspDoorbellActivity : Activity(), SurfaceHolder.Callback {
 
     private fun scheduleAutoClose(delayMs: Long) {
         handler.removeCallbacks(autoClose)
-        closeDeadline = android.os.SystemClock.elapsedRealtime() + delayMs
+        closeDeadline = SystemClock.elapsedRealtime() + delayMs
         handler.postDelayed(autoClose, delayMs)
-    }
-
-    private fun prepareTalkback() {
-        if (!talkbackConfigured() || talkback != null) return
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), MICROPHONE_PERMISSION_REQUEST)
-            return
-        }
-        val endpoint = talkbackUrl ?: return
-        val key = talkbackKey ?: return
-        talkback = PcmTalkbackStreamer(endpoint, key) { message ->
-            runOnUiThread {
-                status.text = message
-                if (message.contains("failed", ignoreCase = true) || message.startsWith("Talkback HTTP")) {
-                    talkButton.text = "Talkback error"
-                }
-            }
-        }.also { it.start() }
     }
 
     companion object {
@@ -276,7 +148,6 @@ class RtspDoorbellActivity : Activity(), SurfaceHolder.Callback {
         const val EXTRA_MIC_LINGER_SECONDS = "mic_linger_seconds"
         const val EXTRA_SERVER_TIME_MS = "server_time_ms"
         const val EXTRA_SERVER_TIMEZONE = "server_timezone"
-        private const val MICROPHONE_PERMISSION_REQUEST = 73
         private const val MAX_AUTO_CLOSE_MS = 300_000L
     }
 }

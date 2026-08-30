@@ -5,82 +5,115 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 
 /**
- * The text sizes the panel draws, by role rather than by number.
+ * The Slab type scale: thirteen roles, nine for text and four for glyphs.
  *
- * The values are the ones the hand-built dashboard used, kept exactly, so
- * introducing these tokens changed nothing on screen. They are not a scale:
- * the old design never had one, and several roles sit a single point apart by
- * accident rather than by intent. Those are called out in
- * `docs/DESIGN-TOKENS.md`, to be resolved by a redesign rather than silently
- * here.
+ * It replaces nineteen. The pairs that sat a point apart by accident —
+ * pageTitle and cardHeadline at 17 sp, the two weather glyphs at 19 and 18 —
+ * collapse into one role each, which is what the token inventory deferred to
+ * a redesign to settle.
  */
 @Immutable
 data class PanelType(
-    val pageTitle: TextUnit = 17.sp,
-    val cardHeadline: TextUnit = 17.sp,
-    val headline: TextUnit = 18.sp,
-    val dialogChoice: TextUnit = 17.sp,
-    val dialogReading: TextUnit = 34.sp,
-    val dialogAction: TextUnit = 15.sp,
-    val reading: TextUnit = 22.sp,
-    val panelName: TextUnit = 28.sp,
-    val dialogTitle: TextUnit = 24.sp,
-    val cardTitle: TextUnit = 15.sp,
-    val body: TextUnit = 14.sp,
-    val detail: TextUnit = 13.sp,
-    val caption: TextUnit = 12.sp,
-    val label: TextUnit = 11.sp,
-    val micro: TextUnit = 10.sp,
-    val nano: TextUnit = 9.sp,
-    val weatherSymbol: TextUnit = 50.sp,
-    val weatherTemperature: TextUnit = 48.sp,
-    val forecastSymbol: TextUnit = 19.sp,
-    val hourlySymbol: TextUnit = 18.sp,
-    val stepGlyph: TextUnit = 20.sp,
-    val modeGlyph: TextUnit = 13.sp,
-    val eyebrowTracking: TextUnit = 0.1.sp,
+    val display: TextUnit = 120.sp,
+    /**
+     * The hero numeral, at the two sizes section 7 gives it: 100 where a
+     * 176 px hero shares the page with a row stack, and 116 on the one-day
+     * weather page, where nothing competes for the height.
+     */
+    val hero: TextUnit = 100.sp,
+    val heroTall: TextUnit = 116.sp,
+    val reading: TextUnit = 34.sp,
+    val title: TextUnit = 24.sp,
+    val subtitle: TextUnit = 20.sp,
+    val body: TextUnit = 17.sp,
+    val bodySmall: TextUnit = 15.sp,
+    val label: TextUnit = 13.sp,
+    /** The clock, which is read at a glance rather than scanned as a label. */
+    val clock: TextUnit = 16.sp,
+    /** The unit beside a 120 px reading, and the caption under it. */
+    val heroUnit: TextUnit = 42.sp,
+    val heroUnitSmall: TextUnit = 38.sp,
+    /** The level on a light's own page: 96 over a 36 unit, per section 7. */
+    val lightHero: TextUnit = 96.sp,
+    val lightHeroUnit: TextUnit = 36.sp,
+    val caption: TextUnit = 16.sp,
+    /** A phrase standing where a reading would be, so it is not set like one. */
+    val note: TextUnit = 19.sp,
+    /** The line under a sheet's title, saying what the choice affects. */
+    val sheetSubtitle: TextUnit = 14.sp,
+    /** A tile's level, and the same reading where a cover's strip takes room. */
+    /** The reading sitting on a sheet's level band. */
+    val sheetLevel: TextUnit = 56.sp,
+    /** The time being edited, the one reading on that screen. */
+    val editorTime: TextUnit = 68.sp,
+    val tileLevel: TextUnit = 44.sp,
+    /** A tile's level is set at .9, as the hero is at .82. */
+    val tileLeading: Float = 0.9f,
+    val tileLevelSmall: TextUnit = 36.sp,
+    /** A tile's name: larger when no level sits above it, smaller under a strip. */
+    val tileName: TextUnit = 19.sp,
+    val tileNameLarge: TextUnit = 21.sp,
+    val tileNameSmall: TextUnit = 17.sp,
+    val micro: TextUnit = 11.sp,
+    /** The countdown beside a corner mark's clock. */
+    val markLabel: TextUnit = 16.sp,
+    /** A schedule's time, the reading of its row. */
+    val scheduleTime: TextUnit = 26.sp,
+    val glyphLarge: TextUnit = 52.sp,
+    val glyph: TextUnit = 30.sp,
+    val glyphStep: TextUnit = 48.sp,
+    val glyphMode: TextUnit = 22.sp,
+    /** Tracking belongs to the label role now rather than being its own token. */
+    val labelTracking: TextUnit = 0.12.em,
+    /** Wider, for the labels that title a band rather than sit beside a value. */
+    val labelTrackingWide: TextUnit = 0.14.em,
+    /**
+     * The proportion of its own size a display numeral occupies.
+     *
+     * The spec sets the hero line at .82, which no text style can express
+     * here: lineHeight can add leading but never take a single line below the
+     * font's ascent and descent. Applied as a layout instead.
+     */
+    val displayLeading: Float = 0.82f,
+    /** The weather hero, which the spec sets a shade looser than the panel's. */
+    val heroLeading: Float = 0.86f,
 )
 
-/** Corner radii, by the surface each one rounds. */
+/** Slab is square. The mic dot and the status pill use CircleShape instead. */
 @Immutable
 data class PanelRadius(
-    val card: Dp = 18.dp,
-    val cardLarge: Dp = 20.dp,
-    val cardSmall: Dp = 15.dp,
-    val cardHourly: Dp = 19.dp,
-    val action: Dp = 13.dp,
-    val dialog: Dp = 24.dp,
-    val choice: Dp = 16.dp,
-    val preset: Dp = 15.dp,
+    val card: Dp = 0.dp,
+    val action: Dp = 0.dp,
 )
 
-/** Gaps and insets. */
+/**
+ * Bands run to the screen edge and are separated by a rule, not a gap, so the
+ * only inset left is the one that keeps text off the edge.
+ */
 @Immutable
 data class PanelSpace(
-    val hairline: Dp = 1.dp,
-    val tiny: Dp = 2.dp,
-    val gap: Dp = 4.dp,
-    val gapWide: Dp = 6.dp,
-    val cardInsetTight: Dp = 5.dp,
-    val cardInsetSmall: Dp = 7.dp,
-    val cardInset: Dp = 10.dp,
-    val cardInsetWide: Dp = 12.dp,
-    val thermostatInsetX: Dp = 14.dp,
-    val pillInsetY: Dp = 7.dp,
-    val forecastInset: Dp = 9.dp,
-    val columnGap: Dp = 8.dp,
-    val tileInsetStart: Dp = 14.dp,
-    val tileInsetTop: Dp = 8.dp,
-    val tileInsetEnd: Dp = 10.dp,
-    val pageStart: Dp = 12.dp,
-    val pageTop: Dp = 10.dp,
-    val pageBottom: Dp = 8.dp,
-    val titleGap: Dp = 6.dp,
-    val dialogInsetX: Dp = 20.dp,
-    val dialogInsetY: Dp = 18.dp,
+    val edge: Dp = 24.dp,
+    /** The status strip is inset less than a band: it is chrome, not content. */
+    val strip: Dp = 20.dp,
+    /** The gap between page bar segments, and the bar's own inset. */
+    val hair: Dp = 2.dp,
+    /** A tile is inset less than a band: it is a quarter of the screen. */
+    val tile: Dp = 20.dp,
+    val tileDense: Dp = 18.dp,
+    /**
+     * How far the unit drops to sit at the numeral's cap height.
+     *
+     * The difference between two cap heights, which no layout alignment
+     * expresses: top alignment lines up line boxes and baseline alignment
+     * lines up the feet. Measured on the panel against the spec's frames.
+     */
+    val heroUnitDrop: Dp = 26.dp,
+    /** The same drop against the smaller numeral, in the same proportion. */
+    val heroUnitDropSmall: Dp = 23.dp,
     val unconfiguredInsetX: Dp = 30.dp,
     val unconfiguredInsetY: Dp = 24.dp,
     val unconfiguredTextInset: Dp = 16.dp,
@@ -88,26 +121,98 @@ data class PanelSpace(
     val unconfiguredBodyGap: Dp = 18.dp,
 )
 
-/** Fixed component dimensions. */
+/**
+ * The layout is a stack of fixed-height bands. These are the heights, and on
+ * this hardware they are pixels too: the panel reports density 160, so
+ * 1 dp = 1 px and a measurement taken in the spec is the number to use here.
+ */
 @Immutable
 data class PanelSize(
-    val icon: Dp = 24.dp,
-    val iconGap: Dp = 5.dp,
-    val actionHeight: Dp = 42.dp,
-    val stepButton: Dp = 42.dp,
-    val stepRow: Dp = 44.dp,
-    val powerButtonWidth: Dp = 62.dp,
-    val modeButtonHeight: Dp = 48.dp,
-    val sliderHeight: Dp = 48.dp,
-    val tileHeight: Dp = 88.dp,
-    val hourlyStrip: Dp = 104.dp,
-    val thermostatHintWidth: Dp = 170.dp,
-    val denseNameHeight: Dp = 34.dp,
-    val dialogChoiceHeight: Dp = 58.dp,
-    val dialogActionHeight: Dp = 50.dp,
-    val dialogSliderHeight: Dp = 64.dp,
-    val dialogPresetHeight: Dp = 54.dp,
+    val statusBar: Dp = 34.dp,
+    val pageBar: Dp = 3.dp,
+    val headerRow: Dp = 56.dp,
+    val targetRow: Dp = 64.dp,
+    val attributeRow: Dp = 56.dp,
+    val sheetHeader: Dp = 76.dp,
+    val listRow: Dp = 88.dp,
+    val presetCell: Dp = 96.dp,
+    val confirmButton: Dp = 100.dp,
+    val modeRow: Dp = 105.dp,
+    /**
+     * The mode row when an attribute row is also present.
+     *
+     * The attribute row's 56 px is not free: the spec buys it back from the
+     * numeral and this row together, so the column still sums to 480 rather
+     * than pushing the caption off the bottom of the reading block.
+     */
+    val modeRowCompact: Dp = 81.dp,
+    val levelBand: Dp = 120.dp,
+    /** The weather reading, and the hours under it. */
+    val weatherHero: Dp = 176.dp,
+    val weatherHours: Dp = 108.dp,
+    /**
+     * The one-day page, where the hours take the room the day rows would
+     * have had: a taller hero carrying today's range, a caption naming what
+     * follows, and the hour band filling whatever is left (198 px).
+     */
+    val weatherHeroTall: Dp = 214.dp,
+    val weatherCaption: Dp = 34.dp,
+    val weatherHoursTall: Dp = 198.dp,
+    /** Hours at 5 days: no glyph, and 11 px off every day row. */
+    val weatherHoursStrip: Dp = 56.dp,
+
+    /**
+     * A light that owns its page. Section 7 gives the hero and the preset
+     * row two sizes: the larger pair when there is no colour-temperature
+     * band, the smaller when there is.
+     *
+     * The level band takes whatever is left rather than a stated height.
+     * The spec's own colour-temperature frame does not sum to 480 — its
+     * bands come to more than the screen, which its overflow:hidden hides —
+     * so something has to give, and a band whose job is to be dragged gives
+     * more gracefully than a touch target that would fall under the 64 px
+     * floor.
+     */
+    val lightHeader: Dp = 56.dp,
+    val lightHero: Dp = 130.dp,
+    val lightHeroTuned: Dp = 112.dp,
+    val lightPresets: Dp = 70.dp,
+    val lightPresetsTuned: Dp = 64.dp,
+    val lightColour: Dp = 70.dp,
+    val lightSwitch: Dp = 70.dp,
+    /** A cover's band, shorter because an action row shares the sheet. */
+    val coverBand: Dp = 110.dp,
+    /** A travelling cover's striped zone, and the period of its bars. */
+    val motionZone: Dp = 64.dp,
+    val motionZoneBand: Dp = 84.dp,
+    val motionPeriod: Dp = 48.dp,
+    /** How far a band's zone stops short of its scale labels. */
+    val motionBaseline: Dp = 30.dp,
+    val rail: Dp = 132.dp,
+    val icon: Dp = 30.dp,
+    /** A corner mark's glyph, smaller than the tile's own. */
+    val mark: Dp = 19.dp,
+    val dot: Dp = 10.dp,
     val stroke: Dp = 1.dp,
+    /**
+     * The rule at a sheet's top edge.
+     *
+     * The one place two pixels are used: it marks where the sheet begins
+     * against the dimmed page behind it, which one pixel at 65% dim cannot.
+     */
+    val sheetRule: Dp = 2.dp,
+    /** The rule marking the rail as the control the setpoint answers to. */
+    val railRule: Dp = 4.dp,
+    /** The ▲ ■ ▼ under a cover, where another tile has a subtitle. */
+    val tileStrip: Dp = 64.dp,
+    /** The row that adds a schedule, the one filled action in its sheet. */
+    val addRow: Dp = 92.dp,
+    /** The schedule editor's bands: header, the time it steps, its rows. */
+    val editorHeader: Dp = 48.dp,
+    val editorTime: Dp = 112.dp,
+    val stepColumn: Dp = 80.dp,
+    val segmentRow: Dp = 70.dp,
+    val deleteWidth: Dp = 160.dp,
 )
 
 val LocalPanelType = staticCompositionLocalOf { PanelType() }

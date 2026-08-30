@@ -8,6 +8,9 @@ import dev.hacompanion.panel.ui.PanelDialogAction
 import dev.hacompanion.panel.ui.PanelDialogHeader
 import dev.hacompanion.panel.ui.showPanelDialog
 import dev.hacompanion.panel.ui.installComposeHost
+import dev.hacompanion.panel.ui.slab.AdminAction
+import dev.hacompanion.panel.ui.slab.AdminScreen
+import dev.hacompanion.panel.ui.slab.showPanelScreen
 
 import android.Manifest
 import android.app.Activity
@@ -25,6 +28,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.Window
@@ -46,6 +50,19 @@ class MainActivity : Activity() {
     private lateinit var connectionDetail: TextView
     private lateinit var settingsStore: SecureSettingsStore
     private lateinit var layoutStore: DashboardLayoutStore
+    private var navBarMode: NavBarMode = NavBarMode.LISTENER
+    private val proximityWake by lazy { ProximityWake(this) }
+
+    /**
+     * Watches the accessibility setting and puts it back.
+     *
+     * The vendor's launcher re-enables its own back button whenever it runs,
+     * and on this panel it runs whenever our app is not Home — so setting
+     * the value once at startup loses a race nobody can win by being early.
+     * Re-asserting is idempotent: with nothing of the vendor's enabled there
+     * is nothing to write.
+     */
+    private var accessibilityGuard: android.database.ContentObserver? = null
     private lateinit var weatherCacheStore: WeatherCacheStore
     private lateinit var dashboardView: PanelDashboardView
     private lateinit var rootView: FrameLayout
@@ -56,6 +73,7 @@ class MainActivity : Activity() {
     private var panelApiClient: PanelApiClient? = null
     private var panelSyncClient: PanelSyncClient? = null
     private var pairingAdvertiser: PanelPairingAdvertiser? = null
+    private var demoMode = false
     private val watchdogHandler = Handler(Looper.getMainLooper())
     private var connectionPhase = ConnectionPhase.NOT_CONFIGURED
     private var offlineSinceMs = 0L
@@ -83,7 +101,8 @@ class MainActivity : Activity() {
         // SPIKE: Compose resolves its recomposer's lifecycle owner from the window root.
         installComposeHost(window.decorView)
         startPairingAdvertisement()
-        enterImmersiveMode()
+        applyBarVisibility()
+        keepBarsHidden()
         refreshReport()
         connectWithSavedSettings()
         startPanelSync()
@@ -93,7 +112,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        enterImmersiveMode()
+        applyBarVisibility()
         if (::dashboardView.isInitialized) dashboardView.setDashboardActive(true)
     }
 
@@ -106,7 +125,7 @@ class MainActivity : Activity() {
         super.onNewIntent(intent)
         setIntent(intent)
         applyDebugProvisioning(intent)
-        enterImmersiveMode()
+        applyBarVisibility()
         refreshReport()
         connectWithSavedSettings()
         openDebugDoorbell(intent)
@@ -114,7 +133,7 @@ class MainActivity : Activity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) enterImmersiveMode()
+        if (hasFocus) applyBarVisibility()
     }
 
     override fun onRequestPermissionsResult(
@@ -127,6 +146,8 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        proximityWake.setEnabled(false)
+        watchAccessibilityButton(false)
         haClient?.stop()
         haClient = null
         panelApiClient?.stop()
@@ -154,7 +175,9 @@ class MainActivity : Activity() {
         val dashboardRoot = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(PanelTheme.canvas)
-            setPadding(dp(4), dp(4), dp(4), dp(3))
+            // No inset: Slab runs every band to the screen edge, and four
+            // pixels of canvas around the outside reads as a frame the design
+            // does not have.
         }
         connectionDot = TextView(this)
         connectionTitle = TextView(this)
@@ -174,16 +197,25 @@ class MainActivity : Activity() {
                     ?: (haClient?.callService(domain, service, entityId, data) == true)
             },
             ::showAdminDialog,
-            ::showCamera,
             { schedule -> panelApiClient?.upsertSchedule(schedule) == true },
             { scheduleId -> panelApiClient?.deleteSchedule(scheduleId) == true },
         )
-        if (previewUnconfigured) {
+        val demo = DemoHarness.apply(intent, dashboardView)
+        demoMode = demo
+        if (demo) {
+            // Nothing to connect to and nothing to keep awake: the harness has
+            // already put a layout and a set of states in front of the view.
+            applyKeepScreenOn(false)
+        } else if (previewUnconfigured) {
             applyKeepScreenOn(false)
             val deviceId = PanelIdentityStore(this).deviceId
             dashboardView.showUnconfigured("Living Room NSPanel", deviceId)
         } else if (activeLayout != null) {
             applyKeepScreenOn(activeLayout.keepScreenOn)
+            // A panel that boots before Home Assistant answers still has its
+            // saved layout, and should not spend that time in the wrong mode.
+            applySystemUi(activeLayout)
+            applyProximityWake(activeLayout)
             dashboardView.setLayout(activeLayout)
             dashboardView.setCachedWeather(weatherCacheStore.load(activeLayout.weatherCacheMaxAgeMinutes))
         } else if (credentials != null) {
@@ -203,7 +235,7 @@ class MainActivity : Activity() {
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT,
         ))
-        if (credentials == null && !previewUnconfigured) {
+        if (credentials == null && !previewUnconfigured && !demo) {
             onboardingView = createPairingOnboarding().also {
                 root.addView(it, FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
@@ -315,55 +347,79 @@ class MainActivity : Activity() {
     }
 
     private fun showAdminDialog() {
-        val actions = arrayOf(
-            getString(R.string.configure_ha),
-            getString(R.string.request_microphone),
-            getString(R.string.open_home_settings),
-            "Open Android settings",
-            "Show diagnostics",
-            "Show panel identity",
-            "Pair panel with Home Assistant",
-            getString(R.string.copy_report),
-            "Test doorbell",
-            "Test doorbell (quiet)",
-            "Clear HA connection",
-            "Exit immersive mode",
+        val paired = PanelProvisioningStore(this).load()
+        val manual = settingsStore.load()
+        val actions = listOfNotNull(
+            // What the panel is connected to, said rather than asked. A
+            // paired panel already holds a token the integration minted for
+            // it; offering a blank token box made it look as though the
+            // connection had been forgotten.
+            AdminAction(
+                label = if (paired != null) "Home Assistant" else getString(R.string.configure_ha),
+                detail = when {
+                    paired != null -> "Paired \u00b7 ${paired.baseUrl}"
+                    manual != null -> "Manual \u00b7 ${manual.baseUrl}"
+                    else -> "Not connected"
+                },
+            ) { if (paired != null) showConnectionInfo(paired) else showConnectionDialog() },
+            AdminAction(getString(R.string.request_microphone)) { requestMicrophone() },
+            AdminAction(getString(R.string.open_home_settings)) { requestHomeRole() },
+            AdminAction("Android settings") { startActivity(Intent(Settings.ACTION_SETTINGS)) },
+            AdminAction("Diagnostics") { showDiagnostics() },
+            AdminAction("Panel identity", PanelIdentityStore(this).deviceId.take(20) + "\u2026") {
+                showPanelIdentity()
+            },
+            AdminAction("Pair with Home Assistant") { discoverForPairing() }
+                .takeIf { paired == null },
+            AdminAction(getString(R.string.copy_report)) { copyReport() },
+            AdminAction("Test doorbell") { showDoorbell() },
+            AdminAction("Test doorbell (quiet)") { showQuietDoorbell() },
+            AdminAction("Restart panel", "Relaunches the app") { restartPanel() },
+            AdminAction("Exit immersive mode") { exitImmersiveMode() },
+            AdminAction("Clear HA connection", destructive = true) { clearConnection() },
         )
+        showPanelScreen(this, PanelTheme.isDark) { dismiss -> AdminScreen(actions, dismiss) }
+    }
 
-        val run: (Int) -> Unit = { which ->
-            when (which) {
-                0 -> showConnectionDialog()
-                1 -> requestMicrophone()
-                2 -> requestHomeRole()
-                3 -> startActivity(Intent(Settings.ACTION_SETTINGS))
-                4 -> showDiagnostics()
-                5 -> showPanelIdentity()
-                6 -> discoverForPairing()
-                7 -> copyReport()
-                8 -> showDoorbell()
-                9 -> showQuietDoorbell()
-                10 -> clearConnection()
-                11 -> exitImmersiveMode()
-            }
-        }
-        showPanelDialog(this, PanelTheme.isDark) { dismiss ->
-            PanelDialogHeader("Administrator controls", "Panel setup and diagnostics")
-            // Scrollable: twelve actions do not fit a 480 pixel screen, and the
-            // platform dialog this replaced scrolled its list for the same reason.
-            Column(
-                Modifier
-                    .weight(1f, fill = false)
-                    .verticalScroll(rememberScrollState()),
-            ) {
-                actions.forEachIndexed { index, label ->
-                    PanelDialogAction(label) {
-                        dismiss()
-                        run(index)
-                    }
-                }
-            }
-            PanelDialogAction("Close") { dismiss() }
-        }
+    /**
+     * What the panel is paired to, read-only.
+     *
+     * The token is the integration's to issue and the keystore's to hold; it
+     * is never shown, and there is nothing here for anyone to retype.
+     */
+    private fun showConnectionInfo(credentials: PanelCredentials) {
+        AlertDialog.Builder(this)
+            .setTitle("Home Assistant")
+            .setMessage(
+                "Paired.\n\nAddress\n${credentials.baseUrl}\n\nPanel\n${credentials.panelId}",
+            )
+            .setNegativeButton("Close", null)
+            .setPositiveButton("Connect manually") { _, _ -> showConnectionDialog() }
+            .show()
+    }
+
+    /**
+     * Relaunch the app.
+     *
+     * A panel that has lost Home Assistant, or wedged its dashboard, is
+     * otherwise fixed by walking to the wall — which is the one thing a wall
+     * panel should not need. Android gives an app no way to reboot the
+     * device, so this restarts the process: the alarm relaunches it a moment
+     * after this one exits, because a process cannot start itself.
+     */
+    private fun restartPanel() {
+        val intent = Intent(this, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        val pending = android.app.PendingIntent.getActivity(
+            this, RESTART_REQUEST, intent, android.app.PendingIntent.FLAG_CANCEL_CURRENT,
+        )
+        (getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager).set(
+            android.app.AlarmManager.ELAPSED_REALTIME,
+            android.os.SystemClock.elapsedRealtime() + 400,
+            pending,
+        )
+        finishAffinity()
+        Runtime.getRuntime().exit(0)
     }
 
     private fun showPanelIdentity() {
@@ -663,6 +719,8 @@ class MainActivity : Activity() {
                 onInitialStates = ::activateInitialStates,
                 onEntityChanged = ::activateEntityState,
                 onDoorbellEvent = ::showDoorbellEvent,
+                onRestart = ::restartPanel,
+                onRevoked = ::handlePairingRevoked,
                 onWeatherForecast = dashboardView::updateWeatherForecast,
                 onSchedules = dashboardView::setSchedules,
                 onServerTime = { millis, timezone ->
@@ -716,12 +774,101 @@ class MainActivity : Activity() {
             rootView.setBackgroundColor(PanelTheme.canvas)
             (dashboardView.parent as? View)?.setBackgroundColor(PanelTheme.canvas)
             applyKeepScreenOn(layout.keepScreenOn)
+            applySystemUi(layout)
+            applyProximityWake(layout)
             dashboardView.setLayout(layout)
             if (PanelProvisioningStore(this).load() != null) connectWithSavedSettings()
             Toast.makeText(this, "Layout updated", Toast.LENGTH_SHORT).show()
         } catch (error: Exception) {
             Toast.makeText(this, error.message ?: "Layout update failed", Toast.LENGTH_LONG).show()
         }
+    }
+
+    /**
+     * Put the two Android system-UI settings into the state the layout asks
+     * for.
+     *
+     * Both writes need WRITE_SECURE_SETTINGS, which a normal install cannot
+     * request; the updater add-on grants it over ADB. Without it the settings
+     * are inert, which is a panel that behaves exactly as it did before they
+     * existed — so this logs and moves on rather than failing the layout.
+     */
+    private fun applySystemUi(layout: DashboardLayout) {
+        navBarMode = layout.navBarMode
+        applyBarVisibility()
+        if (checkSelfPermission(SystemUiPolicy.PERMISSION) != PackageManager.PERMISSION_GRANTED) {
+            Log.i(TAG, "System UI settings ignored: ${SystemUiPolicy.PERMISSION} not granted")
+            return
+        }
+        try {
+            Settings.Global.putString(
+                contentResolver,
+                SystemUiPolicy.POLICY_CONTROL,
+                SystemUiPolicy.policyControlValue(navBarMode),
+            )
+            applyAccessibilityButton(layout.hideAccessibilityButton)
+            watchAccessibilityButton(layout.hideAccessibilityButton)
+        } catch (error: SecurityException) {
+            Log.w(TAG, "System UI settings refused by Android", error)
+        }
+    }
+
+    /**
+     * The vendor's floating back button is an accessibility service rather
+     * than part of the navigation bar, so hiding it means disabling that
+     * service — and restoring it means having remembered which one it was.
+     */
+    private fun watchAccessibilityButton(hide: Boolean) {
+        val watching = accessibilityGuard != null
+        if (hide == watching) return
+        if (!hide) {
+            accessibilityGuard?.let { contentResolver.unregisterContentObserver(it) }
+            accessibilityGuard = null
+            return
+        }
+        val observer = object : android.database.ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) = applyAccessibilityButton(true)
+        }
+        contentResolver.registerContentObserver(
+            Settings.Secure.getUriFor(SystemUiPolicy.ACCESSIBILITY_SERVICES), false, observer,
+        )
+        accessibilityGuard = observer
+    }
+
+    private fun applyAccessibilityButton(hide: Boolean) {
+        val store = getSharedPreferences(SYSTEM_UI_STORE, Context.MODE_PRIVATE)
+        val change = SystemUiPolicy.accessibilityChange(
+            hide = hide,
+            current = Settings.Secure.getString(
+                contentResolver, SystemUiPolicy.ACCESSIBILITY_SERVICES,
+            ).orEmpty(),
+            remembered = store.getString(REMEMBERED_ACCESSIBILITY, null),
+        )
+        // Android maintains accessibility_enabled itself, in both
+        // directions — measured on the panel, writing the list alone brings
+        // a restored service back to life.
+        change.write?.let {
+            Settings.Secure.putString(contentResolver, SystemUiPolicy.ACCESSIBILITY_SERVICES, it)
+        }
+        store.edit().putString(REMEMBERED_ACCESSIBILITY, change.remember).apply()
+    }
+
+    private fun applyBarVisibility() {
+        if (SystemUiPolicy.barsHidden(navBarMode)) enterImmersiveMode() else exitImmersiveMode()
+    }
+
+    /**
+     * Listen for someone approaching, when asked to.
+     *
+     * Pointless while the display is held on — there is nothing to wake —
+     * so the two settings are read together rather than the sensor running
+     * to no purpose.
+     */
+    private fun applyProximityWake(layout: DashboardLayout) {
+        proximityWake.setEnabled(
+            layout.wakeOnApproach && !layout.keepScreenOn,
+            layout.wakeSensitivity,
+        )
     }
 
     private fun applyKeepScreenOn(enabled: Boolean) {
@@ -773,91 +920,77 @@ class MainActivity : Activity() {
         Toast.makeText(this, "Panel was unpaired from Home Assistant", Toast.LENGTH_LONG).show()
     }
 
-    private fun showDoorbell() {
-        startActivity(doorbellIntent())
-    }
-
-    private fun showCamera(widget: DashboardWidget) {
+    private fun showDoorbell(quiet: Boolean = false) {
+        val camera = layoutStore.loadOrNull()?.pages
+            ?.flatMap { it.widgets }
+            ?.firstOrNull { it.type == "camera" && !it.streamBaseUrl.isNullOrBlank() }
         val intent = rtspDoorbellIntent()
-            .putExtra(DoorbellActivity.EXTRA_AUTO_CLOSE_MS, 0L)
-            .putExtra(DoorbellActivity.EXTRA_QUIET_MODE, !widget.incomingAudio)
-        widget.streamBaseUrl?.let { intent.putExtra(DoorbellActivity.EXTRA_STREAM_BASE_URL, it) }
-        widget.streamName?.let { intent.putExtra(DoorbellActivity.EXTRA_STREAM_NAME, it) }
-        if (widget.tapAction == "intercom") {
-            widget.talkbackUrl?.let { intent.putExtra(DoorbellActivity.EXTRA_TALKBACK_URL, it) }
-            widget.talkbackKey?.let { intent.putExtra(DoorbellActivity.EXTRA_TALKBACK_KEY, it) }
-        }
+            .putExtra(DoorbellIntent.EXTRA_QUIET_MODE, quiet)
+            // A test ring should not wander off on a timer while it is being
+            // looked at; a real one still closes itself.
+            .putExtra(DoorbellIntent.EXTRA_AUTO_CLOSE_MS, 0L)
+        camera?.streamBaseUrl?.let { intent.putExtra(DoorbellIntent.EXTRA_STREAM_BASE_URL, it) }
+        camera?.streamName?.let { intent.putExtra(DoorbellIntent.EXTRA_STREAM_NAME, it) }
+        camera?.talkbackUrl?.let { intent.putExtra(DoorbellIntent.EXTRA_TALKBACK_URL, it) }
+        camera?.talkbackKey?.let { intent.putExtra(DoorbellIntent.EXTRA_TALKBACK_KEY, it) }
         startActivity(intent)
     }
 
     private fun showDoorbellEvent(event: DoorbellEvent) {
         val intent = rtspDoorbellIntent()
-            .putExtra(DoorbellActivity.EXTRA_QUIET_MODE, event.quietMode)
+            .putExtra(DoorbellIntent.EXTRA_QUIET_MODE, event.quietMode)
         event.streamBaseUrl?.let {
-            intent.putExtra(DoorbellActivity.EXTRA_STREAM_BASE_URL, it)
+            intent.putExtra(DoorbellIntent.EXTRA_STREAM_BASE_URL, it)
         }
         event.streamName?.let {
-            intent.putExtra(DoorbellActivity.EXTRA_STREAM_NAME, it)
+            intent.putExtra(DoorbellIntent.EXTRA_STREAM_NAME, it)
         }
         event.talkbackUrl?.let {
-            intent.putExtra(DoorbellActivity.EXTRA_TALKBACK_URL, it)
+            intent.putExtra(DoorbellIntent.EXTRA_TALKBACK_URL, it)
         }
         event.talkbackKey?.let {
-            intent.putExtra(DoorbellActivity.EXTRA_TALKBACK_KEY, it)
+            intent.putExtra(DoorbellIntent.EXTRA_TALKBACK_KEY, it)
         }
         event.talkbackTestUrl?.let {
-            intent.putExtra(DoorbellActivity.EXTRA_TALKBACK_TEST_URL, it)
+            intent.putExtra(DoorbellIntent.EXTRA_TALKBACK_TEST_URL, it)
         }
         event.autoCloseMs?.let {
-            intent.putExtra(DoorbellActivity.EXTRA_AUTO_CLOSE_MS, it)
+            intent.putExtra(DoorbellIntent.EXTRA_AUTO_CLOSE_MS, it)
         }
-        intent.putExtra(DoorbellActivity.EXTRA_TALK_EXTEND_MS, event.talkExtendMs)
+        intent.putExtra(DoorbellIntent.EXTRA_TALK_EXTEND_MS, event.talkExtendMs)
         startActivity(intent)
     }
 
-    private fun showQuietDoorbell() {
-        startActivity(
-            doorbellIntent().putExtra(DoorbellActivity.EXTRA_QUIET_MODE, true),
-        )
-    }
+    private fun showQuietDoorbell() = showDoorbell(quiet = true)
 
     private fun openDebugDoorbell(intent: Intent?) {
         if (!BuildConfig.DEBUG || intent == null) return
-        val baseUrl = intent.getStringExtra(DoorbellActivity.EXTRA_STREAM_BASE_URL) ?: return
-        val streamName = intent.getStringExtra(DoorbellActivity.EXTRA_STREAM_NAME) ?: return
-        intent.removeExtra(DoorbellActivity.EXTRA_STREAM_BASE_URL)
-        intent.removeExtra(DoorbellActivity.EXTRA_STREAM_NAME)
+        val baseUrl = intent.getStringExtra(DoorbellIntent.EXTRA_STREAM_BASE_URL) ?: return
+        val streamName = intent.getStringExtra(DoorbellIntent.EXTRA_STREAM_NAME) ?: return
+        intent.removeExtra(DoorbellIntent.EXTRA_STREAM_BASE_URL)
+        intent.removeExtra(DoorbellIntent.EXTRA_STREAM_NAME)
         startActivity(
             rtspDoorbellIntent()
-                .putExtra(DoorbellActivity.EXTRA_STREAM_BASE_URL, baseUrl)
-                .putExtra(DoorbellActivity.EXTRA_STREAM_NAME, streamName)
+                .putExtra(DoorbellIntent.EXTRA_STREAM_BASE_URL, baseUrl)
+                .putExtra(DoorbellIntent.EXTRA_STREAM_NAME, streamName)
                 .putExtra(
-                    DoorbellActivity.EXTRA_START_TALKING,
-                    intent.getBooleanExtra(DoorbellActivity.EXTRA_START_TALKING, false),
+                    DoorbellIntent.EXTRA_START_TALKING,
+                    intent.getBooleanExtra(DoorbellIntent.EXTRA_START_TALKING, false),
                 )
                 .putExtra(
-                    DoorbellActivity.EXTRA_USE_WEBVIEW,
-                    intent.getBooleanExtra(DoorbellActivity.EXTRA_USE_WEBVIEW, false),
+                    DoorbellIntent.EXTRA_AUTO_CLOSE_MS,
+                    intent.getLongExtra(DoorbellIntent.EXTRA_AUTO_CLOSE_MS, 60_000L),
                 )
                 .putExtra(
-                    DoorbellActivity.EXTRA_AUTO_CLOSE_MS,
-                    intent.getLongExtra(DoorbellActivity.EXTRA_AUTO_CLOSE_MS, 60_000L),
+                    DoorbellIntent.EXTRA_TALK_EXTEND_MS,
+                    intent.getLongExtra(DoorbellIntent.EXTRA_TALK_EXTEND_MS, 15_000L),
                 )
                 .putExtra(
-                    DoorbellActivity.EXTRA_TALK_EXTEND_MS,
-                    intent.getLongExtra(DoorbellActivity.EXTRA_TALK_EXTEND_MS, 15_000L),
-                )
-                .putExtra(
-                    DoorbellActivity.EXTRA_QUIET_MODE,
-                    intent.getBooleanExtra(DoorbellActivity.EXTRA_QUIET_MODE, false),
+                    DoorbellIntent.EXTRA_QUIET_MODE,
+                    intent.getBooleanExtra(DoorbellIntent.EXTRA_QUIET_MODE, false),
                 ),
         )
     }
-
-    private fun doorbellIntent(): Intent =
-        Intent(this, DoorbellActivity::class.java).addFlags(
-            Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP,
-        )
 
     private fun rtspDoorbellIntent(): Intent =
         Intent(this, RtspDoorbellActivity::class.java).addFlags(
@@ -908,7 +1041,9 @@ class MainActivity : Activity() {
                 offlineSinceMs = android.os.SystemClock.elapsedRealtime()
             }
         }
-        if (::dashboardView.isInitialized) {
+        // The harness has no connection to report on, and letting a failed
+        // one mark the demo offline greys out every control on it.
+        if (::dashboardView.isInitialized && !demoMode) {
             dashboardView.setOnline(status.phase == ConnectionPhase.ONLINE)
         }
         connectionTitle.text = when (status.phase) {
@@ -976,6 +1111,21 @@ class MainActivity : Activity() {
     }
 
     @Suppress("DEPRECATION")
+    /**
+     * Sticky immersive hands the bars back on anything the platform reads as
+     * an edge gesture, and on this hardware a long press is enough. Nothing
+     * in the app wants them, so they go away again as soon as they appear.
+     */
+    private fun keepBarsHidden() {
+        window.decorView.setOnSystemUiVisibilityChangeListener { flags ->
+            if (SystemUiPolicy.usesListener(navBarMode) &&
+                flags and View.SYSTEM_UI_FLAG_HIDE_NAVIGATION == 0
+            ) {
+                window.decorView.postDelayed({ enterImmersiveMode() }, 1_200)
+            }
+        }
+    }
+
     private fun enterImmersiveMode() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.insetsController?.apply {
@@ -1008,9 +1158,13 @@ class MainActivity : Activity() {
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object {
+        private const val TAG = "NSPanelMain"
+        private const val SYSTEM_UI_STORE = "panel_system_ui"
+        private const val REMEMBERED_ACCESSIBILITY = "remembered_accessibility_services"
         private const val EXTRA_PREVIEW_UNCONFIGURED = "dev.hacompanion.panel.PREVIEW_UNCONFIGURED"
         private const val EXTRA_PREVIEW_THEME = "dev.hacompanion.panel.PREVIEW_THEME"
-        private const val MICROPHONE_REQUEST = 10
+        internal const val MICROPHONE_REQUEST = 10
+        private const val RESTART_REQUEST = 91
         private const val HOME_ROLE_REQUEST = 11
         private const val EXTRA_HA_URL = "dev.hacompanion.panel.HA_URL"
         private const val EXTRA_HA_TOKEN = "dev.hacompanion.panel.HA_TOKEN"

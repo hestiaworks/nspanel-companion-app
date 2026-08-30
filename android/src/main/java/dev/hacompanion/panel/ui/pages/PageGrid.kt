@@ -15,6 +15,9 @@ import androidx.compose.ui.unit.sp
 import dev.hacompanion.panel.ui.components.PanelText
 import dev.hacompanion.panel.ui.model.PageCell
 import dev.hacompanion.panel.ui.theme.LocalPanelSize
+import androidx.compose.foundation.background
+import dev.hacompanion.panel.ui.slab.CellRule
+import dev.hacompanion.panel.ui.theme.LocalPanelColors
 import dev.hacompanion.panel.ui.theme.LocalPanelSpace
 import dev.hacompanion.panel.ui.theme.LocalPanelType
 
@@ -41,26 +44,33 @@ fun PageGrid(
         }
         return
     }
+    // Rules, not gaps: a tile runs to the screen edge and to its neighbour,
+    // so the fill inside it is the full width of what it represents.
+    val colors = LocalPanelColors.current
     Column(Modifier.fillMaxSize()) {
+        // Every row takes an equal share of what is left. A row was pinned to
+        // a list row's height unless it held a control, which is why a page
+        // with one reading on it drew an 88 px sliver and clipped the numeral
+        // that is the entire point of a reading.
         cells.chunked(2).forEach { row ->
-            val hasControl = row.any { it is PageCell.Control }
-            val rowModifier =
-                if (hasControl) Modifier.fillMaxWidth().weight(1f)
-                else Modifier.fillMaxWidth().height(size.tileHeight)
-            Row(rowModifier) {
-                row.forEach { cell ->
+            Box(Modifier.fillMaxWidth().height(size.stroke).background(colors.line))
+            Row(Modifier.fillMaxWidth().weight(1f)) {
+                row.forEachIndexed { column, cell ->
+                    if (column > 0) CellRule()
                     key(cellKey(cell)) {
-                        Box(Modifier.weight(1f).fillMaxSize().padding(space.gap)) {
+                        Box(Modifier.weight(1f).fillMaxSize()) {
                             when (cell) {
-                                is PageCell.Control -> ControlCard(cell.card, online, actions)
+                                is PageCell.Control -> ControlTile(cell.card, online, actions)
                                 is PageCell.Reading -> ReadingTile(cell.tile)
                                 is PageCell.Missing -> MissingTile(cell.label)
                             }
                         }
                     }
                 }
-                // A lone cell keeps half the width rather than stretching.
-                if (row.size == 1) Box(Modifier.weight(1f))
+                // An odd one out takes the whole width of its row rather than
+                // leaving a hole beside it — the rule a sheet's options
+                // already follow, and the reason a page holding a single
+                // reading is a single reading rather than one beside a void.
             }
         }
     }

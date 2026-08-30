@@ -22,9 +22,47 @@ data class ControlCardModel(
     val showSchedule: Boolean,
     val cardTap: Boolean,
     val dense: Boolean,
+
+    /**
+     * The proportion of the tile to fill, or null when the device has no
+     * level at all — an on/off light is not a dimmer set to 100.
+     */
+    val level: Int?,
+    /**
+     * The level as text, or null when the fill alone says it.
+     *
+     * A switch fills the tile completely when it is on, but showing "100%"
+     * would claim a level it has no way to set.
+     */
+    val levelText: String?,
+    /**
+     * Whether this light can be tuned, and what it currently sits at.
+     *
+     * A light that reports no colour_temp_kelvin has no band; one that has
+     * gone unavailable keeps reporting the attribute it last had, and a
+     * band that cannot be moved is worse than no band.
+     */
+    val hasColourTemperature: Boolean,
+    val colourTemperature: String?,
+    /** Covers get ▲ ■ ▼ where everything else has room for a subtitle. */
+    val actionStrip: Boolean,
+    /**
+     * False when Home Assistant has nothing to report about the device.
+     *
+     * The tile and its name stay so the grid never reflows around a device
+     * that went away, but everything that would claim a state goes.
+     */
+    val available: Boolean,
+    /** A cover in travel, the one state where stop is the lit cell. */
+    val moving: Boolean,
+    /** The raw state, for the one case that needs the direction of travel. */
+    val state: String,
+    val subtitle: String?,
 )
 
-private val TIMER_DOMAINS = setOf("light", "switch", "fan")
+// A cover is in here now. The admin hid its timer because a fourth footer
+// button did not fit; the footer is gone and the timer lives in the sheet.
+private val TIMER_DOMAINS = setOf("light", "switch", "fan", "cover", "input_boolean")
 
 // Home Assistant's SET_SPEED bit. A fan without it has no speed to adjust,
 // however the widget is configured.
@@ -74,12 +112,40 @@ fun controlCard(
         else -> ControlBody.BINARY
     }
     val position = entity.numberAttribute("current_position")?.roundToInt()
+    // Neither state carries a value, so neither can be drawn as one.
+    val available = entity.state !in setOf("unavailable", "unknown")
+    val moving = entity.state in setOf("opening", "closing")
+    // A cover is as open as its position says, whichever way it is heading.
+    // Reading state alone blanked the fill for a whole descent and then
+    // snapped it back at rest.
+    val on = available && when (entity.domain) {
+        "cover" -> (position ?: if (entity.state == "closed") 0 else 100) > 0
+        else -> entity.state in setOf("on", "open", "opening")
+    }
+
+    // What proportion of the tile is filled. A device with no level of its
+    // own is all or nothing, which is still a fill — it just cannot be
+    // anywhere in between.
+    val level: Int? = if (!available) null else when (entity.domain) {
+        "light" -> entity.numberAttribute("brightness")
+            ?.let { if (on) (it / 255.0 * 100.0).roundToInt() else 0 }
+        "cover" -> position ?: if (on) 100 else 0
+        "fan" -> entity.numberAttribute("percentage")?.roundToInt() ?: if (on) 100 else 0
+        else -> if (on) 100 else 0
+    }
+    val kelvin = entity.numberAttribute("color_temp_kelvin")
+        ?.takeIf { available && entity.domain == "light" && it > 0 }
+    // Shown only where the number means something the tile can set.
+    val levelText = level
+        ?.takeIf { on && body != ControlBody.BINARY }
+        ?.let { "$it%" }
+
     return ControlCardModel(
         entityId = entity.entityId,
         name = widget?.label ?: entity.friendlyName,
         typeLabel = if (entity.domain == "fan" && widget?.showFanSpeed != true) "Fan" else deviceTypeLabel(entity),
         icon = controlIcon(entity, widget?.icon ?: "auto"),
-        active = entity.state in setOf("on", "open", "opening"),
+        active = on,
         body = body,
         bodyText = when (body) {
             ControlBody.FAN -> "Speed · ${entity.numberAttribute("percentage")?.roundToInt() ?: 0}%"
@@ -91,9 +157,30 @@ fun controlCard(
         showPower = entity.domain != "cover",
         showTimer = entity.domain in TIMER_DOMAINS && widget?.showTimer != false,
         showSchedule = widget?.showSchedule != false,
-        // A card whose body already has a richer control should not also
-        // toggle when tapped anywhere.
-        cardTap = widget?.cardTap ?: (body == ControlBody.BINARY),
+        // The whole tile is the toggle. That was not true of a card, which
+        // carried its own controls and could not also be one; a tile puts the
+        // level in a sheet precisely so the surface is free to toggle.
+        // A cover is the exception: it has a position, not an on and an off.
+        // An unavailable device cannot be toggled, whatever the layout says.
+        // Its long press survives: that sheet is the only thing that can say
+        // why the tile has gone quiet.
+        cardTap = available && (widget?.cardTap ?: (entity.domain != "cover")),
         dense = dense,
+        level = level,
+        levelText = levelText,
+        hasColourTemperature = kelvin != null,
+        colourTemperature = kelvin?.let { "${it.roundToInt()}K" },
+        actionStrip = entity.domain == "cover",
+        // A cover says its position in the fill and its actions in the strip,
+        // so it has neither room nor need for a line of prose.
+        available = available,
+        moving = moving,
+        state = entity.state,
+        subtitle = when {
+            !available -> "Unavailable"
+            entity.domain == "cover" -> null
+            levelText != null -> null
+            else -> entity.state.replace('_', ' ').replaceFirstChar { it.uppercase() }
+        },
     )
 }

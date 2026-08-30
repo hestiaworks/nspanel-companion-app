@@ -9,9 +9,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import android.os.SystemClock
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import dev.hacompanion.panel.MicUsageTracker
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -29,17 +36,24 @@ import dev.hacompanion.panel.DashboardWidget
 import dev.hacompanion.panel.EntityState
 import dev.hacompanion.panel.ui.components.PanelText
 import dev.hacompanion.panel.ui.model.pageCells
+import dev.hacompanion.panel.ui.model.CONTROL_WIDGETS
+import dev.hacompanion.panel.ui.model.controlCard
+import dev.hacompanion.panel.ui.pages.LightPage
 import dev.hacompanion.panel.ui.model.resolveEntity
 import dev.hacompanion.panel.ui.model.thermostatModel
 import dev.hacompanion.panel.ui.model.weatherModel
 import dev.hacompanion.panel.ui.pages.ControlActions
 import dev.hacompanion.panel.ui.pages.PageGrid
 import dev.hacompanion.panel.ui.pages.ThermostatPage
+import dev.hacompanion.panel.ui.slab.HeaderRow
 import dev.hacompanion.panel.ui.pages.WeatherPage
 import dev.hacompanion.panel.ui.theme.LocalPanelColors
 import dev.hacompanion.panel.ui.theme.LocalPanelSpace
 import dev.hacompanion.panel.ui.theme.LocalPanelType
+import dev.hacompanion.panel.ui.model.panelTime
+import dev.hacompanion.panel.ui.slab.StatusStrip
 import dev.hacompanion.panel.ui.theme.PanelThemeProvider
+import java.util.TimeZone
 
 /**
  * The dashboard's snapshot-backed inputs. Writing one of these is the whole
@@ -55,17 +69,39 @@ class DashboardUiState {
     var panelId by mutableStateOf("")
     var dark by mutableStateOf(false)
 
+    /** Home Assistant's clock, which the panel's own is not trusted over. */
+    var serverTimeMs by mutableStateOf(System.currentTimeMillis())
+    var syncedAtElapsedMs by mutableStateOf(0L)
+    var timezone: TimeZone by mutableStateOf(TimeZone.getDefault())
+    var showClock by mutableStateOf(true)
+    var showMic by mutableStateOf(true)
+    var micLingerSeconds by mutableStateOf(15)
+
     /**
      * Bumped when schedules or timers change. Neither lives in the entity map,
      * so nothing else would tell the affected labels to recompose.
      */
     var sidecarRevision by mutableStateOf(0)
+
+    /**
+     * Bumped once a second while a timer runs, so only the corner marks that
+     * read it recompose rather than the whole page.
+     */
+    var timerTick by mutableStateOf(0)
+
+    /**
+     * Which setpoint the rail adjusts, per entity.
+     *
+     * Snapshot state, so choosing one moves the fill on the next frame. Held
+     * in a plain map it moved on the next entity update instead, which read
+     * as the rail adjusting whichever setpoint you had selected before.
+     */
+    val selectedTargets = mutableStateMapOf<String, String>()
 }
 
 /** Everything the dashboard's pages call back into. */
 interface DashboardActions : ControlActions {
     fun openAdmin()
-    fun openCamera(widget: DashboardWidget)
 
     /** A stream URL warmed while this camera was one swipe away, if any. */
     fun claimWarmedStream(widget: DashboardWidget): String?
@@ -73,6 +109,12 @@ interface DashboardActions : ControlActions {
     fun selectClimateTarget(entityId: String, target: String)
     fun stepThermostat(entityId: String, up: Boolean)
     fun setHvacMode(entityId: String, mode: String)
+
+    /** The sheet behind the mode row's MORE slot. */
+    fun openMoreModes(entityId: String)
+
+    /** The sheet behind a fan speed or swing cell. `key` is the attribute. */
+    fun openClimateAttribute(entityId: String, key: String)
 }
 
 @Composable
@@ -82,7 +124,13 @@ fun DashboardRoot(
     actions: DashboardActions,
 ) {
     PanelThemeProvider(ui.dark) {
-        Box(Modifier.fillMaxSize().background(LocalPanelColors.current.canvas)) {
+        Column(Modifier.fillMaxSize().background(LocalPanelColors.current.canvas)) {
+            // The strip is on every page, which is what makes it the place
+            // for administration now that a grid page has no header to press.
+            if (ui.showClock || ui.showMic) {
+                PanelStatusStrip(ui, actions::openAdmin)
+            }
+            Box(Modifier.fillMaxWidth().weight(1f)) {
             if (!ui.configured) {
                 UnconfiguredPage(ui.panelName, ui.panelId, actions::openAdmin)
             } else {
@@ -96,8 +144,36 @@ fun DashboardRoot(
                     key(page.id) { PageContent(page, ui, entities, actions) }
                 }
             }
+            }
         }
     }
+}
+
+/**
+ * The clock ticks in composition rather than from a view's handler, so the
+ * whole strip is one recomposition a second and nothing is laid out twice.
+ */
+@Composable
+private fun PanelStatusStrip(ui: DashboardUiState, onLongPress: () -> Unit) {
+    val context = LocalContext.current
+    var elapsed by remember { mutableStateOf(SystemClock.elapsedRealtime()) }
+    var micActive by remember { mutableStateOf(false) }
+    LaunchedEffect(ui.micLingerSeconds) {
+        while (true) {
+            elapsed = SystemClock.elapsedRealtime()
+            micActive = MicUsageTracker.recentlyUsed(context, ui.micLingerSeconds)
+            delay(1_000)
+        }
+    }
+    StatusStrip(
+        time = if (ui.showClock) {
+            panelTime(ui.serverTimeMs, ui.syncedAtElapsedMs, elapsed, ui.timezone)
+        } else "",
+        micActive = if (ui.showMic) micActive else null,
+        pages = ui.layout.pages.size,
+        current = ui.pageIndex,
+        onLongPress = onLongPress,
+    )
 }
 
 @Composable
@@ -118,20 +194,42 @@ private fun PageContent(
                     context,
                     only,
                     claimWarmed = { actions.claimWarmedStream(only) },
-                ) { actions.openCamera(only) }
+                )
             },
         )
         return
     }
 
-    PageScaffold(page.title, actions::openAdmin) {
-        when (only?.type) {
-            "thermostat" -> ThermostatBody(only, ui, entities, actions)
-            "weather" -> WeatherBody(only, entities)
-            // Every other page is the same grid; each widget brings its own
-            // form, so no page-wide type has to be inferred from the mixture.
-            else -> PageBody(page, ui, entities, actions)
+    // A Slab page draws its own header band, so it sits outside the scaffold
+    // and carries the long press that opens administration itself.
+    if (only?.type == "thermostat") {
+        ThermostatBody(only, ui, entities, actions)
+        return
+    }
+    // Weather draws its own bands from the top edge down, so it has no header
+    // row: the reading is the page's title.
+    if (only?.type == "weather") {
+        WeatherBody(only, entities)
+        return
+    }
+
+    // A light alone on its page gets the page rather than a quarter of it:
+    // the same controls a sheet offers, at a size that can be used without
+    // aiming. Anything else on the page and it is a tile like the rest.
+    if (only != null && only.type in CONTROL_WIDGETS) {
+        val entity = resolveEntity(entities, only)
+        if (entity?.domain == "light") {
+            @Suppress("UNUSED_EXPRESSION") ui.sidecarRevision
+            LightPage(controlCard(entity, only, dense = false), ui.online, actions)
+            return
         }
+    }
+
+    // No header. Every tile says what it is and what it is doing, so a band
+    // repeating the page's name is a band of screen spent on nothing — and on
+    // a four-tile page it is the 56 px that were making the names clip.
+    Box(Modifier.fillMaxSize().background(LocalPanelColors.current.canvas)) {
+        PageBody(page, ui, entities, actions)
     }
 }
 
@@ -166,6 +264,9 @@ private fun ThermostatBody(
         onTargetSelected = { actions.selectClimateTarget(climate.entityId, it) },
         onStep = { up -> actions.stepThermostat(climate.entityId, up) },
         onMode = { mode -> actions.setHvacMode(climate.entityId, mode) },
+        onLongPressTitle = actions::openAdmin,
+        onOpenMore = { actions.openMoreModes(climate.entityId) },
+        onOpenAttribute = { key -> actions.openClimateAttribute(climate.entityId, key) },
     )
 }
 
@@ -189,20 +290,20 @@ private fun PageScaffold(title: String, onLongPress: () -> Unit, content: @Compo
     val space = LocalPanelSpace.current
     Column(
         Modifier.fillMaxSize().padding(
-            start = space.pageStart,
-            top = space.pageTop,
-            end = space.pageStart,
-            bottom = space.pageBottom,
+            start = space.edge,
+            top = space.edge,
+            end = space.edge,
+            bottom = space.edge,
         ),
     ) {
         PanelText(
             title,
-            type.pageTitle,
+            type.body,
             Modifier
                 .fillMaxWidth()
                 .semantics { contentDescription = "$title. Long press for administrator controls" }
                 .combinedClickable(onClick = {}, onLongClick = onLongPress)
-                .padding(start = space.tiny, bottom = space.titleGap),
+                .padding(start = space.edge, bottom = space.edge),
             bold = true,
             maxLines = 1,
         )
@@ -238,14 +339,14 @@ private fun UnconfiguredPage(panelName: String, panelId: String, onLongPress: ()
         PanelText(
             "NSPANEL COMPANION", type.label,
             muted = true, bold = true, align = TextAlign.Center,
-            letterSpacing = type.eyebrowTracking,
+            letterSpacing = type.labelTracking,
         )
         PanelText(
-            panelName, type.panelName,
-            Modifier.padding(top = space.unconfiguredNameGap, bottom = space.columnGap),
+            panelName, type.title,
+            Modifier.padding(top = space.unconfiguredNameGap, bottom = space.edge),
             bold = true, align = TextAlign.Center,
         )
-        PanelText("Dashboard not configured", type.headline, bold = true, align = TextAlign.Center)
+        PanelText("Dashboard not configured", type.subtitle, bold = true, align = TextAlign.Center)
         PanelText(
             "Open Home Assistant \u2192 NSPanel Companion, select this panel, and create its pages.",
             type.body,
