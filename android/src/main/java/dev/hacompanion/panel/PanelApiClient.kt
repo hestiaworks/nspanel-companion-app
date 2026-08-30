@@ -19,6 +19,7 @@ class PanelApiClient(
     private val onInitialStates: (List<EntityState>) -> Unit,
     private val onEntityChanged: (EntityState) -> Unit,
     private val onDoorbellEvent: (DoorbellEvent) -> Unit,
+    private val onRestart: () -> Unit = {},
     private val onWeatherForecast: (String, String, org.json.JSONArray) -> Unit = { _, _, _ -> },
     private val onSchedules: (List<ControlSchedule>) -> Unit = {},
     private val onServerTime: (Long, String) -> Unit = { _, _ -> },
@@ -110,6 +111,10 @@ class PanelApiClient(
                     talkExtendMs = data.optLong("talk_extend_ms", 15_000L).coerceIn(0L, 60_000L),
                     talkbackTestUrl = data.optString("talkback_test_url").takeIf(String::isNotBlank),
                 )) } }
+                // Home Assistant asking the panel to restart itself. It only
+                // arrives while the socket is being read, which is exactly
+                // the case the add-on's ADB path exists to cover.
+                "restart" -> handler.post { onRestart() }
             }
         }
 

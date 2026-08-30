@@ -51,6 +51,7 @@ class MainActivity : Activity() {
     private lateinit var settingsStore: SecureSettingsStore
     private lateinit var layoutStore: DashboardLayoutStore
     private var navBarMode: NavBarMode = NavBarMode.LISTENER
+    private val proximityWake by lazy { ProximityWake(this) }
     private lateinit var weatherCacheStore: WeatherCacheStore
     private lateinit var dashboardView: PanelDashboardView
     private lateinit var rootView: FrameLayout
@@ -134,6 +135,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        proximityWake.setEnabled(false)
         haClient?.stop()
         haClient = null
         panelApiClient?.stop()
@@ -201,6 +203,7 @@ class MainActivity : Activity() {
             // A panel that boots before Home Assistant answers still has its
             // saved layout, and should not spend that time in the wrong mode.
             applySystemUi(activeLayout)
+            applyProximityWake(activeLayout)
             dashboardView.setLayout(activeLayout)
             dashboardView.setCachedWeather(weatherCacheStore.load(activeLayout.weatherCacheMaxAgeMinutes))
         } else if (credentials != null) {
@@ -704,6 +707,7 @@ class MainActivity : Activity() {
                 onInitialStates = ::activateInitialStates,
                 onEntityChanged = ::activateEntityState,
                 onDoorbellEvent = ::showDoorbellEvent,
+                onRestart = ::restartPanel,
                 onWeatherForecast = dashboardView::updateWeatherForecast,
                 onSchedules = dashboardView::setSchedules,
                 onServerTime = { millis, timezone ->
@@ -758,6 +762,7 @@ class MainActivity : Activity() {
             (dashboardView.parent as? View)?.setBackgroundColor(PanelTheme.canvas)
             applyKeepScreenOn(layout.keepScreenOn)
             applySystemUi(layout)
+            applyProximityWake(layout)
             dashboardView.setLayout(layout)
             if (PanelProvisioningStore(this).load() != null) connectWithSavedSettings()
             Toast.makeText(this, "Layout updated", Toast.LENGTH_SHORT).show()
@@ -819,6 +824,17 @@ class MainActivity : Activity() {
 
     private fun applyBarVisibility() {
         if (SystemUiPolicy.barsHidden(navBarMode)) enterImmersiveMode() else exitImmersiveMode()
+    }
+
+    /**
+     * Listen for someone approaching, when asked to.
+     *
+     * Pointless while the display is held on — there is nothing to wake —
+     * so the two settings are read together rather than the sensor running
+     * to no purpose.
+     */
+    private fun applyProximityWake(layout: DashboardLayout) {
+        proximityWake.setEnabled(layout.wakeOnApproach && !layout.keepScreenOn)
     }
 
     private fun applyKeepScreenOn(enabled: Boolean) {

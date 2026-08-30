@@ -18,6 +18,8 @@ data class DashboardLayout(
     val themeDark: Boolean = false,
     val navBarMode: NavBarMode = NavBarMode.LISTENER,
     val hideAccessibilityButton: Boolean = false,
+    /** Light the screen when the proximity sensor sees someone. */
+    val wakeOnApproach: Boolean = false,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("schema_version", schemaVersion)
@@ -33,6 +35,7 @@ data class DashboardLayout(
         .put("theme_dark", themeDark)
         .put("nav_bar_mode", navBarMode.name.lowercase())
         .put("hide_accessibility_button", hideAccessibilityButton)
+        .put("wake_on_approach", wakeOnApproach)
         .put("pages", JSONArray().apply { pages.forEach { put(it.toJson()) } })
 
     companion object {
@@ -67,10 +70,11 @@ data class DashboardLayout(
             val themeDark = json.optBoolean("theme_dark", false)
             val navBarMode = NavBarMode.from(json.optString("nav_bar_mode", "listener"))
             val hideAccessibilityButton = json.optBoolean("hide_accessibility_button", false)
+            val wakeOnApproach = json.optBoolean("wake_on_approach", false)
             return DashboardLayout(
                 version, revision, defaultPageId, pages, returnSeconds, cacheMinutes,
                 keepScreenOn, showClock, showMicIndicator, micIndicatorLingerSeconds,
-                themeMode, themeDark, navBarMode, hideAccessibilityButton,
+                themeMode, themeDark, navBarMode, hideAccessibilityButton, wakeOnApproach,
             )
         }
 

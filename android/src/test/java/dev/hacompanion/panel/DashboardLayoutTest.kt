@@ -228,4 +228,15 @@ class DashboardLayoutTest {
         assertEquals(NavBarMode.IMMERSIVE, again.navBarMode)
         assertTrue(again.hideAccessibilityButton)
     }
+
+    @Test
+    fun `waking on approach is off unless the layout asks for it`() {
+        fun panel(fields: String) = DashboardLayout.parse(
+            """{"schema_version":1,"revision":"r"$fields,"pages":[{"id":"p","widgets":[]}]}""",
+        )
+        assertFalse(panel("").wakeOnApproach)
+        assertTrue(panel(""","wake_on_approach":true""").wakeOnApproach)
+        assertTrue(panel(""","wake_on_approach":true""").toJson()
+            .getBoolean("wake_on_approach"))
+    }
 }
