@@ -52,6 +52,17 @@ class MainActivity : Activity() {
     private lateinit var layoutStore: DashboardLayoutStore
     private var navBarMode: NavBarMode = NavBarMode.LISTENER
     private val proximityWake by lazy { ProximityWake(this) }
+
+    /**
+     * Watches the accessibility setting and puts it back.
+     *
+     * The vendor's launcher re-enables its own back button whenever it runs,
+     * and on this panel it runs whenever our app is not Home — so setting
+     * the value once at startup loses a race nobody can win by being early.
+     * Re-asserting is idempotent: with nothing of the vendor's enabled there
+     * is nothing to write.
+     */
+    private var accessibilityGuard: android.database.ContentObserver? = null
     private lateinit var weatherCacheStore: WeatherCacheStore
     private lateinit var dashboardView: PanelDashboardView
     private lateinit var rootView: FrameLayout
@@ -136,6 +147,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         proximityWake.setEnabled(false)
+        watchAccessibilityButton(false)
         haClient?.stop()
         haClient = null
         panelApiClient?.stop()
@@ -795,6 +807,7 @@ class MainActivity : Activity() {
                 SystemUiPolicy.policyControlValue(navBarMode),
             )
             applyAccessibilityButton(layout.hideAccessibilityButton)
+            watchAccessibilityButton(layout.hideAccessibilityButton)
         } catch (error: SecurityException) {
             Log.w(TAG, "System UI settings refused by Android", error)
         }
@@ -805,6 +818,23 @@ class MainActivity : Activity() {
      * than part of the navigation bar, so hiding it means disabling that
      * service — and restoring it means having remembered which one it was.
      */
+    private fun watchAccessibilityButton(hide: Boolean) {
+        val watching = accessibilityGuard != null
+        if (hide == watching) return
+        if (!hide) {
+            accessibilityGuard?.let { contentResolver.unregisterContentObserver(it) }
+            accessibilityGuard = null
+            return
+        }
+        val observer = object : android.database.ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) = applyAccessibilityButton(true)
+        }
+        contentResolver.registerContentObserver(
+            Settings.Secure.getUriFor(SystemUiPolicy.ACCESSIBILITY_SERVICES), false, observer,
+        )
+        accessibilityGuard = observer
+    }
+
     private fun applyAccessibilityButton(hide: Boolean) {
         val store = getSharedPreferences(SYSTEM_UI_STORE, Context.MODE_PRIVATE)
         val change = SystemUiPolicy.accessibilityChange(
