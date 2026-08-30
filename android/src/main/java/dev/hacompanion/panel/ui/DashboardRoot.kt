@@ -36,6 +36,9 @@ import dev.hacompanion.panel.DashboardWidget
 import dev.hacompanion.panel.EntityState
 import dev.hacompanion.panel.ui.components.PanelText
 import dev.hacompanion.panel.ui.model.pageCells
+import dev.hacompanion.panel.ui.model.CONTROL_WIDGETS
+import dev.hacompanion.panel.ui.model.controlCard
+import dev.hacompanion.panel.ui.pages.LightPage
 import dev.hacompanion.panel.ui.model.resolveEntity
 import dev.hacompanion.panel.ui.model.thermostatModel
 import dev.hacompanion.panel.ui.model.weatherModel
@@ -208,6 +211,18 @@ private fun PageContent(
     if (only?.type == "weather") {
         WeatherBody(only, entities)
         return
+    }
+
+    // A light alone on its page gets the page rather than a quarter of it:
+    // the same controls a sheet offers, at a size that can be used without
+    // aiming. Anything else on the page and it is a tile like the rest.
+    if (only != null && only.type in CONTROL_WIDGETS) {
+        val entity = resolveEntity(entities, only)
+        if (entity?.domain == "light") {
+            @Suppress("UNUSED_EXPRESSION") ui.sidecarRevision
+            LightPage(controlCard(entity, only, dense = false), ui.online, actions)
+            return
+        }
     }
 
     // No header. Every tile says what it is and what it is doing, so a band

@@ -10,7 +10,8 @@ sealed interface PageCell {
     data class Missing(val label: String) : PageCell
 }
 
-private val CONTROL_WIDGETS = setOf("controls", "entity_button")
+/** Widget types that resolve to something with a level or a switch. */
+internal val CONTROL_WIDGETS = setOf("controls", "entity_button")
 private val CONTROL_DOMAINS = setOf("light", "switch", "input_boolean", "fan", "cover")
 
 /**

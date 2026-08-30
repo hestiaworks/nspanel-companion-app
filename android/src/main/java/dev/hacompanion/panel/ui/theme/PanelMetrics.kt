@@ -37,6 +37,9 @@ data class PanelType(
     /** The unit beside a 120 px reading, and the caption under it. */
     val heroUnit: TextUnit = 42.sp,
     val heroUnitSmall: TextUnit = 38.sp,
+    /** The level on a light's own page: 96 over a 36 unit, per section 7. */
+    val lightHero: TextUnit = 96.sp,
+    val lightHeroUnit: TextUnit = 36.sp,
     val caption: TextUnit = 16.sp,
     /** A phrase standing where a reading would be, so it is not set like one. */
     val note: TextUnit = 19.sp,
@@ -157,6 +160,26 @@ data class PanelSize(
     val weatherHoursTall: Dp = 198.dp,
     /** Hours at 5 days: no glyph, and 11 px off every day row. */
     val weatherHoursStrip: Dp = 56.dp,
+
+    /**
+     * A light that owns its page. Section 7 gives the hero and the preset
+     * row two sizes: the larger pair when there is no colour-temperature
+     * band, the smaller when there is.
+     *
+     * The level band takes whatever is left rather than a stated height.
+     * The spec's own colour-temperature frame does not sum to 480 — its
+     * bands come to more than the screen, which its overflow:hidden hides —
+     * so something has to give, and a band whose job is to be dragged gives
+     * more gracefully than a touch target that would fall under the 64 px
+     * floor.
+     */
+    val lightHeader: Dp = 56.dp,
+    val lightHero: Dp = 130.dp,
+    val lightHeroTuned: Dp = 112.dp,
+    val lightPresets: Dp = 70.dp,
+    val lightPresetsTuned: Dp = 64.dp,
+    val lightColour: Dp = 70.dp,
+    val lightSwitch: Dp = 70.dp,
     /** A cover's band, shorter because an action row shares the sheet. */
     val coverBand: Dp = 110.dp,
     /** A travelling cover's striped zone, and the period of its bars. */

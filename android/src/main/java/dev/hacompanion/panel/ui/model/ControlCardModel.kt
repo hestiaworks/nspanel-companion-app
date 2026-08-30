@@ -35,6 +35,15 @@ data class ControlCardModel(
      * would claim a level it has no way to set.
      */
     val levelText: String?,
+    /**
+     * Whether this light can be tuned, and what it currently sits at.
+     *
+     * A light that reports no colour_temp_kelvin has no band; one that has
+     * gone unavailable keeps reporting the attribute it last had, and a
+     * band that cannot be moved is worse than no band.
+     */
+    val hasColourTemperature: Boolean,
+    val colourTemperature: String?,
     /** Covers get ▲ ■ ▼ where everything else has room for a subtitle. */
     val actionStrip: Boolean,
     /**
@@ -124,6 +133,8 @@ fun controlCard(
         "fan" -> entity.numberAttribute("percentage")?.roundToInt() ?: if (on) 100 else 0
         else -> if (on) 100 else 0
     }
+    val kelvin = entity.numberAttribute("color_temp_kelvin")
+        ?.takeIf { available && entity.domain == "light" && it > 0 }
     // Shown only where the number means something the tile can set.
     val levelText = level
         ?.takeIf { on && body != ControlBody.BINARY }
@@ -157,6 +168,8 @@ fun controlCard(
         dense = dense,
         level = level,
         levelText = levelText,
+        hasColourTemperature = kelvin != null,
+        colourTemperature = kelvin?.let { "${it.roundToInt()}K" },
         actionStrip = entity.domain == "cover",
         // A cover says its position in the fill and its actions in the strip,
         // so it has neither room nor need for a line of prose.

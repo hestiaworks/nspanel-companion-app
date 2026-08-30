@@ -236,4 +236,22 @@ class ControlCardModelTest {
         // footer is gone; the timer lives in the sheet.
         assertTrue(controlCard(entity("cover.a", "open"), null, dense = false).showTimer)
     }
+
+    @Test
+    fun colourTemperatureIsOfferedOnlyWhenTheLightReportsIt() {
+        val plain = entity("light.a", "on", """{"brightness": 128}""")
+        assertFalse(controlCard(plain, null, dense = false).hasColourTemperature)
+        val tunable = entity("light.a", "on", """{"brightness":128,"color_temp_kelvin":3200}""")
+        val card = controlCard(tunable, null, dense = false)
+        assertTrue(card.hasColourTemperature)
+        assertEquals("3200K", card.colourTemperature)
+    }
+
+    @Test
+    fun anUnavailableLightOffersNoColourTemperature() {
+        // The attribute survives in the state machine after a light drops
+        // off, and a band you cannot move is worse than no band.
+        val gone = entity("light.a", "unavailable", """{"color_temp_kelvin":3200}""")
+        assertFalse(controlCard(gone, null, dense = false).hasColourTemperature)
+    }
 }
