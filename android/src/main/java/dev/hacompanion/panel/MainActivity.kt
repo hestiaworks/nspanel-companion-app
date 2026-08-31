@@ -14,11 +14,15 @@ import dev.hacompanion.panel.ui.slab.pairingOnboardingView
 import dev.hacompanion.panel.ui.slab.showPairingScreen
 import dev.hacompanion.panel.ui.slab.AdminAction
 import dev.hacompanion.panel.ui.slab.AdminScreen
+import dev.hacompanion.panel.ui.slab.EntryField
+import dev.hacompanion.panel.ui.slab.ScreenAction
+import dev.hacompanion.panel.ui.slab.showEntryScreen
+import dev.hacompanion.panel.ui.slab.showNoticeScreen
+import dev.hacompanion.panel.ui.slab.showReportScreen
 import dev.hacompanion.panel.ui.slab.showPanelScreen
 
 import android.Manifest
 import android.app.Activity
-import android.app.AlertDialog
 import android.app.Dialog
 import android.app.role.RoleManager
 import android.content.ClipData
@@ -39,13 +43,10 @@ import android.view.Window
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.widget.Button
-import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import android.text.InputType
 
 class MainActivity : Activity() {
     private lateinit var reportView: TextView
@@ -279,40 +280,6 @@ class MainActivity : Activity() {
         onboardingView = null
     }
 
-    private fun createConnectionCard(): View =
-        LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), dp(8), dp(12), dp(8))
-            setBackgroundColor(Color.rgb(27, 34, 36))
-
-            connectionDot = TextView(this@MainActivity).apply {
-                text = "●"
-                textSize = 18f
-                setTextColor(MUTED)
-                setPadding(0, 0, dp(12), 0)
-            }
-            addView(connectionDot)
-
-            addView(
-                LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.VERTICAL
-                    connectionTitle = TextView(this@MainActivity).apply {
-                        text = "Home Assistant not configured"
-                        textSize = 16f
-                        setTextColor(Color.WHITE)
-                    }
-                    connectionDetail = TextView(this@MainActivity).apply {
-                        text = "Use Configure HA to add a local server"
-                        textSize = 12f
-                        setTextColor(MUTED)
-                    }
-                    addView(connectionTitle)
-                    addView(connectionDetail)
-                },
-                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
-            )
-        }
 
     private fun actionButton(label: String, action: () -> Unit): Button =
         Button(this).apply {
@@ -380,14 +347,17 @@ class MainActivity : Activity() {
      * is never shown, and there is nothing here for anyone to retype.
      */
     private fun showConnectionInfo(credentials: PanelCredentials) {
-        AlertDialog.Builder(this)
-            .setTitle("Home Assistant")
-            .setMessage(
-                "Paired.\n\nAddress\n${credentials.baseUrl}\n\nPanel\n${credentials.panelId}",
-            )
-            .setNegativeButton("Close", null)
-            .setPositiveButton("Connect manually") { _, _ -> showConnectionDialog() }
-            .show()
+        showNoticeScreen(
+            this, PanelTheme.isDark,
+            badge = "PAIRED",
+            title = "Home Assistant",
+            message = "This panel is paired and holds its own token.",
+            detail = "${credentials.baseUrl}\n${credentials.panelId}",
+            actions = listOf(
+                ScreenAction("CLOSE"),
+                ScreenAction("CONNECT MANUALLY") { showConnectionDialog() },
+            ),
+        )
     }
 
     /**
@@ -416,37 +386,41 @@ class MainActivity : Activity() {
 
     private fun showPanelIdentity() {
         val deviceId = PanelIdentityStore(this).deviceId
-        AlertDialog.Builder(this)
-            .setTitle("Panel identity")
-            .setMessage("Use this stable device ID when pairing:\n\n$deviceId")
-            .setNegativeButton("Close", null)
-            .setPositiveButton("Copy") { _, _ ->
-                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                clipboard.setPrimaryClip(ClipData.newPlainText("Panel device ID", deviceId))
-            }
-            .show()
+        showNoticeScreen(
+            this, PanelTheme.isDark,
+            badge = "PANEL IDENTITY",
+            title = "This panel's device ID",
+            message = "It stays the same across reinstalls. Use it when pairing.",
+            detail = deviceId,
+            actions = listOf(
+                ScreenAction("CLOSE"),
+                ScreenAction("COPY") {
+                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("Panel device ID", deviceId))
+                },
+            ),
+        )
     }
 
     private fun discoverForPairing() {
         val results = linkedMapOf<String, DiscoveredHomeAssistant>()
         lateinit var discovery: HomeAssistantDiscovery
-        val searching = AlertDialog.Builder(this)
-            .setTitle("Find Home Assistant")
-            .setMessage("Searching the local network…")
-            .setNegativeButton("Cancel") { _, _ -> discovery.stop() }
-            .setPositiveButton("Enter URL", null)
-            .create()
         discovery = HomeAssistantDiscovery(this) { result ->
             runOnUiThread { results[result.baseUrl] = result }
         }
-        searching.setOnShowListener {
-            searching.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                discovery.stop()
-                searching.dismiss()
-                showManualPairingUrl()
-            }
-        }
-        searching.show()
+        val searching = showNoticeScreen(
+            this, PanelTheme.isDark,
+            badge = "SEARCHING",
+            title = "Find Home Assistant",
+            message = "Looking for Home Assistant on this network.",
+            actions = listOf(
+                ScreenAction("CANCEL") { discovery.stop() },
+                ScreenAction("ENTER ADDRESS") {
+                    discovery.stop()
+                    showManualPairingUrl()
+                },
+            ),
+        )
         discovery.start()
         Handler(Looper.getMainLooper()).postDelayed({
             if (!searching.isShowing) return@postDelayed
@@ -457,24 +431,45 @@ class MainActivity : Activity() {
                 1 -> beginPairing(results.values.single().baseUrl)
                 else -> {
                     val values = results.values.toList()
-                    AlertDialog.Builder(this).setTitle("Choose Home Assistant")
-                        .setItems(values.map { "${it.name}\n${it.baseUrl}" }.toTypedArray()) { _, index ->
-                            beginPairing(values[index].baseUrl)
-                        }.setNegativeButton("Cancel", null).show()
+                    // More than one answered, so the address is the thing
+                    // that tells them apart and belongs under each name.
+                    showPanelScreen(this, PanelTheme.isDark) { dismiss ->
+                        AdminScreen(
+                            values.map { found ->
+                                AdminAction(found.name, found.baseUrl) {
+                                    beginPairing(found.baseUrl)
+                                }
+                            },
+                            dismiss,
+                            title = "Choose Home Assistant",
+                            closeLabel = "CANCEL",
+                        )
+                    }
                 }
             }
         }, 4_000)
     }
 
     private fun showManualPairingUrl(message: String? = null) {
-        val input = EditText(this).apply {
-            hint = "http://homeassistant.local:8123"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            setText(settingsStore.load()?.baseUrl.orEmpty())
+        showEntryScreen(
+            this, PanelTheme.isDark,
+            title = "Home Assistant address",
+            message = message ?: "",
+            fields = listOf(
+                EntryField(
+                    "ADDRESS",
+                    hint = "http://homeassistant.local:8123",
+                    initial = settingsStore.load()?.baseUrl.orEmpty(),
+                ),
+            ),
+            submitLabel = "CONTINUE",
+        ) { values ->
+            val address = values.first().trim()
+            if (address.isBlank()) "Enter an address to continue." else {
+                beginPairing(address)
+                null
+            }
         }
-        AlertDialog.Builder(this).setTitle("Home Assistant address").setMessage(message)
-            .setView(input).setNegativeButton("Cancel", null)
-            .setPositiveButton("Continue") { _, _ -> beginPairing(input.text.toString()) }.show()
     }
 
     private fun beginPairing(baseUrl: String) {
@@ -549,67 +544,51 @@ class MainActivity : Activity() {
 
     private fun showDiagnostics() {
         refreshReport()
-        val content = TextView(this).apply {
-            text = reportView.text
-            typeface = android.graphics.Typeface.MONOSPACE
-            textSize = 13f
-            setTextColor(Color.WHITE)
-            setTextIsSelectable(true)
-            setPadding(dp(16), dp(8), dp(16), dp(8))
-        }
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.diagnostic_title))
-            .setView(ScrollView(this).apply { addView(content) })
-            .setPositiveButton("Close", null)
-            .show()
+        val report = reportView.text.toString()
+        showReportScreen(
+            this, PanelTheme.isDark,
+            title = getString(R.string.diagnostic_title),
+            report = report,
+            actions = listOf(
+                ScreenAction("CLOSE"),
+                ScreenAction("COPY") {
+                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("NSPanel diagnostic", report))
+                },
+            ),
+        )
     }
 
     private fun showConnectionDialog() {
         val current = settingsStore.load()
-        val fields = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(4), dp(20), 0)
-        }
-        val url = EditText(this).apply {
-            hint = "http://homeassistant.local:8123"
-            setText(current?.baseUrl.orEmpty())
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            isSingleLine = true
-        }
-        val token = EditText(this).apply {
-            hint = if (current == null) "Long-lived access token" else "Leave blank to keep token"
-            inputType =
-                InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            isSingleLine = true
-        }
-        fields.addView(url)
-        fields.addView(token)
-
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("Home Assistant connection")
-            .setMessage(
-                "Development setup: enter your local HA URL and a long-lived access token. " +
-                    "The token is encrypted with Android Keystore.",
-            )
-            .setView(fields)
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Save", null)
-            .create()
-
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val accessToken = token.text.toString().ifBlank { current?.accessToken.orEmpty() }
-                val settings = ConnectionSettings(url.text.toString(), accessToken)
-                try {
-                    settingsStore.save(settings)
-                    dialog.dismiss()
-                    connectWithSavedSettings()
-                } catch (error: Exception) {
-                    token.error = error.message ?: "Invalid connection settings"
-                }
+        showEntryScreen(
+            this, PanelTheme.isDark,
+            title = "Home Assistant connection",
+            message = "The token is encrypted with Android Keystore.",
+            fields = listOf(
+                EntryField(
+                    "ADDRESS",
+                    hint = "http://homeassistant.local:8123",
+                    initial = current?.baseUrl.orEmpty(),
+                ),
+                EntryField(
+                    "TOKEN",
+                    hint = if (current == null) "Long-lived access token"
+                    else "Leave blank to keep the current token",
+                    secret = true,
+                ),
+            ),
+            submitLabel = "SAVE",
+        ) { values ->
+            val accessToken = values[1].ifBlank { current?.accessToken.orEmpty() }
+            try {
+                settingsStore.save(ConnectionSettings(values[0], accessToken))
+                connectWithSavedSettings()
+                null
+            } catch (error: Exception) {
+                error.message ?: "Invalid connection settings"
             }
         }
-        dialog.show()
     }
 
     private fun connectWithSavedSettings() {

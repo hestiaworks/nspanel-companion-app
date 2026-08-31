@@ -48,9 +48,14 @@ data class AdminAction(
  * Rows are 72 px, above the 64 px floor the spec sets for anything you touch.
  */
 @Composable
-fun ColumnScope.AdminScreen(actions: List<AdminAction>, dismiss: () -> Unit) {
+fun ColumnScope.AdminScreen(
+    actions: List<AdminAction>,
+    dismiss: () -> Unit,
+    title: String = "Administrator controls",
+    closeLabel: String = "CLOSE",
+) {
     val colors = LocalPanelColors.current
-    EditorHeader("Administrator controls")
+    EditorHeader(title)
     Column(
         Modifier.fillMaxWidth().weight(1f).background(colors.canvas)
             .verticalScroll(rememberScrollState()),
@@ -68,7 +73,7 @@ fun ColumnScope.AdminScreen(actions: List<AdminAction>, dismiss: () -> Unit) {
             .clickable { dismiss() },
         contentAlignment = Alignment.Center,
     ) {
-        PanelText("CLOSE", LocalPanelType.current.body, semibold = true, maxLines = 1)
+        PanelText(closeLabel, LocalPanelType.current.body, semibold = true, maxLines = 1)
     }
 }
 
