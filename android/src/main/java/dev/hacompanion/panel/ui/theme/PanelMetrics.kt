@@ -40,6 +40,8 @@ data class PanelType(
     /** The level on a light's own page: 96 over a 36 unit, per section 7. */
     val lightHero: TextUnit = 96.sp,
     val lightHeroUnit: TextUnit = 36.sp,
+    /** The name of whoever is on the other end of a call. */
+    val callName: TextUnit = 56.sp,
     val caption: TextUnit = 16.sp,
     /** A phrase standing where a reading would be, so it is not set like one. */
     val note: TextUnit = 19.sp,
@@ -192,6 +194,18 @@ data class PanelSize(
     val historyRanges: Dp = 76.dp,
     /** Between bars: the spec draws rectangles in a row, not a solid block. */
     val historyBarGap: Dp = 2.dp,
+
+    /** Intercom, literal from section 7. */
+    val intercomHeader: Dp = 52.dp,
+    val intercomRow: Dp = 88.dp,
+    val intercomRowGap: Dp = 10.dp,
+    val intercomLiveRule: Dp = 3.dp,
+    val intercomHero: Dp = 160.dp,
+    val intercomMeter: Dp = 90.dp,
+    val intercomActions: Dp = 116.dp,
+    val intercomIncoming: Dp = 140.dp,
+    /** How long a ring waits before giving up, matching the doorbell's. */
+    val intercomRingSeconds: Int = 60,
     /** A cover's band, shorter because an action row shares the sheet. */
     val coverBand: Dp = 110.dp,
     /** A travelling cover's striped zone, and the period of its bars. */
