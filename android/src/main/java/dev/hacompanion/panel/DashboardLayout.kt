@@ -55,10 +55,21 @@ data class DashboardLayout(
             require(revision.isNotEmpty() && revision.length <= 64) { "Invalid layout revision" }
             val values = json.optJSONArray("pages") ?: error("Layout pages are required")
             require(values.length() in 1..MAX_PAGES) { "Layout must contain 1–$MAX_PAGES pages" }
-            val pages = buildList { for (index in 0 until values.length()) add(DashboardPage.parse(values.getJSONObject(index))) }
+            // A page emptied by widgets this build does not know is dropped:
+            // a blank page in the strip is worse than one page fewer.
+            val pages = buildList {
+                for (index in 0 until values.length()) {
+                    val source = values.getJSONObject(index)
+                    val page = DashboardPage.parse(source)
+                    val declared = source.optJSONArray("widgets")?.length() ?: 0
+                    if (declared > 0 && page.widgets.isEmpty()) continue
+                    add(page)
+                }
+            }
             require(pages.map(DashboardPage::id).distinct().size == pages.size) { "Page IDs must be unique" }
-            val defaultPageId = json.optString("default_page_id").ifBlank { pages.first().id }
-            require(pages.any { it.id == defaultPageId }) { "Default page does not exist" }
+            val defaultPageId = json.optString("default_page_id")
+                .ifBlank { pages.firstOrNull()?.id.orEmpty() }
+            require(pages.isEmpty() || pages.any { it.id == defaultPageId }) { "Default page does not exist" }
             val returnSeconds = json.optInt("default_page_return_seconds", 60)
             require(returnSeconds in 0..3_600) { "Default-page return must be 0–3600 seconds" }
             val cacheMinutes = json.optInt("weather_cache_max_age_minutes", 360)
@@ -115,7 +126,18 @@ data class DashboardPage(
             require(title.length <= 48) { "Page title is too long" }
             val values = json.optJSONArray("widgets") ?: JSONArray()
             require(values.length() <= DashboardLayout.MAX_WIDGETS_PER_PAGE) { "Too many widgets" }
-            val widgets = buildList { for (index in 0 until values.length()) add(DashboardWidget.parse(values.getJSONObject(index))) }
+            // A widget this build has never heard of is skipped, not fatal.
+            // A newer Home Assistant will send types this app does not know,
+            // and refusing the whole layout over one of them takes every
+            // page with it — which is exactly what an intercom page did to a
+            // panel that predated intercom.
+            val widgets = buildList {
+                for (index in 0 until values.length()) {
+                    val widget = values.getJSONObject(index)
+                    if (widget.optString("type").trim() !in DashboardWidget.SUPPORTED_TYPES) continue
+                    add(DashboardWidget.parse(widget))
+                }
+            }
             require(widgets.none { it.type in setOf("controls", "entity_button") } || widgets.size <= 4) {
                 "A controls page supports at most four controls"
             }

@@ -164,17 +164,21 @@ class DashboardLayoutTest {
     }
 
     @Test
-    fun rejectsUnknownSchemaAndWidgets() {
+    fun rejectsAnUnknownSchemaButNotAnUnknownWidget() {
+        // A schema this build cannot read is fatal: nothing in the document
+        // can be trusted. One widget it has never heard of is not — the rest
+        // of the layout is still good, and refusing it all would take every
+        // page away the first time Home Assistant learns a new widget type.
         assertThrows(IllegalArgumentException::class.java) {
             DashboardLayout.parse(
                 """{"schema_version":2,"revision":"x","pages":[{"id":"a","widgets":[]}]}""",
             )
         }
-        assertThrows(IllegalArgumentException::class.java) {
-            DashboardLayout.parse(
-                """{"schema_version":1,"revision":"x","pages":[{"id":"a","widgets":[{"type":"webview"}]}]}""",
-            )
-        }
+        val survived = DashboardLayout.parse(
+            """{"schema_version":1,"revision":"x","pages":[{"id":"a","widgets":[
+               {"type":"webview"},{"type":"weather"}]}]}""",
+        )
+        assertEquals(listOf("weather"), survived.pages.single().widgets.map { it.type })
     }
 
     @Test
@@ -238,5 +242,29 @@ class DashboardLayoutTest {
         assertTrue(panel(""","wake_on_approach":true""").wakeOnApproach)
         assertTrue(panel(""","wake_on_approach":true""").toJson()
             .getBoolean("wake_on_approach"))
+    }
+
+    @Test
+    fun `a widget this build does not know is skipped, not fatal`() {
+        // A newer Home Assistant can send a widget type this app has never
+        // heard of. Refusing the whole layout over it means every page
+        // disappears — which is what happened when an intercom page reached
+        // a panel that predated intercom: it silently kept its old pages.
+        val layout = DashboardLayout.parse(
+            """{"schema_version":1,"revision":"r","pages":[{"id":"p","widgets":[
+               {"type":"weather"},{"type":"hologram"}]}]}""",
+        )
+        val widgets = layout.pages.single().widgets
+        assertEquals(listOf("weather"), widgets.map { it.type })
+    }
+
+    @Test
+    fun `a page left empty by an unknown widget is dropped rather than blank`() {
+        val layout = DashboardLayout.parse(
+            """{"schema_version":1,"revision":"r","pages":[
+               {"id":"keep","widgets":[{"type":"weather"}]},
+               {"id":"gone","widgets":[{"type":"hologram"}]}]}""",
+        )
+        assertEquals(listOf("keep"), layout.pages.map { it.id })
     }
 }
