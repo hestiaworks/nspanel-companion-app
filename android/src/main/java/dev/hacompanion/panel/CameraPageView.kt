@@ -56,6 +56,8 @@ class CameraPageView(
     private val showMute: Boolean = false,
     /** Told while the microphone is live, so a ring can hold its timer open. */
     private val onTalkingChanged: (Boolean) -> Unit = {},
+    /** How much to raise what the microphone hears; 100 sends it as captured. */
+    private val talkbackGain: Int = 100,
 ) : FrameLayout(context), TextureView.SurfaceTextureListener {
     /**
      * A TextureView, not a SurfaceView.
@@ -458,7 +460,7 @@ class CameraPageView(
         if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) !=
             PackageManager.PERMISSION_GRANTED
         ) return
-        talkback = PcmTalkbackStreamer(endpoint, key) { message ->
+        talkback = PcmTalkbackStreamer(endpoint, key, talkbackGain) { message ->
             handler.post { if (message.contains("failed", true)) say("talkback failed") }
         }.also { it.start() }
     }

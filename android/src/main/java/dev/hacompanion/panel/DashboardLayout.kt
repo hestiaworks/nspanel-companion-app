@@ -22,6 +22,17 @@ data class DashboardLayout(
     val wakeOnApproach: Boolean = false,
     /** How far above the ambient reading counts as someone arriving. */
     val wakeSensitivity: String = "medium",
+    /**
+     * WebRTC's own software processing for a call.
+     *
+     * Both default on, which is what libwebrtc does when asked for nothing.
+     * They are software because this panel registers no platform audio
+     * effects at all — the hardware AEC and NS the session asks for find
+     * nothing to attach to.
+     */
+    val intercomNoiseSuppression: Boolean = true,
+    val intercomAutoGain: Boolean = true,
+
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("schema_version", schemaVersion)
@@ -30,6 +41,9 @@ data class DashboardLayout(
         .put("default_page_return_seconds", defaultPageReturnSeconds)
         .put("weather_cache_max_age_minutes", weatherCacheMaxAgeMinutes)
         .put("keep_screen_on", keepScreenOn)
+        .put("intercom", JSONObject()
+            .put("noise_suppression", intercomNoiseSuppression)
+            .put("auto_gain", intercomAutoGain))
         .put("show_clock", showClock)
         .put("show_mic_indicator", showMicIndicator)
         .put("mic_indicator_linger_seconds", micIndicatorLingerSeconds)
@@ -75,6 +89,9 @@ data class DashboardLayout(
             val cacheMinutes = json.optInt("weather_cache_max_age_minutes", 360)
             require(cacheMinutes in 0..10_080) { "Weather cache age must be 0–10080 minutes" }
             val keepScreenOn = json.optBoolean("keep_screen_on", false)
+            val intercom = json.optJSONObject("intercom")
+            val noiseSuppression = intercom?.optBoolean("noise_suppression", true) ?: true
+            val autoGain = intercom?.optBoolean("auto_gain", true) ?: true
             val showClock = json.optBoolean("show_clock", true)
             val showMicIndicator = json.optBoolean("show_mic_indicator", true)
             val micIndicatorLingerSeconds = json.optInt("mic_indicator_linger_seconds", 15)
@@ -91,6 +108,8 @@ data class DashboardLayout(
                 version, revision, defaultPageId, pages, returnSeconds, cacheMinutes,
                 keepScreenOn, showClock, showMicIndicator, micIndicatorLingerSeconds,
                 themeMode, themeDark, navBarMode, hideAccessibilityButton, wakeOnApproach, wakeSensitivity,
+                intercomNoiseSuppression = noiseSuppression,
+                intercomAutoGain = autoGain,
             )
         }
 

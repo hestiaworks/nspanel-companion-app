@@ -26,7 +26,7 @@ class PanelApiClient(
     private val onRevoked: () -> Unit = {},
     private val onHistory: (HistorySeries) -> Unit = {},
     private val onRoster: (List<IntercomPeer>) -> Unit = {},
-    private val onRing: (String, String) -> Unit = { _, _ -> },
+    private val onRing: (String, String, String, Int) -> Unit = { _, _, _, _ -> },
     private val onCalling: (String) -> Unit = {},
     private val onCallAnswered: (String) -> Unit = {},
     private val onCallSignal: (String, String) -> Unit = { _, _ -> },
@@ -140,6 +140,9 @@ class PanelApiClient(
                     talkbackUrl = data.optString("talkback_url").takeIf(String::isNotBlank),
                     talkbackKey = data.optString("talkback_key").takeIf(String::isNotBlank),
                     quietMode = data.optBoolean("quiet_mode"),
+                    chime = data.optString("chime", "off"),
+                    chimeVolume = data.optInt("chime_volume", 70),
+                    talkbackGain = data.optInt("talkback_gain", 100),
                     autoCloseMs = data.optLong("auto_close_ms").takeIf { it > 0 },
                     talkExtendMs = data.optLong("talk_extend_ms", 15_000L).coerceIn(0L, 60_000L),
                     talkbackTestUrl = data.optString("talkback_test_url").takeIf(String::isNotBlank),
@@ -155,6 +158,8 @@ class PanelApiClient(
                     onRing(
                         message.optString("call_id"),
                         message.optString("name").ifBlank { message.optString("panel_id") },
+                        message.optString("ring", "off"),
+                        message.optInt("ring_volume", 70),
                     )
                 }
                 "intercom_calling" -> handler.post { onCalling(message.optString("call_id")) }

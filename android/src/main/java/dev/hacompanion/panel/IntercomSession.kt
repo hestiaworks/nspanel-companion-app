@@ -41,6 +41,9 @@ class IntercomSession(
     context: Context,
     private val onSignal: (String) -> Unit,
     private val onPhase: (CallPhase) -> Unit,
+    /** WebRTC's software noise suppression and gain control, from the layout. */
+    private val noiseSuppression: Boolean = true,
+    private val autoGain: Boolean = true,
     private val onLevel: (Float) -> Unit,
 ) {
     private val appContext = context.applicationContext
@@ -70,7 +73,19 @@ class IntercomSession(
             .setAudioDeviceModule(audioDevice)
             .createPeerConnectionFactory()
         audioDevice.release()
-        audioSource = factory.createAudioSource(MediaConstraints())
+        // The constraints were empty, which took libwebrtc's defaults. They
+        // are stated now so Home Assistant can turn them off: this panel has
+        // no platform audio effects at all, so WebRTC's software processing
+        // is the only processing there is, and someone whose call sounds
+        // over-processed has nowhere else to go.
+        audioSource = factory.createAudioSource(MediaConstraints().apply {
+            mandatory.add(
+                MediaConstraints.KeyValuePair("googNoiseSuppression", "$noiseSuppression"),
+            )
+            mandatory.add(
+                MediaConstraints.KeyValuePair("googAutoGainControl", "$autoGain"),
+            )
+        })
         microphone = factory.createAudioTrack("intercom_microphone", audioSource)
     }
 

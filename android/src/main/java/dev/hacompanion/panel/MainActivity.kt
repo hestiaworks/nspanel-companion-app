@@ -631,9 +631,10 @@ class MainActivity : Activity() {
                 onRestart = ::restartPanel,
                 onRevoked = ::handlePairingRevoked,
                 onRoster = dashboardView::setRoster,
-                onRing = { callId, name ->
+                onRing = { callId, name, ring, volume ->
                     intercomCallId = callId
                     dashboardView.setCall(CallPhase.RINGING, peer = name)
+                    ringer.start(ring, volume)
                 },
                 onCalling = { callId -> intercomCallId = callId },
                 onCallAnswered = {
@@ -851,6 +852,7 @@ class MainActivity : Activity() {
             }
             is IntercomCommand.Answer -> {
                 val callId = intercomCallId ?: return
+                ringer.stop()
                 panelApiClient?.answerCall(callId)
                 // Say so on the screen now. The offer still has to cross
                 // Home Assistant and be negotiated, and a button that stays
@@ -871,9 +873,14 @@ class MainActivity : Activity() {
     }
 
     private val intercomHandshake = IntercomHandshake()
+    private val ringer by lazy { PanelRinger(this) }
 
     private fun openIntercomSession(): IntercomSession {
         intercomSession?.let { return it }
+        // Whatever brought us here, the panel stops ringing before the
+        // microphone opens: a ringtone playing into an open mic is the echo
+        // canceller's problem and it should not have to be.
+        ringer.stop()
         val session = IntercomSession(
             this,
             onSignal = { signal -> intercomCallId?.let { panelApiClient?.sendCallSignal(it, signal) } },
@@ -891,6 +898,8 @@ class MainActivity : Activity() {
                 if (phase == CallPhase.IDLE) closeIntercom()
             },
             onLevel = dashboardView::setCallLevel,
+            noiseSuppression = layoutStore.loadOrNull()?.intercomNoiseSuppression ?: true,
+            autoGain = layoutStore.loadOrNull()?.intercomAutoGain ?: true,
         )
         intercomSession = session
         MicUsageTracker.setActive(this, true)
@@ -898,6 +907,7 @@ class MainActivity : Activity() {
     }
 
     private fun closeIntercom() {
+        ringer.stop()
         watchdogHandler.removeCallbacks(intercomTick)
         intercomSession?.stop()
         intercomSession = null
@@ -947,6 +957,9 @@ class MainActivity : Activity() {
     private fun showDoorbellEvent(event: DoorbellEvent) {
         val intent = rtspDoorbellIntent()
             .putExtra(DoorbellIntent.EXTRA_QUIET_MODE, event.quietMode)
+            .putExtra(DoorbellIntent.EXTRA_CHIME, event.chime)
+            .putExtra(DoorbellIntent.EXTRA_CHIME_VOLUME, event.chimeVolume)
+            .putExtra(DoorbellIntent.EXTRA_TALKBACK_GAIN, event.talkbackGain)
         event.streamBaseUrl?.let {
             intent.putExtra(DoorbellIntent.EXTRA_STREAM_BASE_URL, it)
         }

@@ -277,4 +277,25 @@ class DashboardLayoutTest {
         assertEquals(DashboardLayout.BUILTIN_REVISION, builtin.revision)
         assertEquals(1, builtin.pages.size)
     }
+
+    @Test
+    fun `a layout carries the intercom's audio processing settings`() {
+        val json = """
+            {"schema_version":1,"revision":"audio","default_page_id":"p",
+             "pages":[{"id":"p","widgets":[{"type":"weather"}]}],
+             "intercom":{"enabled":true,"noise_suppression":false,"auto_gain":false}}
+        """.trimIndent()
+        val layout = DashboardLayout.parse(json)
+        assertEquals(false, layout.intercomNoiseSuppression)
+        assertEquals(false, layout.intercomAutoGain)
+    }
+
+    @Test
+    fun `a layout written before those settings existed keeps webrtc's defaults`() {
+        // Both on is what libwebrtc does when asked for nothing, so an older
+        // layout must sound exactly as it did.
+        val builtin = DashboardLayout.default()
+        assertEquals(true, builtin.intercomNoiseSuppression)
+        assertEquals(true, builtin.intercomAutoGain)
+    }
 }
