@@ -643,13 +643,14 @@ class MainActivity : Activity() {
                 },
                 onCallSignal = { _, signal ->
                     val session = intercomSession
+                    val sdp = org.json.JSONObject(signal).optString("sdp")
                     if (session != null) {
                         session.receive(signal)
-                    } else {
-                        // The offer beat the answer button. Hold it until
-                        // someone accepts rather than dropping it.
-                        intercomPendingOffer =
-                            org.json.JSONObject(signal).optString("sdp").takeIf { it.isNotBlank() }
+                    } else if (sdp.isNotBlank()) {
+                        // No session yet, so this is the caller's offer. It
+                        // is accepted the moment both it and the answer are
+                        // in hand, in whichever order they arrived.
+                        intercomHandshake.offered(sdp)?.let { openIntercomSession().accept(it) }
                     }
                 },
                 onCallEnded = ::closeIntercom,
@@ -850,11 +851,11 @@ class MainActivity : Activity() {
             is IntercomCommand.Answer -> {
                 val callId = intercomCallId ?: return
                 panelApiClient?.answerCall(callId)
-                // The offer is already waiting: answering is what releases it.
-                intercomPendingOffer?.let { offer ->
-                    openIntercomSession().accept(offer)
-                    intercomPendingOffer = null
-                }
+                // Say so on the screen now. The offer still has to cross
+                // Home Assistant and be negotiated, and a button that stays
+                // lit meanwhile reads as one that was not pressed.
+                dashboardView.setCall(CallPhase.CONNECTING)
+                intercomHandshake.answered()?.let { openIntercomSession().accept(it) }
             }
             is IntercomCommand.Decline -> {
                 intercomCallId?.let { panelApiClient?.declineCall(it) }
@@ -868,7 +869,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private var intercomPendingOffer: String? = null
+    private val intercomHandshake = IntercomHandshake()
 
     private fun openIntercomSession(): IntercomSession {
         intercomSession?.let { return it }
@@ -878,7 +879,12 @@ class MainActivity : Activity() {
             onPhase = { phase ->
                 dashboardView.setCall(phase)
                 if (phase == CallPhase.CONNECTED) {
-                    intercomStartedAt = android.os.SystemClock.elapsedRealtime()
+                    // Once per call, not once per recovery: a connection
+                    // that blips and comes back is the same conversation,
+                    // and a timer that restarted would say otherwise.
+                    if (intercomStartedAt == 0L) {
+                        intercomStartedAt = android.os.SystemClock.elapsedRealtime()
+                    }
                     watchdogHandler.post(intercomTick)
                 }
                 if (phase == CallPhase.IDLE) closeIntercom()
@@ -895,7 +901,8 @@ class MainActivity : Activity() {
         intercomSession?.stop()
         intercomSession = null
         intercomCallId = null
-        intercomPendingOffer = null
+        intercomStartedAt = 0L
+        intercomHandshake.reset()
         MicUsageTracker.setActive(this, false)
         dashboardView.setCall(CallPhase.IDLE, peer = "")
     }

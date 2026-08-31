@@ -168,16 +168,8 @@ class IntercomSession(
 
         override fun onConnectionChange(state: PeerConnection.PeerConnectionState) {
             handler.post {
-                when (state) {
-                    PeerConnection.PeerConnectionState.CONNECTED -> {
-                        onPhase(CallPhase.CONNECTED)
-                        pollLevel()
-                    }
-                    PeerConnection.PeerConnectionState.FAILED,
-                    PeerConnection.PeerConnectionState.CLOSED,
-                    PeerConnection.PeerConnectionState.DISCONNECTED -> onPhase(CallPhase.IDLE)
-                    else -> Unit
-                }
+                phaseFor(state)?.let(onPhase)
+                if (state == PeerConnection.PeerConnectionState.CONNECTED) pollLevel()
             }
         }
 
@@ -260,4 +252,24 @@ class IntercomSession(
         private const val TAG = "NSPanelIntercom"
         private const val LEVEL_INTERVAL_MS = 200L
     }
+}
+
+/**
+ * What a peer connection state means for the call on screen, or null where
+ * it means nothing worth showing.
+ *
+ * DISCONNECTED is not the end of a call. WebRTC reports it whenever consent
+ * checks miss for a moment — routine on Wi-Fi — and then recovers on its
+ * own, or gives up and reports FAILED. Hanging up on it ended healthy calls
+ * after about half a minute, with both panels simply going dark. It shows
+ * as CONNECTING instead, which is both true and bounded: the same deadline
+ * that gives up on an unanswered ring gives up on a call that never comes
+ * back.
+ */
+fun phaseFor(state: PeerConnection.PeerConnectionState): CallPhase? = when (state) {
+    PeerConnection.PeerConnectionState.CONNECTED -> CallPhase.CONNECTED
+    PeerConnection.PeerConnectionState.DISCONNECTED -> CallPhase.CONNECTING
+    PeerConnection.PeerConnectionState.FAILED,
+    PeerConnection.PeerConnectionState.CLOSED -> CallPhase.IDLE
+    else -> null
 }

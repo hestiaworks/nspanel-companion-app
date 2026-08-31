@@ -57,7 +57,7 @@ fun IntercomPage(
     // already closed the call.
     val ringSeconds = LocalPanelSize.current.intercomRingSeconds
     LaunchedEffect(phase, peerName) {
-        if (phase == CallPhase.RINGING || phase == CallPhase.CALLING) {
+        if (phase != CallPhase.IDLE && phase != CallPhase.CONNECTED) {
             delay(ringSeconds * 1000L)
             if (phase == CallPhase.RINGING) onDecline() else onEnd()
         }
@@ -153,7 +153,14 @@ private fun Call(
                 ),
             ) {
                 PanelText(
-                    if (phase == CallPhase.CONNECTED) "CONNECTED" else "CALLING",
+                    when (phase) {
+                        CallPhase.CONNECTED -> "CONNECTED"
+                        // Answered, and negotiating. Neither end is calling
+                        // any more, and saying so is what tells the person
+                        // who just pressed answer that it took.
+                        CallPhase.CONNECTING -> "CONNECTING"
+                        else -> "CALLING"
+                    },
                     type.label,
                     semibold = true, muted = true,
                     letterSpacing = type.labelTrackingWide, maxLines = 1,

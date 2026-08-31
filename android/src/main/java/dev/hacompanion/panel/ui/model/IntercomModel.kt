@@ -11,7 +11,7 @@ data class IntercomPeer(val panelId: String, val name: String, val busy: Boolean
  * The panel holds this; Home Assistant holds only who is in a call with
  * whom, which is the least it can know and still route a signal.
  */
-enum class CallPhase { IDLE, CALLING, RINGING, CONNECTED }
+enum class CallPhase { IDLE, CALLING, RINGING, CONNECTING, CONNECTED }
 
 /**
  * The roster, in the order it arrived.
