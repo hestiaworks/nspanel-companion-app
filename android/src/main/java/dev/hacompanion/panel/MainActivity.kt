@@ -108,6 +108,23 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // One panel, one dashboard.
+        //
+        // singleTask is supposed to guarantee that, and does — within one
+        // task. It says nothing about two tasks, and the panel produced
+        // exactly that: two live MainActivity instances in the same process,
+        // both started by the vendor launcher, each with its own socket to
+        // Home Assistant and its own idea of what is on screen. Restarting
+        // the app races the launcher relaunching us as Home, and a task
+        // still finishing does not absorb the launch that arrives during it.
+        //
+        // The newest launch is the one someone asked for, so it wins and the
+        // older instance is retired.
+        live?.takeIf { it !== this && !it.isFinishing }?.let { stale ->
+            Log.w("PanelActivity", "A second dashboard was started; retiring the first")
+            stale.finish()
+        }
+        live = this
         settingsStore = SecureSettingsStore(this)
         layoutStore = DashboardLayoutStore(this)
         weatherCacheStore = WeatherCacheStore(filesDir)
@@ -165,6 +182,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        if (live === this) live = null
         proximityWake.setEnabled(false)
         watchAccessibilityButton(false)
         haClient?.stop()
@@ -1148,6 +1166,15 @@ class MainActivity : Activity() {
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object {
+
+        /**
+         * The dashboard currently alive, so a second one can retire it.
+         *
+         * A plain reference rather than anything weaker: it is cleared in
+         * onDestroy, and an Activity that outlives its own onDestroy is a
+         * bigger problem than this leak would be.
+         */
+        private var live: MainActivity? = null
         private const val TAG = "NSPanelMain"
         private const val SYSTEM_UI_STORE = "panel_system_ui"
         private const val REMEMBERED_ACCESSIBILITY = "remembered_accessibility_services"
