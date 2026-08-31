@@ -29,11 +29,11 @@ class DashboardLayoutTest {
         val parsed = DashboardLayout.parse(original.toJson().toString())
 
         assertEquals(original, parsed)
-        assertEquals("climate", parsed.defaultPageId)
+        assertEquals("awaiting", parsed.defaultPageId)
         assertEquals(60, parsed.defaultPageReturnSeconds)
         assertEquals(360, parsed.weatherCacheMaxAgeMinutes)
         assertEquals(false, parsed.keepScreenOn)
-        assertEquals(listOf("thermostat", "weather", "controls"), parsed.pages.map { it.widgets.single().type })
+        assertEquals(listOf(emptyList<DashboardWidget>()), parsed.pages.map { it.widgets })
     }
 
     @Test
@@ -266,5 +266,15 @@ class DashboardLayoutTest {
                {"id":"gone","widgets":[{"type":"hologram"}]}]}""",
         )
         assertEquals(listOf("keep"), layout.pages.map { it.id })
+    }
+
+    @Test
+    fun `the built-in layout is one page, because it has one thing to say`() {
+        // It used to be three placeholders. A panel that has never been given
+        // a dashboard then showed three segments in the strip and let you
+        // swipe between three copies of the same message.
+        val builtin = DashboardLayout.default()
+        assertEquals(DashboardLayout.BUILTIN_REVISION, builtin.revision)
+        assertEquals(1, builtin.pages.size)
     }
 }

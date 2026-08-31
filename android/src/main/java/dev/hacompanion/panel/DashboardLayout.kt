@@ -105,12 +105,11 @@ data class DashboardLayout(
         fun default(): DashboardLayout = DashboardLayout(
             schemaVersion = CURRENT_SCHEMA_VERSION,
             revision = BUILTIN_REVISION,
-            defaultPageId = "climate",
-            pages = listOf(
-                DashboardPage("climate", "Thermostat", listOf(DashboardWidget("thermostat"))),
-                DashboardPage("weather", "Weather", listOf(DashboardWidget("weather"))),
-                DashboardPage("controls", "Controls", listOf(DashboardWidget("controls"))),
-            ),
+            defaultPageId = "awaiting",
+            // One page, because a panel with no dashboard has one thing to
+            // say. Three placeholders put three segments in the strip and
+            // let someone swipe between three copies of the same message.
+            pages = listOf(DashboardPage("awaiting", "Waiting", emptyList())),
             defaultPageReturnSeconds = 60,
             weatherCacheMaxAgeMinutes = 360,
             keepScreenOn = false,
