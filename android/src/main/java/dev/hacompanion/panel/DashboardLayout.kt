@@ -188,7 +188,7 @@ data class DashboardWidget(
          */
         val HISTORY_RANGES = setOf("6h", "24h", "7d", "30d")
 
-        val SUPPORTED_TYPES = setOf("thermostat", "weather", "controls", "entity_button", "sensor", "camera", "history")
+        val SUPPORTED_TYPES = setOf("thermostat", "weather", "controls", "entity_button", "sensor", "camera", "history", "intercom")
 
         fun parse(json: JSONObject): DashboardWidget {
             val type = json.optString("type").trim()
