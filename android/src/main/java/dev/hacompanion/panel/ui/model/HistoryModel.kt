@@ -25,6 +25,21 @@ data class HistorySeries(
 ) {
     val recorded: Boolean get() = buckets.any { it != null }
 
+    /**
+     * The mean across everything drawn.
+     *
+     * Averaged over the buckets rather than the readings behind them: each
+     * bucket already covers the same span of time, so they weigh equally,
+     * and the raw counts are not here to weigh by anyway.
+     */
+    val average: Double? get() = buckets.filterNotNull()
+        .map { it.mean }
+        .takeIf { it.isNotEmpty() }
+        ?.average()
+
+    /** One bar per day is pointed at; a dense row is not. */
+    val perBar: Boolean get() = range == "7d"
+
     companion object {
         fun parse(json: JSONObject): HistorySeries? {
             val entityId = json.optString("entity_id").takeIf(String::isNotBlank) ?: return null
@@ -70,6 +85,20 @@ fun barFraction(value: Double, low: Double, high: Double): Float {
     val spread = high - low
     if (spread <= 0.0) return .5f
     return ((value - low) / spread).coerceIn(0.0, 1.0).toFloat()
+}
+
+/**
+ * What one bar covers, counting back from the last.
+ *
+ * Only asked for where a bar is wide enough to point at, so this is days —
+ * a bar in a 48-wide row is half an hour and labelling it would be noise.
+ */
+fun barDayLabel(index: Int, count: Int, today: java.time.LocalDate): String {
+    val date = today.minusDays((count - 1 - index).toLong())
+    if (date == today) return "Today"
+    return date.dayOfWeek.getDisplayName(
+        java.time.format.TextStyle.SHORT, java.util.Locale.getDefault(),
+    )
 }
 
 /** The labels under the bars, which say when rather than how much. */

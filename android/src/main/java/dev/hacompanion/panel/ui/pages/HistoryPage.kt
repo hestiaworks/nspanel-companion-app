@@ -11,6 +11,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -19,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.hacompanion.panel.ui.components.PanelText
 import dev.hacompanion.panel.ui.model.HistorySeries
+import dev.hacompanion.panel.ui.model.barDayLabel
 import dev.hacompanion.panel.ui.model.barFraction
 import dev.hacompanion.panel.ui.model.historyAxis
 import dev.hacompanion.panel.ui.slab.Band
@@ -48,11 +53,15 @@ fun HistoryPage(
     onRange: (String) -> Unit,
 ) {
     val colors = LocalPanelColors.current
+    // Which bar is being read, if any. Cleared when the span changes: an
+    // index into a different set of bars points at something else entirely.
+    var picked by remember(range, series) { mutableStateOf<Int?>(null) }
+
     Column(Modifier.fillMaxSize().background(colors.canvas)) {
         Header(name, kind)
-        Hero(reading, series)
-        Bars(series, Modifier.weight(1f))
-        Axis(range)
+        Hero(reading, series, picked)
+        Bars(series, picked, { picked = if (picked == it) null else it }, Modifier.weight(1f))
+        if (series?.perBar == true) BarLabels(series) else Axis(range)
         Ranges(range, online, onRange)
     }
 }
@@ -77,13 +86,13 @@ private fun Header(name: String, kind: String) {
 
 /** The reading now, with the span's extremes under it. */
 @Composable
-private fun Hero(reading: String, series: HistorySeries?) {
+private fun Hero(reading: String, series: HistorySeries?, picked: Int?) {
     val type = LocalPanelType.current
     Band(LocalPanelSize.current.historyHero) {
+      Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.Top) {
         Column(
-            Modifier.fillMaxSize().padding(
+            Modifier.weight(1f).fillMaxHeight().padding(
                 start = LocalPanelSpace.current.edge,
-                end = LocalPanelSpace.current.edge,
                 top = 10.dp,
             ),
         ) {
@@ -104,16 +113,46 @@ private fun Hero(reading: String, series: HistorySeries?) {
                     )
                 }
             }
-            val low = series?.low
-            val high = series?.high
-            PanelText(
-                if (low == null || high == null) "no readings for this span"
-                else "high ${trim(high)}${series.unit}  low ${trim(low)}${series.unit}",
-                type.bodySmall,
-                Modifier.padding(top = 6.dp),
-                muted = true, maxLines = 1,
-            )
         }
+        // Either what is being pointed at, or what the whole span came to.
+        // A reading you asked for outranks a summary you did not.
+        Column(
+            Modifier.padding(end = LocalPanelSpace.current.edge, top = 18.dp),
+            horizontalAlignment = Alignment.End,
+        ) {
+            val bar = picked?.let { series?.buckets?.getOrNull(it) }
+            if (bar != null && series != null) {
+                PanelText(
+                    "${trim(bar.mean)}${series.unit}", type.subtitle,
+                    bold = true, maxLines = 1,
+                )
+                PanelText(
+                    "${trim(bar.min)} – ${trim(bar.max)}${series.unit}", type.bodySmall,
+                    Modifier.padding(top = 2.dp),
+                    muted = true, maxLines = 1,
+                )
+            } else if (series?.high != null) {
+                PanelText(
+                    "peak ${trim(series.high)}${series.unit}", type.bodySmall,
+                    muted = true, maxLines = 1,
+                )
+                series.average?.let {
+                    PanelText(
+                        "average ${trim(it)}${series.unit}", type.bodySmall,
+                        Modifier.padding(top = 4.dp),
+                        muted = true, maxLines = 1,
+                    )
+                }
+                series.low?.let {
+                    PanelText(
+                        "low ${trim(it)}${series.unit}", type.bodySmall,
+                        Modifier.padding(top = 4.dp),
+                        muted = true, maxLines = 1,
+                    )
+                }
+            }
+        }
+      }
     }
 }
 
@@ -125,7 +164,12 @@ private fun Hero(reading: String, series: HistorySeries?) {
  * zero, and the shape of the change is the point.
  */
 @Composable
-private fun Bars(series: HistorySeries?, modifier: Modifier) {
+private fun Bars(
+    series: HistorySeries?,
+    picked: Int?,
+    onPick: (Int) -> Unit,
+    modifier: Modifier,
+) {
     val colors = LocalPanelColors.current
     val size = LocalPanelSize.current
     Box(
@@ -149,8 +193,15 @@ private fun Bars(series: HistorySeries?, modifier: Modifier) {
             horizontalArrangement = Arrangement.spacedBy(size.historyBarGap),
             verticalAlignment = Alignment.Bottom,
         ) {
-            series.buckets.forEach { value ->
-                Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.BottomStart) {
+            series.buckets.forEachIndexed { index, value ->
+                Box(
+                    Modifier.weight(1f).fillMaxHeight()
+                        // The whole column takes the tap, not the bar: a bar
+                        // near the floor is a few pixels tall and asking
+                        // anyone to hit that is asking them to fail.
+                        .clickable(enabled = value != null) { onPick(index) },
+                    contentAlignment = Alignment.BottomStart,
+                ) {
                     // A gap stays empty. Drawing it at the floor would claim
                     // a reading that was never taken.
                     if (value != null) {
@@ -161,9 +212,40 @@ private fun Bars(series: HistorySeries?, modifier: Modifier) {
                                 .fillMaxHeight(
                                     .06f + barFraction(value.mean, low, high) * .94f,
                                 )
-                                .background(colors.accent),
+                                .background(
+                                    // Full accent unless something else is
+                                    // being read: dimming every bar to mark
+                                    // one is a page that looks switched off.
+                                    when {
+                                        picked == null -> colors.accent
+                                        picked == index -> colors.accent
+                                        else -> colors.accentFill
+                                    },
+                                ),
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+/** A day under each bar, where a bar is wide enough to name. */
+@Composable
+private fun BarLabels(series: HistorySeries) {
+    val type = LocalPanelType.current
+    val today = java.time.LocalDate.now()
+    Band(LocalPanelSize.current.historyAxis) {
+        Row(
+            Modifier.fillMaxSize().padding(horizontal = LocalPanelSpace.current.edge),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            series.buckets.forEachIndexed { index, _ ->
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    PanelText(
+                        barDayLabel(index, series.buckets.size, today),
+                        type.micro, muted = true, maxLines = 1,
+                    )
                 }
             }
         }

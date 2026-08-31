@@ -70,4 +70,40 @@ class HistoryModelTest {
             assertEquals("now", axis.last())
         }
     }
+
+    @Test
+    fun `the average weighs every bucket the same and ignores the gaps`() {
+        val parsed = series(
+            """{"entity_id":"sensor.a","range":"7d","buckets":[
+               {"min":1.0,"max":3.0,"mean":2.0}, null, {"min":3.0,"max":5.0,"mean":4.0}]}""",
+        )
+        // Buckets cover equal spans, so they weigh equally — and a gap is
+        // not a reading of nought to drag the mean down.
+        assertEquals(3.0, parsed.average!!, 0.001)
+    }
+
+    @Test
+    fun `a span with nothing recorded has no average`() {
+        assertNull(series("""{"entity_id":"sensor.a","range":"6h","buckets":[null]}""").average)
+    }
+
+    @Test
+    fun `only a week is drawn as bars you can name`() {
+        fun span(range: String) =
+            series("""{"entity_id":"sensor.a","range":"$range","buckets":[]}""").perBar
+        assertTrue(span("7d"))
+        listOf("6h", "24h", "30d").forEach { assertFalse(it, span(it)) }
+    }
+
+    @Test
+    fun `the last bar of a week is today and the rest count back`() {
+        val monday = java.time.LocalDate.of(2026, 8, 31)
+        assertEquals("Today", barDayLabel(6, 7, monday))
+        // Six days before a Monday is the Tuesday before it.
+        assertEquals(
+            java.time.DayOfWeek.TUESDAY,
+            monday.minusDays(6).dayOfWeek,
+        )
+        assertTrue(barDayLabel(0, 7, monday).isNotBlank())
+    }
 }
