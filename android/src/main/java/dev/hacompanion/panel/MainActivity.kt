@@ -320,15 +320,18 @@ class MainActivity : Activity() {
                     manual != null -> "Manual \u00b7 ${manual.baseUrl}"
                     else -> "Not connected"
                 },
+                closes = false,
             ) { if (paired != null) showConnectionInfo(paired) else showConnectionDialog() },
             AdminAction(getString(R.string.request_microphone)) { requestMicrophone() },
             AdminAction(getString(R.string.open_home_settings)) { requestHomeRole() },
             AdminAction("Android settings") { startActivity(Intent(Settings.ACTION_SETTINGS)) },
-            AdminAction("Diagnostics") { showDiagnostics() },
-            AdminAction("Panel identity", PanelIdentityStore(this).deviceId.take(20) + "\u2026") {
-                showPanelIdentity()
-            },
-            AdminAction("Pair with Home Assistant") { discoverForPairing() }
+            AdminAction("Diagnostics", closes = false) { showDiagnostics() },
+            AdminAction(
+                "Panel identity",
+                PanelIdentityStore(this).deviceId.take(20) + "\u2026",
+                closes = false,
+            ) { showPanelIdentity() },
+            AdminAction("Pair with Home Assistant", closes = false) { discoverForPairing() }
                 .takeIf { paired == null },
             AdminAction(getString(R.string.copy_report)) { copyReport() },
             AdminAction("Test doorbell") { showDoorbell() },
@@ -337,6 +340,7 @@ class MainActivity : Activity() {
             AdminAction("Exit immersive mode") { exitImmersiveMode() },
             AdminAction("Clear HA connection", destructive = true) { clearConnection() },
         )
+        Log.i("PanelAdmin", "admin menu opened", Throwable("opened here"))
         showPanelScreen(this, PanelTheme.isDark) { dismiss -> AdminScreen(actions, dismiss) }
     }
 
@@ -355,7 +359,7 @@ class MainActivity : Activity() {
             detail = "${credentials.baseUrl}\n${credentials.panelId}",
             actions = listOf(
                 ScreenAction("CLOSE"),
-                ScreenAction("CONNECT MANUALLY") { showConnectionDialog() },
+                ScreenAction("CONNECT MANUALLY", closes = false) { showConnectionDialog() },
             ),
         )
     }
