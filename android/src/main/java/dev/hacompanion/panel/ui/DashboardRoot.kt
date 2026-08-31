@@ -37,7 +37,9 @@ import dev.hacompanion.panel.EntityState
 import dev.hacompanion.panel.ui.components.PanelText
 import dev.hacompanion.panel.ui.model.pageCells
 import dev.hacompanion.panel.ui.model.CONTROL_WIDGETS
+import dev.hacompanion.panel.ui.model.HistorySeries
 import dev.hacompanion.panel.ui.model.controlCard
+import dev.hacompanion.panel.ui.pages.HistoryPage
 import dev.hacompanion.panel.ui.pages.LightPage
 import dev.hacompanion.panel.ui.model.resolveEntity
 import dev.hacompanion.panel.ui.model.thermostatModel
@@ -84,6 +86,18 @@ class DashboardUiState {
     var sidecarRevision by mutableStateOf(0)
 
     /**
+     * The spans a history page has been handed, by entity.
+     *
+     * A snapshot map, so a series arriving recomposes the page that asked
+     * for it. Home Assistant sends what the layout configures on connect;
+     * anything else is because someone pressed a range button.
+     */
+    val history = androidx.compose.runtime.mutableStateMapOf<String, HistorySeries>()
+
+    /** Which span the panel is showing, remembered across pages. */
+    val historyRange = androidx.compose.runtime.mutableStateMapOf<String, String>()
+
+    /**
      * Bumped once a second while a timer runs, so only the corner marks that
      * read it recompose rather than the whole page.
      */
@@ -105,6 +119,9 @@ interface DashboardActions : ControlActions {
 
     /** A stream URL warmed while this camera was one swipe away, if any. */
     fun claimWarmedStream(widget: DashboardWidget): String?
+
+    /** Ask Home Assistant for a span of an entity's past. */
+    fun requestHistory(entityId: String, range: String)
     fun selectedClimateTarget(entityId: String): String
     fun selectClimateTarget(entityId: String, target: String)
     fun stepThermostat(entityId: String, up: Boolean)
@@ -213,6 +230,11 @@ private fun PageContent(
         return
     }
 
+    if (only?.type == "history") {
+        HistoryBody(only, ui, entities, actions)
+        return
+    }
+
     // A light alone on its page gets the page rather than a quarter of it:
     // the same controls a sheet offers, at a size that can be used without
     // aiming. Anything else on the page and it is a tile like the rest.
@@ -232,6 +254,50 @@ private fun PageContent(
         PageBody(page, ui, entities, actions)
     }
 }
+
+/**
+ * A history page, which is the one page that asks for its own data.
+ *
+ * Everything else draws state the panel already holds. A span of the past
+ * has to be fetched, and the span last chosen is remembered — so the page
+ * asks for it on arrival rather than resetting to the layout's default.
+ */
+@Composable
+private fun HistoryBody(
+    widget: DashboardWidget,
+    ui: DashboardUiState,
+    entities: Map<String, EntityState>,
+    actions: DashboardActions,
+) {
+    val entityId = widget.entityId.orEmpty()
+    val range = ui.historyRange[entityId] ?: widget.historyRange
+    val series = ui.history[entityId]
+    val entity = entities[entityId]
+
+    // Asked for once per span, when the page has nothing for it yet.
+    androidx.compose.runtime.LaunchedEffect(entityId, range, ui.online) {
+        if (ui.online && entityId.isNotBlank() && series?.range != range) {
+            actions.requestHistory(entityId, range)
+        }
+    }
+
+    HistoryPage(
+        name = widget.label?.takeIf(String::isNotBlank)
+            ?: entity?.attributes?.optString("friendly_name")?.takeIf(String::isNotBlank)
+            ?: entityId,
+        reading = entity?.state?.let { state ->
+            state.toDoubleOrNull()?.let { trimReading(it) } ?: state
+        } ?: "—",
+        series = series,
+        range = range,
+        online = ui.online,
+        onRange = { actions.requestHistory(entityId, it) },
+    )
+}
+
+private fun trimReading(value: Double): String =
+    if (value == value.toLong().toDouble()) value.toLong().toString()
+    else String.format("%.1f", value)
 
 @Composable
 private fun WeatherBody(widget: DashboardWidget, entities: Map<String, EntityState>) {

@@ -8,6 +8,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import dev.hacompanion.panel.ui.model.HistorySeries
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -21,6 +22,7 @@ class PanelApiClient(
     private val onDoorbellEvent: (DoorbellEvent) -> Unit,
     private val onRestart: () -> Unit = {},
     private val onRevoked: () -> Unit = {},
+    private val onHistory: (HistorySeries) -> Unit = {},
     private val onWeatherForecast: (String, String, org.json.JSONArray) -> Unit = { _, _, _ -> },
     private val onSchedules: (List<ControlSchedule>) -> Unit = {},
     private val onServerTime: (Long, String) -> Unit = { _, _ -> },
@@ -49,6 +51,14 @@ class PanelApiClient(
     fun upsertSchedule(schedule: ControlSchedule): Boolean =
         socket?.send(JSONObject().put("type", "schedule_upsert").put("id", ids.getAndIncrement())
             .put("schedule", schedule.toJson()).toString()) == true
+
+    /** Ask for a span. What comes back is bucketed and ready to draw. */
+    fun requestHistory(entityId: String, range: String) {
+        socket?.send(
+            JSONObject().put("type", "history_request")
+                .put("entity_id", entityId).put("range", range).toString(),
+        )
+    }
 
     fun deleteSchedule(scheduleId: String): Boolean =
         socket?.send(JSONObject().put("type", "schedule_delete").put("id", ids.getAndIncrement())
@@ -115,6 +125,9 @@ class PanelApiClient(
                 // Home Assistant asking the panel to restart itself. It only
                 // arrives while the socket is being read, which is exactly
                 // the case the add-on's ADB path exists to cover.
+                "history" -> HistorySeries.parse(message)?.let { series ->
+                    handler.post { onHistory(series) }
+                }
                 "restart" -> handler.post { onRestart() }
                 // Unpaired from Home Assistant, said while the panel is
                 // still listening. Without this it carries on showing a

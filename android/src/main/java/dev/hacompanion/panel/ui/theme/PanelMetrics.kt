@@ -180,6 +180,18 @@ data class PanelSize(
     val lightPresetsTuned: Dp = 64.dp,
     val lightColour: Dp = 70.dp,
     val lightSwitch: Dp = 70.dp,
+
+    /**
+     * A history page. The bars take what the fixed bands leave, which on a
+     * 480 px panel is about 170 — and a bar band is the one thing here that
+     * can give up height without becoming unusable.
+     */
+    val historyHeader: Dp = 52.dp,
+    val historyHero: Dp = 118.dp,
+    val historyAxis: Dp = 30.dp,
+    val historyRanges: Dp = 76.dp,
+    /** Between bars: the spec draws rectangles in a row, not a solid block. */
+    val historyBarGap: Dp = 2.dp,
     /** A cover's band, shorter because an action row shares the sheet. */
     val coverBand: Dp = 110.dp,
     /** A travelling cover's striped zone, and the period of its bars. */

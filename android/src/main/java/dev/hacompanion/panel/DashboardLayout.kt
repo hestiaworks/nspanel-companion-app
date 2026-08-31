@@ -151,6 +151,8 @@ data class DashboardWidget(
     val showSchedule: Boolean = true,
     val gradualOpenScript: String? = null,
     val gradualCloseScript: String? = null,
+    /** The span a history page opens on, until someone picks another. */
+    val historyRange: String = "24h",
 ) {
     fun toJson(): JSONObject = JSONObject().put("type", type).apply {
         entityId?.let { put("entity_id", it) }
@@ -168,6 +170,7 @@ data class DashboardWidget(
             put("show_fan_speed", showFanSpeed)
             gradualOpenScript?.let { put("gradual_open_script", it) }
             gradualCloseScript?.let { put("gradual_close_script", it) }
+            put("history_range", historyRange)
         }
         if (type == "camera") {
             streamBaseUrl?.let { put("stream_base_url", it) }; streamName?.let { put("stream_name", it) }
@@ -177,7 +180,15 @@ data class DashboardWidget(
     }
 
     companion object {
-        val SUPPORTED_TYPES = setOf("thermostat", "weather", "controls", "entity_button", "sensor", "camera")
+        /**
+         * The spans a history page offers.
+         *
+         * Home Assistant decides how many bars each becomes; the panel only
+         * asks for a span and draws what comes back.
+         */
+        val HISTORY_RANGES = setOf("6h", "24h", "7d", "30d")
+
+        val SUPPORTED_TYPES = setOf("thermostat", "weather", "controls", "entity_button", "sensor", "camera", "history")
 
         fun parse(json: JSONObject): DashboardWidget {
             val type = json.optString("type").trim()
@@ -207,6 +218,8 @@ data class DashboardWidget(
             val legacyGradualScript = json.optString("gradual_cover_script").takeIf { it.startsWith("script.") }
             val gradualOpenScript = json.optString("gradual_open_script").takeIf { it.startsWith("script.") } ?: legacyGradualScript
             val gradualCloseScript = json.optString("gradual_close_script").takeIf { it.startsWith("script.") }
+            val historyRange = json.optString("history_range", "24h")
+                .takeIf { it in HISTORY_RANGES } ?: "24h"
             val streamBaseUrl = json.optString("stream_base_url").takeIf(String::isNotBlank)
             val streamName = json.optString("stream_name").takeIf(String::isNotBlank)
             val talkbackUrl = json.optString("talkback_url").takeIf(String::isNotBlank)
@@ -227,7 +240,7 @@ data class DashboardWidget(
             require(type != "camera" || streamBaseUrl == null || streamBaseUrl.startsWith("rtsp://") ||
                 streamBaseUrl.startsWith("rtsps://") || streamBaseUrl.startsWith("http://") ||
                 streamBaseUrl.startsWith("https://")) { "Invalid camera stream URL" }
-            return DashboardWidget(type, entityId, label, forecastDays, showHourly, icon, showTimer, timerPresets, cardTap, showFanSpeed, streamBaseUrl, streamName, talkbackUrl, talkbackKey, incomingAudio, showIntercom, showSchedule, gradualOpenScript, gradualCloseScript)
+            return DashboardWidget(type, entityId, label, forecastDays, showHourly, icon, showTimer, timerPresets, cardTap, showFanSpeed, streamBaseUrl, streamName, talkbackUrl, talkbackKey, incomingAudio, showIntercom, showSchedule, gradualOpenScript, gradualCloseScript, historyRange)
         }
 
         val CONTROL_ICONS = setOf(

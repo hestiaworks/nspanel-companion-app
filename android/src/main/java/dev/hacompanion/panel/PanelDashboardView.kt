@@ -96,6 +96,7 @@ class PanelDashboardView(
         data: JSONObject,
     ) -> Boolean,
     private val openAdmin: () -> Unit = {},
+    private val requestHistory: (String, String) -> Unit = { _, _ -> },
     private val upsertSchedule: (ControlSchedule) -> Boolean = { false },
     private val deleteSchedule: (String) -> Boolean = { false },
 ) : LinearLayout(context) {
@@ -162,6 +163,11 @@ class PanelDashboardView(
 
         override fun claimWarmedStream(widget: DashboardWidget): String? =
             streamWarmer.claim(widget)
+
+        override fun requestHistory(entityId: String, range: String) {
+            ui.historyRange[entityId] = range
+            this@PanelDashboardView.requestHistory(entityId, range)
+        }
 
         override fun selectedClimateTarget(entityId: String): String =
             selectedTargetFor(entityId)
@@ -294,6 +300,11 @@ class PanelDashboardView(
         val updated = existing.copy(attributes = attributes)
         states[entityId] = updated
         weatherUpdatedAt[entityId] = System.currentTimeMillis()
+    }
+
+    fun setHistory(series: dev.hacompanion.panel.ui.model.HistorySeries) {
+        ui.history[series.entityId] = series
+        ui.historyRange[series.entityId] = series.range
     }
 
     fun setSchedules(values: List<ControlSchedule>) {

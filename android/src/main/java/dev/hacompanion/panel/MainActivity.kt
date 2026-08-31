@@ -197,6 +197,7 @@ class MainActivity : Activity() {
                     ?: (haClient?.callService(domain, service, entityId, data) == true)
             },
             ::showAdminDialog,
+            { entityId, range -> panelApiClient?.requestHistory(entityId, range) },
             { schedule -> panelApiClient?.upsertSchedule(schedule) == true },
             { scheduleId -> panelApiClient?.deleteSchedule(scheduleId) == true },
         )
@@ -721,6 +722,7 @@ class MainActivity : Activity() {
                 onDoorbellEvent = ::showDoorbellEvent,
                 onRestart = ::restartPanel,
                 onRevoked = ::handlePairingRevoked,
+                onHistory = dashboardView::setHistory,
                 onWeatherForecast = dashboardView::updateWeatherForecast,
                 onSchedules = dashboardView::setSchedules,
                 onServerTime = { millis, timezone ->
