@@ -40,6 +40,7 @@ import dev.hacompanion.panel.ui.theme.LocalPanelType
 @Composable
 fun HistoryPage(
     name: String,
+    kind: String,
     reading: String,
     series: HistorySeries?,
     range: String,
@@ -48,7 +49,7 @@ fun HistoryPage(
 ) {
     val colors = LocalPanelColors.current
     Column(Modifier.fillMaxSize().background(colors.canvas)) {
-        Header(name, series?.unit.orEmpty())
+        Header(name, kind)
         Hero(reading, series)
         Bars(series, Modifier.weight(1f))
         Axis(range)
@@ -57,7 +58,7 @@ fun HistoryPage(
 }
 
 @Composable
-private fun Header(name: String, unit: String) {
+private fun Header(name: String, kind: String) {
     val type = LocalPanelType.current
     Band(LocalPanelSize.current.historyHeader, rule = false) {
         Row(
@@ -66,7 +67,7 @@ private fun Header(name: String, unit: String) {
         ) {
             PanelText(name, type.subtitle, Modifier.weight(1f), semibold = true, maxLines = 1)
             PanelText(
-                unit.ifBlank { "HISTORY" }.uppercase(), type.label,
+                kind.ifBlank { "HISTORY" }.uppercase(), type.label,
                 semibold = true, muted = true,
                 letterSpacing = type.labelTrackingWide, maxLines = 1,
             )
@@ -83,23 +84,33 @@ private fun Hero(reading: String, series: HistorySeries?) {
             Modifier.fillMaxSize().padding(
                 start = LocalPanelSpace.current.edge,
                 end = LocalPanelSpace.current.edge,
-                top = 14.dp,
+                top = 10.dp,
             ),
         ) {
-            PanelText(
-                reading, type.lightHero,
-                Modifier.lineBox(with(LocalDensity.current) {
-                    (type.lightHero.value * type.heroLeading).sp.toDp()
-                }),
-                bold = true, maxLines = 1,
-            )
+            Row(verticalAlignment = Alignment.Top) {
+                PanelText(
+                    reading, type.lightHero,
+                    Modifier.lineBox(with(LocalDensity.current) {
+                        (type.lightHero.value * type.heroLeading).sp.toDp()
+                    }),
+                    bold = true, maxLines = 1,
+                )
+                val unit = series?.unit.orEmpty()
+                if (unit.isNotBlank()) {
+                    PanelText(
+                        unit, type.lightHeroUnit,
+                        Modifier.padding(start = 9.dp),
+                        semibold = true, muted = true, maxLines = 1,
+                    )
+                }
+            }
             val low = series?.low
             val high = series?.high
             PanelText(
                 if (low == null || high == null) "no readings for this span"
                 else "high ${trim(high)}${series.unit}  low ${trim(low)}${series.unit}",
                 type.bodySmall,
-                Modifier.padding(top = 8.dp),
+                Modifier.padding(top = 6.dp),
                 muted = true, maxLines = 1,
             )
         }

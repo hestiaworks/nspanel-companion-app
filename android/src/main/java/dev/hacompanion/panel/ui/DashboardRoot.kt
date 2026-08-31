@@ -122,6 +122,9 @@ interface DashboardActions : ControlActions {
 
     /** Ask Home Assistant for a span of an entity's past. */
     fun requestHistory(entityId: String, range: String)
+
+    /** The span a history page was last left on, across restarts. */
+    fun rememberedHistoryRange(entityId: String, fallback: String): String
     fun selectedClimateTarget(entityId: String): String
     fun selectClimateTarget(entityId: String, target: String)
     fun stepThermostat(entityId: String, up: Boolean)
@@ -270,8 +273,13 @@ private fun HistoryBody(
     actions: DashboardActions,
 ) {
     val entityId = widget.entityId.orEmpty()
-    val range = ui.historyRange[entityId] ?: widget.historyRange
-    val series = ui.history[entityId]
+    // In-memory first, then what the panel remembers from a previous run,
+    // then the layout's default for a page nobody has moved yet.
+    val range = ui.historyRange[entityId]
+        ?: actions.rememberedHistoryRange(entityId, widget.historyRange)
+    // Only the span being asked for is drawn: a series for the previous one
+    // is stale the moment a range button is pressed.
+    val series = ui.history[entityId]?.takeIf { it.range == range }
     val entity = entities[entityId]
 
     // Asked for once per span, when the page has nothing for it yet.
@@ -285,6 +293,7 @@ private fun HistoryBody(
         name = widget.label?.takeIf(String::isNotBlank)
             ?: entity?.attributes?.optString("friendly_name")?.takeIf(String::isNotBlank)
             ?: entityId,
+        kind = entity?.attributes?.optString("device_class").orEmpty(),
         reading = entity?.state?.let { state ->
             state.toDoubleOrNull()?.let { trimReading(it) } ?: state
         } ?: "—",

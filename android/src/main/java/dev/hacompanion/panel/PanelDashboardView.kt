@@ -164,8 +164,12 @@ class PanelDashboardView(
         override fun claimWarmedStream(widget: DashboardWidget): String? =
             streamWarmer.claim(widget)
 
+        override fun rememberedHistoryRange(entityId: String, fallback: String): String =
+            this@PanelDashboardView.rememberedHistoryRange(entityId, fallback)
+
         override fun requestHistory(entityId: String, range: String) {
             ui.historyRange[entityId] = range
+            historyRanges.save(entityId, range)
             this@PanelDashboardView.requestHistory(entityId, range)
         }
 
@@ -302,9 +306,21 @@ class PanelDashboardView(
         weatherUpdatedAt[entityId] = System.currentTimeMillis()
     }
 
+    private val historyRanges = HistoryRangeStore(context)
+
+    /** The span this page was last left on, or the layout's if it was never moved. */
+    fun rememberedHistoryRange(entityId: String, fallback: String): String =
+        historyRanges.load(entityId, fallback)
+
+    /**
+     * A span has arrived. It does not decide which span is selected.
+     *
+     * Home Assistant sends the layout's configured span on connect, so
+     * letting an arriving series set the selection overwrote whatever the
+     * panel remembered before the page had even been drawn.
+     */
     fun setHistory(series: dev.hacompanion.panel.ui.model.HistorySeries) {
         ui.history[series.entityId] = series
-        ui.historyRange[series.entityId] = series.range
     }
 
     fun setSchedules(values: List<ControlSchedule>) {
