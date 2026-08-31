@@ -187,6 +187,11 @@ fun DashboardRoot(
                 )
             } else if (!ui.configured) {
                 UnconfiguredPage(ui.panelName, ui.panelId, actions::openAdmin)
+            } else if (ui.layout.revision == DashboardLayout.BUILTIN_REVISION) {
+                // Paired, and never given pages. The built-in layout has
+                // three of them and every one is empty, which reads as an
+                // app that has broken rather than one that is waiting.
+                AwaitingLayout(ui.panelName, actions::openAdmin)
             } else {
                 val pages = ui.layout.pages
                 val page = pages.getOrNull(ui.pageIndex.coerceIn(0, pages.lastIndex.coerceAtLeast(0)))
@@ -447,6 +452,52 @@ private fun PageMessage(message: String) {
 @Composable
 private fun EmptyPage(title: String, message: String) {
     PageScaffold(title, {}) { PageMessage(message) }
+}
+
+/**
+ * Paired, and waiting to be told what to show.
+ *
+ * The built-in layout has three pages and every one of them is empty, so a
+ * panel that has never been given a dashboard used to look like an app that
+ * had broken. It is waiting, and saying so is the whole job of this page.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun AwaitingLayout(panelName: String, onLongPress: () -> Unit) {
+    val colors = LocalPanelColors.current
+    val type = LocalPanelType.current
+    val space = LocalPanelSpace.current
+    Column(
+        Modifier.fillMaxSize().background(colors.canvas)
+            .semantics { contentDescription = "Waiting for a dashboard. Long press for administrator controls" }
+            .combinedClickable(onClick = {}, onLongClick = onLongPress)
+            .padding(horizontal = space.unconfiguredInsetX, vertical = space.unconfiguredInsetY),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        PanelText(
+            "PAIRED", type.label,
+            muted = true, semibold = true,
+            letterSpacing = type.labelTrackingWide, maxLines = 1,
+        )
+        PanelText(
+            panelName, type.subtitle,
+            Modifier.padding(top = 10.dp),
+            bold = true, maxLines = 1,
+        )
+        PanelText(
+            "No pages yet",
+            type.note,
+            Modifier.padding(top = 22.dp),
+            semibold = true,
+        )
+        PanelText(
+            "Open NSPanel Companion in Home Assistant and add pages to this panel. " +
+                "They arrive here as soon as you publish them.",
+            type.bodySmall,
+            Modifier.padding(top = 10.dp),
+            muted = true,
+        )
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)

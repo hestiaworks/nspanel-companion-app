@@ -94,9 +94,17 @@ data class DashboardLayout(
             )
         }
 
+        /**
+         * The revision the built-in layout carries.
+         *
+         * A panel showing this has never been given pages: it is paired and
+         * waiting, not misconfigured, and the difference is worth saying.
+         */
+        const val BUILTIN_REVISION = "builtin-1"
+
         fun default(): DashboardLayout = DashboardLayout(
             schemaVersion = CURRENT_SCHEMA_VERSION,
-            revision = "builtin-1",
+            revision = BUILTIN_REVISION,
             defaultPageId = "climate",
             pages = listOf(
                 DashboardPage("climate", "Thermostat", listOf(DashboardWidget("thermostat"))),

@@ -9,6 +9,9 @@ import dev.hacompanion.panel.ui.PanelDialogHeader
 import dev.hacompanion.panel.ui.showPanelDialog
 import dev.hacompanion.panel.ui.installComposeHost
 import dev.hacompanion.panel.ui.model.CallPhase
+import dev.hacompanion.panel.ui.slab.PairingScreenState
+import dev.hacompanion.panel.ui.slab.pairingOnboardingView
+import dev.hacompanion.panel.ui.slab.showPairingScreen
 import dev.hacompanion.panel.ui.slab.AdminAction
 import dev.hacompanion.panel.ui.slab.AdminScreen
 import dev.hacompanion.panel.ui.slab.showPanelScreen
@@ -263,41 +266,13 @@ class MainActivity : Activity() {
         return root
     }
 
-    private fun createPairingOnboarding(): View =
-        LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(dp(32), dp(24), dp(32), dp(24))
-            setBackgroundColor(PanelTheme.canvas)
-            addView(TextView(this@MainActivity).apply {
-                text = "Set up this panel"
-                textSize = 28f
-                setTextColor(PanelTheme.ink)
-                gravity = Gravity.CENTER
-                typeface = android.graphics.Typeface.DEFAULT_BOLD
-            })
-            addView(TextView(this@MainActivity).apply {
-                text = "Open NSPanel Companion in Home Assistant, choose Find panels, select this panel, and enter its six-digit code."
-                textSize = 15f
-                setTextColor(PanelTheme.muted)
-                gravity = Gravity.CENTER
-                setPadding(0, dp(12), 0, dp(22))
-            })
-            addView(Button(this@MainActivity).apply {
-                text = "Enter Home Assistant address manually"
-                textSize = 16f
-                isAllCaps = false
-                setOnClickListener { showManualPairingUrl() }
-            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(64)))
-            addView(TextView(this@MainActivity).apply {
-                val deviceId = PanelIdentityStore(this@MainActivity).deviceId
-                text = "${panelDisplayName(deviceId)}\n$deviceId"
-                textSize = 11f
-                setTextColor(PanelTheme.muted)
-                gravity = Gravity.CENTER
-                setPadding(0, dp(22), 0, 0)
-            })
-        }
+    private fun createPairingOnboarding(): View {
+        val deviceId = PanelIdentityStore(this).deviceId
+        return pairingOnboardingView(
+            this, PanelTheme.isDark, panelDisplayName(deviceId), deviceId,
+        ) { showManualPairingUrl() }
+    }
+
 
     private fun dismissPairingOnboarding() {
         onboardingView?.visibility = View.GONE
@@ -505,29 +480,23 @@ class MainActivity : Activity() {
     private fun beginPairing(baseUrl: String) {
         val deviceId = PanelIdentityStore(this).deviceId
         val panelName = panelDisplayName(deviceId)
-        val modal = createPairingModal(panelName, deviceId)
-        modal.dialog.show()
-        modal.dialog.window?.apply {
-            setBackgroundDrawableResource(android.R.color.transparent)
-            setDimAmount(0.7f)
-            addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            setLayout(
-                (resources.displayMetrics.widthPixels - dp(36)).coerceAtMost(dp(620)),
-                android.view.WindowManager.LayoutParams.WRAP_CONTENT,
-            )
+        val state = PairingScreenState().apply {
+            message = "Connecting $panelName to Home Assistant."
+            detail = "$panelName · ${deviceId.takeLast(12)}"
         }
-        PanelPairingClient().start(baseUrl.trim(), deviceId, panelDisplayName(deviceId)) { update ->
-            if (!modal.dialog.isShowing) return@start
+        var open = true
+        val screen = showPairingScreen(this, PanelTheme.isDark, state) { open = false }
+        screen.setOnDismissListener { open = false }
+
+        PanelPairingClient().start(baseUrl.trim(), deviceId, panelName) { update ->
+            if (!open) return@start
             when (update) {
                 is PairingUpdate.Code -> {
-                    modal.badge.text = "WAITING FOR HOME ASSISTANT"
-                    modal.badge.setTextColor(PanelTheme.accent)
-                    modal.title.text = "Enter this code in Home Assistant"
-                    modal.message.text = "Select $panelName in Find panels, then enter the code shown below."
-                    modal.code.text = update.value.chunked(3).joinToString(" ")
-                    modal.code.visibility = View.VISIBLE
-                    modal.detail.text = "Expires in ${formatPairingExpiry(update.expiresIn)}"
-                    modal.detail.visibility = View.VISIBLE
+                    state.badge = "WAITING FOR HOME ASSISTANT"
+                    state.title = "Enter this code in Home Assistant"
+                    state.message = "Select $panelName in Find panels, then enter the code below."
+                    state.code = update.value
+                    state.detail = "Expires in ${formatPairingExpiry(update.expiresIn)}"
                 }
                 is PairingUpdate.Approved -> {
                     pairingAdvertiser?.stop()
@@ -537,108 +506,30 @@ class MainActivity : Activity() {
                     dismissPairingOnboarding()
                     startPanelSync()
                     connectWithSavedSettings()
-                    modal.badge.text = "✓  PAIRED"
-                    modal.badge.setTextColor(Color.rgb(32, 137, 88))
-                    modal.title.text = "Panel connected"
-                    modal.message.text = "$panelName is ready to receive its dashboard from Home Assistant."
-                    modal.code.visibility = View.GONE
-                    modal.detail.text = "Opening dashboard…"
-                    modal.close.text = "Done"
+                    state.badge = "PAIRED"
+                    state.settled = true
+                    state.title = "Panel connected"
+                    state.message = "$panelName is ready for its dashboard."
+                    state.code = null
+                    state.detail = "Opening dashboard…"
+                    state.closeLabel = "DONE"
                     Handler(Looper.getMainLooper()).postDelayed({
-                        if (modal.dialog.isShowing) modal.dialog.dismiss()
+                        if (screen.isShowing) screen.dismiss()
                     }, 1_600)
                 }
                 is PairingUpdate.Error -> {
-                    modal.badge.text = "PAIRING FAILED"
-                    modal.badge.setTextColor(Color.rgb(184, 54, 45))
-                    modal.title.text = "Couldn’t connect this panel"
-                    modal.message.text = update.message
-                    modal.code.visibility = View.GONE
-                    modal.detail.text = "Close this window and try Find panels again."
-                    modal.detail.visibility = View.VISIBLE
-                    modal.close.text = "Close"
+                    state.badge = "PAIRING FAILED"
+                    state.failed = true
+                    state.title = "Couldn't connect this panel"
+                    state.message = update.message
+                    state.code = null
+                    state.detail = "Close this and try Find panels again."
+                    state.closeLabel = "CLOSE"
                 }
             }
         }
     }
 
-    private data class PairingModal(
-        val dialog: Dialog,
-        val badge: TextView,
-        val title: TextView,
-        val message: TextView,
-        val code: TextView,
-        val detail: TextView,
-        val close: Button,
-    )
-
-    private fun createPairingModal(panelName: String, deviceId: String): PairingModal {
-        val dialog = Dialog(this)
-        val badge = TextView(this).apply {
-            text = "CONNECTING"
-            textSize = 11f
-            letterSpacing = .16f
-            setTextColor(PanelTheme.accent)
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-        }
-        val title = TextView(this).apply {
-            text = "Requesting a pairing code…"
-            textSize = 25f
-            setTextColor(PanelTheme.ink)
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            setPadding(0, dp(8), 0, dp(8))
-        }
-        val message = TextView(this).apply {
-            text = "Connecting $panelName to Home Assistant."
-            textSize = 15f
-            setTextColor(PanelTheme.muted)
-        }
-        val code = TextView(this).apply {
-            visibility = View.GONE
-            textSize = 38f
-            letterSpacing = .14f
-            gravity = Gravity.CENTER
-            setTextColor(PanelTheme.ink)
-            typeface = android.graphics.Typeface.MONOSPACE
-            background = PanelTheme.rounded(this@MainActivity, Color.WHITE, 18, PanelTheme.line, 1)
-            setPadding(dp(20), dp(14), dp(20), dp(14))
-        }
-        val detail = TextView(this).apply {
-            text = "$panelName  ·  ${deviceId.takeLast(12)}"
-            textSize = 12f
-            gravity = Gravity.CENTER
-            setTextColor(PanelTheme.muted)
-            setPadding(0, dp(10), 0, 0)
-        }
-        val close = Button(this).apply {
-            text = "Cancel"
-            textSize = 15f
-            isAllCaps = false
-            setTextColor(PanelTheme.ink)
-            background = PanelTheme.rounded(this@MainActivity, Color.WHITE, 16, PanelTheme.line, 1)
-            setOnClickListener { dialog.dismiss() }
-        }
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(28), dp(24), dp(28), dp(22))
-            background = PanelTheme.rounded(this@MainActivity, PanelTheme.panel, 26, Color.TRANSPARENT, 0)
-            addView(badge)
-            addView(title)
-            addView(message)
-            addView(code, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(18) })
-            addView(detail)
-            addView(close, LinearLayout.LayoutParams(dp(132), dp(52)).apply {
-                gravity = Gravity.END
-                topMargin = dp(18)
-            })
-        }
-        dialog.setContentView(content)
-        dialog.setCanceledOnTouchOutside(false)
-        return PairingModal(dialog, badge, title, message, code, detail, close)
-    }
 
     private fun formatPairingExpiry(seconds: Int): String {
         val minutes = (seconds.coerceAtLeast(1) + 59) / 60
