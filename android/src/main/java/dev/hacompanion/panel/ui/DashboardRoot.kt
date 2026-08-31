@@ -37,9 +37,12 @@ import dev.hacompanion.panel.EntityState
 import dev.hacompanion.panel.ui.components.PanelText
 import dev.hacompanion.panel.ui.model.pageCells
 import dev.hacompanion.panel.ui.model.CONTROL_WIDGETS
+import dev.hacompanion.panel.ui.model.CallPhase
 import dev.hacompanion.panel.ui.model.HistorySeries
+import dev.hacompanion.panel.ui.model.IntercomPeer
 import dev.hacompanion.panel.ui.model.controlCard
 import dev.hacompanion.panel.ui.pages.HistoryPage
+import dev.hacompanion.panel.ui.pages.IntercomPage
 import dev.hacompanion.panel.ui.pages.LightPage
 import dev.hacompanion.panel.ui.model.resolveEntity
 import dev.hacompanion.panel.ui.model.thermostatModel
@@ -94,6 +97,14 @@ class DashboardUiState {
      */
     val history = androidx.compose.runtime.mutableStateMapOf<String, HistorySeries>()
 
+    /** Who can be called, and where a call has got to. */
+    var roster by mutableStateOf<List<IntercomPeer>>(emptyList())
+    var callPhase by mutableStateOf(CallPhase.IDLE)
+    var callPeer by mutableStateOf("")
+    var callSeconds by mutableStateOf(0)
+    var callLevel by mutableStateOf(0f)
+    var callMuted by mutableStateOf(false)
+
     /** Which span the panel is showing, remembered across pages. */
     val historyRange = androidx.compose.runtime.mutableStateMapOf<String, String>()
 
@@ -125,6 +136,12 @@ interface DashboardActions : ControlActions {
 
     /** The span a history page was last left on, across restarts. */
     fun rememberedHistoryRange(entityId: String, fallback: String): String
+
+    fun startCall(panelId: String, name: String)
+    fun answerCall()
+    fun declineCall()
+    fun toggleCallMute()
+    fun endCall()
     fun selectedClimateTarget(entityId: String): String
     fun selectClimateTarget(entityId: String, target: String)
     fun stepThermostat(entityId: String, up: Boolean)
@@ -151,7 +168,24 @@ fun DashboardRoot(
                 PanelStatusStrip(ui, actions::openAdmin)
             }
             Box(Modifier.fillMaxWidth().weight(1f)) {
-            if (!ui.configured) {
+            if (ui.callPhase != CallPhase.IDLE) {
+                // A call takes the panel the way a doorbell ring does. A
+                // call you cannot see is a call you miss, and a page you
+                // were reading is not more urgent than someone speaking.
+                IntercomPage(
+                    peers = ui.roster,
+                    phase = ui.callPhase,
+                    peerName = ui.callPeer,
+                    seconds = ui.callSeconds,
+                    level = ui.callLevel,
+                    muted = ui.callMuted,
+                    onCall = {},
+                    onAnswer = actions::answerCall,
+                    onDecline = actions::declineCall,
+                    onMute = actions::toggleCallMute,
+                    onEnd = actions::endCall,
+                )
+            } else if (!ui.configured) {
                 UnconfiguredPage(ui.panelName, ui.panelId, actions::openAdmin)
             } else {
                 val pages = ui.layout.pages
@@ -230,6 +264,23 @@ private fun PageContent(
     // row: the reading is the page's title.
     if (only?.type == "weather") {
         WeatherBody(only, entities)
+        return
+    }
+
+    if (only?.type == "intercom") {
+        IntercomPage(
+            peers = ui.roster,
+            phase = ui.callPhase,
+            peerName = ui.callPeer,
+            seconds = ui.callSeconds,
+            level = ui.callLevel,
+            muted = ui.callMuted,
+            onCall = { actions.startCall(it.panelId, it.name) },
+            onAnswer = actions::answerCall,
+            onDecline = actions::declineCall,
+            onMute = actions::toggleCallMute,
+            onEnd = actions::endCall,
+        )
         return
     }
 

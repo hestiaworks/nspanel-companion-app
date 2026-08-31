@@ -97,6 +97,7 @@ class PanelDashboardView(
     ) -> Boolean,
     private val openAdmin: () -> Unit = {},
     private val requestHistory: (String, String) -> Unit = { _, _ -> },
+    private val intercom: (IntercomCommand) -> Unit = {},
     private val upsertSchedule: (ControlSchedule) -> Boolean = { false },
     private val deleteSchedule: (String) -> Boolean = { false },
 ) : LinearLayout(context) {
@@ -163,6 +164,21 @@ class PanelDashboardView(
 
         override fun claimWarmedStream(widget: DashboardWidget): String? =
             streamWarmer.claim(widget)
+
+        override fun startCall(panelId: String, name: String) {
+            ui.callPeer = name
+            ui.callPhase = dev.hacompanion.panel.ui.model.CallPhase.CALLING
+            intercom(IntercomCommand.Call(panelId))
+        }
+
+        override fun answerCall() = intercom(IntercomCommand.Answer)
+        override fun declineCall() = intercom(IntercomCommand.Decline)
+        override fun endCall() = intercom(IntercomCommand.End)
+
+        override fun toggleCallMute() {
+            ui.callMuted = !ui.callMuted
+            intercom(IntercomCommand.Mute(ui.callMuted))
+        }
 
         override fun rememberedHistoryRange(entityId: String, fallback: String): String =
             this@PanelDashboardView.rememberedHistoryRange(entityId, fallback)
@@ -319,6 +335,29 @@ class PanelDashboardView(
      * letting an arriving series set the selection overwrote whatever the
      * panel remembered before the page had even been drawn.
      */
+    fun setRoster(peers: List<dev.hacompanion.panel.ui.model.IntercomPeer>) {
+        ui.roster = peers
+    }
+
+    /** Where a call has got to, and who is at the other end of it. */
+    fun setCall(phase: dev.hacompanion.panel.ui.model.CallPhase, peer: String = ui.callPeer) {
+        ui.callPhase = phase
+        ui.callPeer = peer
+        if (phase == dev.hacompanion.panel.ui.model.CallPhase.IDLE) {
+            ui.callSeconds = 0
+            ui.callLevel = 0f
+            ui.callMuted = false
+        }
+    }
+
+    fun setCallLevel(level: Float) {
+        ui.callLevel = level
+    }
+
+    fun setCallSeconds(seconds: Int) {
+        ui.callSeconds = seconds
+    }
+
     fun setHistory(series: dev.hacompanion.panel.ui.model.HistorySeries) {
         ui.history[series.entityId] = series
     }

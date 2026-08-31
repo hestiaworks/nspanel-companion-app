@@ -8,6 +8,7 @@ import dev.hacompanion.panel.ui.PanelDialogAction
 import dev.hacompanion.panel.ui.PanelDialogHeader
 import dev.hacompanion.panel.ui.showPanelDialog
 import dev.hacompanion.panel.ui.installComposeHost
+import dev.hacompanion.panel.ui.model.CallPhase
 import dev.hacompanion.panel.ui.slab.AdminAction
 import dev.hacompanion.panel.ui.slab.AdminScreen
 import dev.hacompanion.panel.ui.slab.showPanelScreen
@@ -52,6 +53,20 @@ class MainActivity : Activity() {
     private lateinit var layoutStore: DashboardLayoutStore
     private var navBarMode: NavBarMode = NavBarMode.LISTENER
     private val proximityWake by lazy { ProximityWake(this) }
+
+    /** The call in progress: its session, its id, and how long it has run. */
+    private var intercomSession: IntercomSession? = null
+    private var intercomCallId: String? = null
+    private var intercomStartedAt = 0L
+    private val intercomTick = object : Runnable {
+        override fun run() {
+            if (intercomSession == null) return
+            dashboardView.setCallSeconds(
+                ((android.os.SystemClock.elapsedRealtime() - intercomStartedAt) / 1000).toInt(),
+            )
+            watchdogHandler.postDelayed(this, 1_000)
+        }
+    }
 
     /**
      * Watches the accessibility setting and puts it back.
@@ -198,6 +213,7 @@ class MainActivity : Activity() {
             },
             ::showAdminDialog,
             { entityId, range -> panelApiClient?.requestHistory(entityId, range) },
+            ::runIntercom,
             { schedule -> panelApiClient?.upsertSchedule(schedule) == true },
             { scheduleId -> panelApiClient?.deleteSchedule(scheduleId) == true },
         )
@@ -722,6 +738,31 @@ class MainActivity : Activity() {
                 onDoorbellEvent = ::showDoorbellEvent,
                 onRestart = ::restartPanel,
                 onRevoked = ::handlePairingRevoked,
+                onRoster = dashboardView::setRoster,
+                onRing = { callId, name ->
+                    intercomCallId = callId
+                    dashboardView.setCall(CallPhase.RINGING, peer = name)
+                },
+                onCalling = { callId -> intercomCallId = callId },
+                onCallAnswered = {
+                    // They picked up, so we make the offer: the caller
+                    // offers, which keeps one side of the negotiation
+                    // definite rather than both racing to start it.
+                    openIntercomSession().call()
+                },
+                onCallSignal = { _, signal ->
+                    val session = intercomSession
+                    if (session != null) {
+                        session.receive(signal)
+                    } else {
+                        // The offer beat the answer button. Hold it until
+                        // someone accepts rather than dropping it.
+                        intercomPendingOffer =
+                            org.json.JSONObject(signal).optString("sdp").takeIf { it.isNotBlank() }
+                    }
+                },
+                onCallEnded = ::closeIntercom,
+                onCallBusy = ::closeIntercom,
                 onHistory = dashboardView::setHistory,
                 onWeatherForecast = dashboardView::updateWeatherForecast,
                 onSchedules = dashboardView::setSchedules,
@@ -900,6 +941,72 @@ class MainActivity : Activity() {
                 }
             },
         ).also { it.start() }
+    }
+
+    /**
+     * Everything a call needs, in the one place the session and the socket
+     * already live together.
+     *
+     * The page holds neither, so it passes intent and this decides what
+     * that means.
+     */
+    private fun runIntercom(command: IntercomCommand) {
+        when (command) {
+            is IntercomCommand.Call -> {
+                openIntercomSession()
+                panelApiClient?.callPanel(command.panelId)
+            }
+            is IntercomCommand.Answer -> {
+                val callId = intercomCallId ?: return
+                panelApiClient?.answerCall(callId)
+                // The offer is already waiting: answering is what releases it.
+                intercomPendingOffer?.let { offer ->
+                    openIntercomSession().accept(offer)
+                    intercomPendingOffer = null
+                }
+            }
+            is IntercomCommand.Decline -> {
+                intercomCallId?.let { panelApiClient?.declineCall(it) }
+                closeIntercom()
+            }
+            is IntercomCommand.Mute -> intercomSession?.setMuted(command.muted)
+            is IntercomCommand.End -> {
+                intercomCallId?.let { panelApiClient?.endCall(it) }
+                closeIntercom()
+            }
+        }
+    }
+
+    private var intercomPendingOffer: String? = null
+
+    private fun openIntercomSession(): IntercomSession {
+        intercomSession?.let { return it }
+        val session = IntercomSession(
+            this,
+            onSignal = { signal -> intercomCallId?.let { panelApiClient?.sendCallSignal(it, signal) } },
+            onPhase = { phase ->
+                dashboardView.setCall(phase)
+                if (phase == CallPhase.CONNECTED) {
+                    intercomStartedAt = android.os.SystemClock.elapsedRealtime()
+                    watchdogHandler.post(intercomTick)
+                }
+                if (phase == CallPhase.IDLE) closeIntercom()
+            },
+            onLevel = dashboardView::setCallLevel,
+        )
+        intercomSession = session
+        MicUsageTracker.setActive(this, true)
+        return session
+    }
+
+    private fun closeIntercom() {
+        watchdogHandler.removeCallbacks(intercomTick)
+        intercomSession?.stop()
+        intercomSession = null
+        intercomCallId = null
+        intercomPendingOffer = null
+        MicUsageTracker.setActive(this, false)
+        dashboardView.setCall(CallPhase.IDLE, peer = "")
     }
 
     private fun handlePairingRevoked() {
