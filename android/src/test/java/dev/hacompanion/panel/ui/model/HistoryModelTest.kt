@@ -64,11 +64,24 @@ class HistoryModelTest {
 
     @Test
     fun `every span labels its axis and ends at now`() {
-        listOf("6h", "24h", "7d", "30d").forEach { range ->
-            val axis = historyAxis(range)
+        val end = 1_788_000_000_000L
+        listOf("6h" to 6L * 3600_000, "24h" to 24L * 3600_000,
+               "7d" to 7L * 86_400_000, "30d" to 30L * 86_400_000).forEach { (range, span) ->
+            val axis = historyAxis(range, end - span, end, java.time.ZoneId.of("UTC"))
             assertEquals(4, axis.size)
             assertEquals("now", axis.last())
+            // Every other mark says a real time, not a countdown.
+            assertTrue(axis.dropLast(1).none { it.startsWith("-") || it.isBlank() })
         }
+    }
+
+    @Test
+    fun `a series from an older integration is labelled with nothing rather than a guess`() {
+        val untimed = HistorySeries(
+            entityId = "sensor.x", range = "24h", buckets = emptyList(),
+            low = null, high = null, unit = "",
+        )
+        assertFalse(untimed.timed)
     }
 
     @Test

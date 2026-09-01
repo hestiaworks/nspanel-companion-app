@@ -17,6 +17,13 @@ import java.util.concurrent.atomic.AtomicBoolean
 class PcmTalkbackStreamer(
     private val endpoint: String,
     private val accessKey: String,
+    /**
+     * A percentage applied to what the microphone hears; 100 sends it as
+     * captured. This panel has no platform audio processing at all, so the
+     * level that reaches the doorbell is whatever the hardware gives — and
+     * on a wall two metres from a person, that can be very quiet.
+     */
+    private val gainPercent: Int = 100,
     private val onStatus: (String) -> Unit,
 ) {
     private val active = AtomicBoolean(false)
@@ -94,7 +101,10 @@ class PcmTalkbackStreamer(
                                 }
                             }
                             val count = record.read(buffer, 0, buffer.size)
-                            if (count > 0) sink.write(buffer, 0, count)
+                            if (count > 0) {
+                                applyGain(buffer, count, gainPercent)
+                                sink.write(buffer, 0, count)
+                            }
                         } else {
                             record?.runCatching { stop() }
                             record?.release()

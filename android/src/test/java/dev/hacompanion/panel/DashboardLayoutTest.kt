@@ -29,11 +29,11 @@ class DashboardLayoutTest {
         val parsed = DashboardLayout.parse(original.toJson().toString())
 
         assertEquals(original, parsed)
-        assertEquals("climate", parsed.defaultPageId)
+        assertEquals("awaiting", parsed.defaultPageId)
         assertEquals(60, parsed.defaultPageReturnSeconds)
         assertEquals(360, parsed.weatherCacheMaxAgeMinutes)
         assertEquals(false, parsed.keepScreenOn)
-        assertEquals(listOf("thermostat", "weather", "controls"), parsed.pages.map { it.widgets.single().type })
+        assertEquals(listOf(emptyList<DashboardWidget>()), parsed.pages.map { it.widgets })
     }
 
     @Test
@@ -164,17 +164,21 @@ class DashboardLayoutTest {
     }
 
     @Test
-    fun rejectsUnknownSchemaAndWidgets() {
+    fun rejectsAnUnknownSchemaButNotAnUnknownWidget() {
+        // A schema this build cannot read is fatal: nothing in the document
+        // can be trusted. One widget it has never heard of is not — the rest
+        // of the layout is still good, and refusing it all would take every
+        // page away the first time Home Assistant learns a new widget type.
         assertThrows(IllegalArgumentException::class.java) {
             DashboardLayout.parse(
                 """{"schema_version":2,"revision":"x","pages":[{"id":"a","widgets":[]}]}""",
             )
         }
-        assertThrows(IllegalArgumentException::class.java) {
-            DashboardLayout.parse(
-                """{"schema_version":1,"revision":"x","pages":[{"id":"a","widgets":[{"type":"webview"}]}]}""",
-            )
-        }
+        val survived = DashboardLayout.parse(
+            """{"schema_version":1,"revision":"x","pages":[{"id":"a","widgets":[
+               {"type":"webview"},{"type":"weather"}]}]}""",
+        )
+        assertEquals(listOf("weather"), survived.pages.single().widgets.map { it.type })
     }
 
     @Test
@@ -238,5 +242,60 @@ class DashboardLayoutTest {
         assertTrue(panel(""","wake_on_approach":true""").wakeOnApproach)
         assertTrue(panel(""","wake_on_approach":true""").toJson()
             .getBoolean("wake_on_approach"))
+    }
+
+    @Test
+    fun `a widget this build does not know is skipped, not fatal`() {
+        // A newer Home Assistant can send a widget type this app has never
+        // heard of. Refusing the whole layout over it means every page
+        // disappears — which is what happened when an intercom page reached
+        // a panel that predated intercom: it silently kept its old pages.
+        val layout = DashboardLayout.parse(
+            """{"schema_version":1,"revision":"r","pages":[{"id":"p","widgets":[
+               {"type":"weather"},{"type":"hologram"}]}]}""",
+        )
+        val widgets = layout.pages.single().widgets
+        assertEquals(listOf("weather"), widgets.map { it.type })
+    }
+
+    @Test
+    fun `a page left empty by an unknown widget is dropped rather than blank`() {
+        val layout = DashboardLayout.parse(
+            """{"schema_version":1,"revision":"r","pages":[
+               {"id":"keep","widgets":[{"type":"weather"}]},
+               {"id":"gone","widgets":[{"type":"hologram"}]}]}""",
+        )
+        assertEquals(listOf("keep"), layout.pages.map { it.id })
+    }
+
+    @Test
+    fun `the built-in layout is one page, because it has one thing to say`() {
+        // It used to be three placeholders. A panel that has never been given
+        // a dashboard then showed three segments in the strip and let you
+        // swipe between three copies of the same message.
+        val builtin = DashboardLayout.default()
+        assertEquals(DashboardLayout.BUILTIN_REVISION, builtin.revision)
+        assertEquals(1, builtin.pages.size)
+    }
+
+    @Test
+    fun `a layout carries the intercom's audio processing settings`() {
+        val json = """
+            {"schema_version":1,"revision":"audio","default_page_id":"p",
+             "pages":[{"id":"p","widgets":[{"type":"weather"}]}],
+             "intercom":{"enabled":true,"noise_suppression":false,"auto_gain":false}}
+        """.trimIndent()
+        val layout = DashboardLayout.parse(json)
+        assertEquals(false, layout.intercomNoiseSuppression)
+        assertEquals(false, layout.intercomAutoGain)
+    }
+
+    @Test
+    fun `a layout written before those settings existed keeps webrtc's defaults`() {
+        // Both on is what libwebrtc does when asked for nothing, so an older
+        // layout must sound exactly as it did.
+        val builtin = DashboardLayout.default()
+        assertEquals(true, builtin.intercomNoiseSuppression)
+        assertEquals(true, builtin.intercomAutoGain)
     }
 }

@@ -22,7 +22,20 @@ data class HistorySeries(
     val low: Double?,
     val high: Double?,
     val unit: String,
+    /**
+     * When the row begins, and how wide one bar is, as Home Assistant
+     * bucketed it. Zero when a panel is talking to an older integration,
+     * which is why every reader checks before labelling anything.
+     */
+    val startMs: Long = 0L,
+    val bucketMs: Long = 0L,
 ) {
+    /** Whether this series knows when it is, and can be labelled with times. */
+    val timed: Boolean get() = startMs > 0L && bucketMs > 0L
+
+    /** The moment the last bar ends: the present, as the server saw it. */
+    val endMs: Long get() = startMs + bucketMs * buckets.size
+
     val recorded: Boolean get() = buckets.any { it != null }
 
     /**
@@ -62,6 +75,8 @@ data class HistorySeries(
                 entityId = entityId,
                 range = json.optString("range", "24h"),
                 buckets = buckets,
+                startMs = json.optLong("start_ms", 0L),
+                bucketMs = json.optLong("bucket_ms", 0L),
                 low = summary?.optDouble("min")?.takeIf { !it.isNaN() },
                 high = summary?.optDouble("max")?.takeIf { !it.isNaN() },
                 unit = json.optString("unit"),
@@ -101,10 +116,97 @@ fun barDayLabel(index: Int, count: Int, today: java.time.LocalDate): String {
     )
 }
 
-/** The labels under the bars, which say when rather than how much. */
-fun historyAxis(range: String): List<String> = when (range) {
-    "6h" -> listOf("-6h", "-4h", "-2h", "now")
-    "7d" -> listOf("-7d", "-5d", "-3d", "now")
-    "30d" -> listOf("-30d", "-20d", "-10d", "now")
-    else -> listOf("-24h", "-16h", "-8h", "now")
+/**
+ * The labels under the bars, which say when rather than how much.
+ *
+ * Real times, from the window Home Assistant reports with the series. They
+ * used to read "-6h, -4h, -2h, now" because the series carried no times at
+ * all — and nobody standing at a wall panel subtracts hours from the clock
+ * above it to work out when the cold spell was.
+ *
+ * Four marks, evenly across the span, the last of them always "now": the
+ * right edge of the row is the present, and naming its time would invite
+ * reading the whole row as ending somewhere else.
+ */
+fun historyAxis(
+    range: String,
+    startMs: Long,
+    endMs: Long,
+    zone: java.time.ZoneId,
+): List<String> {
+    if (endMs <= startMs) return listOf("", "", "", "now")
+    val span = endMs - startMs
+    val marks = (0..2).map { startMs + span * it / 3 }
+    val today = java.time.Instant.ofEpochMilli(endMs).atZone(zone).toLocalDate()
+    // The day is named once, where it changes. A row ending at 15:42 has two
+    // marks that fall yesterday, and saying so twice is noise: the reader
+    // needs telling that the row crosses midnight, not reminding.
+    var previousDay: java.time.LocalDate? = null
+    val labels = marks.map { at ->
+        val day = java.time.Instant.ofEpochMilli(at).atZone(zone).toLocalDate()
+        val label = axisLabel(at, range, zone, today, qualify = day != previousDay)
+        previousDay = day
+        label
+    }
+    return labels + "now"
+}
+
+private fun axisLabel(
+    at: Long,
+    range: String,
+    zone: java.time.ZoneId,
+    today: java.time.LocalDate,
+    qualify: Boolean,
+): String {
+    val moment = java.time.Instant.ofEpochMilli(at).atZone(zone)
+    return when (range) {
+        // A clock time on a bar that covers a whole day would be a lie: the
+        // bar is the day, so the day is what it is called.
+        "7d" -> moment.dayOfWeek.getDisplayName(
+            java.time.format.TextStyle.SHORT, java.util.Locale.getDefault(),
+        )
+        "30d" -> "${moment.dayOfMonth} ${moment.month.getDisplayName(
+            java.time.format.TextStyle.SHORT, java.util.Locale.getDefault(),
+        )}"
+        else -> {
+            val clock = "%02d:%02d".format(moment.hour, moment.minute)
+            // Said once, on the mark that crosses midnight, because a bare
+            // 23:42 at the left of a row ending at 15:42 reads as later
+            // today rather than last night.
+            if (qualify && moment.toLocalDate() == today.minusDays(1)) {
+                "$clock yesterday"
+            } else {
+                clock
+            }
+        }
+    }
+}
+
+/**
+ * When one bar is, for the reading someone tapped.
+ *
+ * The start of what it covers rather than a range: at half an hour a bar,
+ * "14:30" is read as the half hour beginning then, and two times in a corner
+ * of the hero is more than the question deserves.
+ */
+fun barTimeLabel(
+    index: Int,
+    startMs: Long,
+    bucketMs: Long,
+    range: String,
+    zone: java.time.ZoneId,
+): String {
+    val moment = java.time.Instant.ofEpochMilli(startMs + bucketMs * index).atZone(zone)
+    val day = moment.dayOfWeek.getDisplayName(
+        java.time.format.TextStyle.SHORT, java.util.Locale.getDefault(),
+    )
+    return when (range) {
+        "7d" -> "$day ${moment.dayOfMonth} ${moment.month.getDisplayName(
+            java.time.format.TextStyle.SHORT, java.util.Locale.getDefault(),
+        )}"
+        "30d" -> "${moment.dayOfMonth} ${moment.month.getDisplayName(
+            java.time.format.TextStyle.SHORT, java.util.Locale.getDefault(),
+        )}"
+        else -> "%02d:%02d".format(moment.hour, moment.minute)
+    }
 }

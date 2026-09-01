@@ -37,9 +37,12 @@ import dev.hacompanion.panel.EntityState
 import dev.hacompanion.panel.ui.components.PanelText
 import dev.hacompanion.panel.ui.model.pageCells
 import dev.hacompanion.panel.ui.model.CONTROL_WIDGETS
+import dev.hacompanion.panel.ui.model.CallPhase
 import dev.hacompanion.panel.ui.model.HistorySeries
+import dev.hacompanion.panel.ui.model.IntercomPeer
 import dev.hacompanion.panel.ui.model.controlCard
 import dev.hacompanion.panel.ui.pages.HistoryPage
+import dev.hacompanion.panel.ui.pages.IntercomPage
 import dev.hacompanion.panel.ui.pages.LightPage
 import dev.hacompanion.panel.ui.model.resolveEntity
 import dev.hacompanion.panel.ui.model.thermostatModel
@@ -94,6 +97,14 @@ class DashboardUiState {
      */
     val history = androidx.compose.runtime.mutableStateMapOf<String, HistorySeries>()
 
+    /** Who can be called, and where a call has got to. */
+    var roster by mutableStateOf<List<IntercomPeer>>(emptyList())
+    var callPhase by mutableStateOf(CallPhase.IDLE)
+    var callPeer by mutableStateOf("")
+    var callSeconds by mutableStateOf(0)
+    var callLevel by mutableStateOf(0f)
+    var callMuted by mutableStateOf(false)
+
     /** Which span the panel is showing, remembered across pages. */
     val historyRange = androidx.compose.runtime.mutableStateMapOf<String, String>()
 
@@ -125,6 +136,12 @@ interface DashboardActions : ControlActions {
 
     /** The span a history page was last left on, across restarts. */
     fun rememberedHistoryRange(entityId: String, fallback: String): String
+
+    fun startCall(panelId: String, name: String)
+    fun answerCall()
+    fun declineCall()
+    fun toggleCallMute()
+    fun endCall()
     fun selectedClimateTarget(entityId: String): String
     fun selectClimateTarget(entityId: String, target: String)
     fun stepThermostat(entityId: String, up: Boolean)
@@ -151,8 +168,30 @@ fun DashboardRoot(
                 PanelStatusStrip(ui, actions::openAdmin)
             }
             Box(Modifier.fillMaxWidth().weight(1f)) {
-            if (!ui.configured) {
+            if (ui.callPhase != CallPhase.IDLE) {
+                // A call takes the panel the way a doorbell ring does. A
+                // call you cannot see is a call you miss, and a page you
+                // were reading is not more urgent than someone speaking.
+                IntercomPage(
+                    peers = ui.roster,
+                    phase = ui.callPhase,
+                    peerName = ui.callPeer,
+                    seconds = ui.callSeconds,
+                    level = ui.callLevel,
+                    muted = ui.callMuted,
+                    onCall = {},
+                    onAnswer = actions::answerCall,
+                    onDecline = actions::declineCall,
+                    onMute = actions::toggleCallMute,
+                    onEnd = actions::endCall,
+                )
+            } else if (!ui.configured) {
                 UnconfiguredPage(ui.panelName, ui.panelId, actions::openAdmin)
+            } else if (ui.layout.revision == DashboardLayout.BUILTIN_REVISION) {
+                // Paired, and never given pages. The built-in layout has
+                // three of them and every one is empty, which reads as an
+                // app that has broken rather than one that is waiting.
+                AwaitingLayout(ui.panelName, actions::openAdmin)
             } else {
                 val pages = ui.layout.pages
                 val page = pages.getOrNull(ui.pageIndex.coerceIn(0, pages.lastIndex.coerceAtLeast(0)))
@@ -233,6 +272,23 @@ private fun PageContent(
         return
     }
 
+    if (only?.type == "intercom") {
+        IntercomPage(
+            peers = ui.roster,
+            phase = ui.callPhase,
+            peerName = ui.callPeer,
+            seconds = ui.callSeconds,
+            level = ui.callLevel,
+            muted = ui.callMuted,
+            onCall = { actions.startCall(it.panelId, it.name) },
+            onAnswer = actions::answerCall,
+            onDecline = actions::declineCall,
+            onMute = actions::toggleCallMute,
+            onEnd = actions::endCall,
+        )
+        return
+    }
+
     if (only?.type == "history") {
         HistoryBody(only, ui, entities, actions)
         return
@@ -300,6 +356,9 @@ private fun HistoryBody(
         series = series,
         range = range,
         online = ui.online,
+        // The same zone the clock uses, so the axis agrees with the time in
+        // the corner of the screen above it.
+        zone = ui.timezone.toZoneId(),
         onRange = { actions.requestHistory(entityId, it) },
     )
 }
@@ -396,6 +455,52 @@ private fun PageMessage(message: String) {
 @Composable
 private fun EmptyPage(title: String, message: String) {
     PageScaffold(title, {}) { PageMessage(message) }
+}
+
+/**
+ * Paired, and waiting to be told what to show.
+ *
+ * The built-in layout has three pages and every one of them is empty, so a
+ * panel that has never been given a dashboard used to look like an app that
+ * had broken. It is waiting, and saying so is the whole job of this page.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun AwaitingLayout(panelName: String, onLongPress: () -> Unit) {
+    val colors = LocalPanelColors.current
+    val type = LocalPanelType.current
+    val space = LocalPanelSpace.current
+    Column(
+        Modifier.fillMaxSize().background(colors.canvas)
+            .semantics { contentDescription = "Waiting for a dashboard. Long press for administrator controls" }
+            .combinedClickable(onClick = {}, onLongClick = onLongPress)
+            .padding(horizontal = space.unconfiguredInsetX, vertical = space.unconfiguredInsetY),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        PanelText(
+            "PAIRED", type.label,
+            muted = true, semibold = true,
+            letterSpacing = type.labelTrackingWide, maxLines = 1,
+        )
+        PanelText(
+            panelName, type.subtitle,
+            Modifier.padding(top = 10.dp),
+            bold = true, maxLines = 1,
+        )
+        PanelText(
+            "No pages yet",
+            type.note,
+            Modifier.padding(top = 22.dp),
+            semibold = true,
+        )
+        PanelText(
+            "Open NSPanel Companion in Home Assistant and add pages to this panel. " +
+                "They arrive here as soon as you publish them.",
+            type.bodySmall,
+            Modifier.padding(top = 10.dp),
+            muted = true,
+        )
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)

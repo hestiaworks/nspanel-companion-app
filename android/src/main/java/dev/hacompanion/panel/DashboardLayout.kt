@@ -22,6 +22,17 @@ data class DashboardLayout(
     val wakeOnApproach: Boolean = false,
     /** How far above the ambient reading counts as someone arriving. */
     val wakeSensitivity: String = "medium",
+    /**
+     * WebRTC's own software processing for a call.
+     *
+     * Both default on, which is what libwebrtc does when asked for nothing.
+     * They are software because this panel registers no platform audio
+     * effects at all — the hardware AEC and NS the session asks for find
+     * nothing to attach to.
+     */
+    val intercomNoiseSuppression: Boolean = true,
+    val intercomAutoGain: Boolean = true,
+
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("schema_version", schemaVersion)
@@ -30,6 +41,9 @@ data class DashboardLayout(
         .put("default_page_return_seconds", defaultPageReturnSeconds)
         .put("weather_cache_max_age_minutes", weatherCacheMaxAgeMinutes)
         .put("keep_screen_on", keepScreenOn)
+        .put("intercom", JSONObject()
+            .put("noise_suppression", intercomNoiseSuppression)
+            .put("auto_gain", intercomAutoGain))
         .put("show_clock", showClock)
         .put("show_mic_indicator", showMicIndicator)
         .put("mic_indicator_linger_seconds", micIndicatorLingerSeconds)
@@ -55,15 +69,29 @@ data class DashboardLayout(
             require(revision.isNotEmpty() && revision.length <= 64) { "Invalid layout revision" }
             val values = json.optJSONArray("pages") ?: error("Layout pages are required")
             require(values.length() in 1..MAX_PAGES) { "Layout must contain 1–$MAX_PAGES pages" }
-            val pages = buildList { for (index in 0 until values.length()) add(DashboardPage.parse(values.getJSONObject(index))) }
+            // A page emptied by widgets this build does not know is dropped:
+            // a blank page in the strip is worse than one page fewer.
+            val pages = buildList {
+                for (index in 0 until values.length()) {
+                    val source = values.getJSONObject(index)
+                    val page = DashboardPage.parse(source)
+                    val declared = source.optJSONArray("widgets")?.length() ?: 0
+                    if (declared > 0 && page.widgets.isEmpty()) continue
+                    add(page)
+                }
+            }
             require(pages.map(DashboardPage::id).distinct().size == pages.size) { "Page IDs must be unique" }
-            val defaultPageId = json.optString("default_page_id").ifBlank { pages.first().id }
-            require(pages.any { it.id == defaultPageId }) { "Default page does not exist" }
+            val defaultPageId = json.optString("default_page_id")
+                .ifBlank { pages.firstOrNull()?.id.orEmpty() }
+            require(pages.isEmpty() || pages.any { it.id == defaultPageId }) { "Default page does not exist" }
             val returnSeconds = json.optInt("default_page_return_seconds", 60)
             require(returnSeconds in 0..3_600) { "Default-page return must be 0–3600 seconds" }
             val cacheMinutes = json.optInt("weather_cache_max_age_minutes", 360)
             require(cacheMinutes in 0..10_080) { "Weather cache age must be 0–10080 minutes" }
             val keepScreenOn = json.optBoolean("keep_screen_on", false)
+            val intercom = json.optJSONObject("intercom")
+            val noiseSuppression = intercom?.optBoolean("noise_suppression", true) ?: true
+            val autoGain = intercom?.optBoolean("auto_gain", true) ?: true
             val showClock = json.optBoolean("show_clock", true)
             val showMicIndicator = json.optBoolean("show_mic_indicator", true)
             val micIndicatorLingerSeconds = json.optInt("mic_indicator_linger_seconds", 15)
@@ -80,18 +108,27 @@ data class DashboardLayout(
                 version, revision, defaultPageId, pages, returnSeconds, cacheMinutes,
                 keepScreenOn, showClock, showMicIndicator, micIndicatorLingerSeconds,
                 themeMode, themeDark, navBarMode, hideAccessibilityButton, wakeOnApproach, wakeSensitivity,
+                intercomNoiseSuppression = noiseSuppression,
+                intercomAutoGain = autoGain,
             )
         }
 
+        /**
+         * The revision the built-in layout carries.
+         *
+         * A panel showing this has never been given pages: it is paired and
+         * waiting, not misconfigured, and the difference is worth saying.
+         */
+        const val BUILTIN_REVISION = "builtin-1"
+
         fun default(): DashboardLayout = DashboardLayout(
             schemaVersion = CURRENT_SCHEMA_VERSION,
-            revision = "builtin-1",
-            defaultPageId = "climate",
-            pages = listOf(
-                DashboardPage("climate", "Thermostat", listOf(DashboardWidget("thermostat"))),
-                DashboardPage("weather", "Weather", listOf(DashboardWidget("weather"))),
-                DashboardPage("controls", "Controls", listOf(DashboardWidget("controls"))),
-            ),
+            revision = BUILTIN_REVISION,
+            defaultPageId = "awaiting",
+            // One page, because a panel with no dashboard has one thing to
+            // say. Three placeholders put three segments in the strip and
+            // let someone swipe between three copies of the same message.
+            pages = listOf(DashboardPage("awaiting", "Waiting", emptyList())),
             defaultPageReturnSeconds = 60,
             weatherCacheMaxAgeMinutes = 360,
             keepScreenOn = false,
@@ -115,7 +152,18 @@ data class DashboardPage(
             require(title.length <= 48) { "Page title is too long" }
             val values = json.optJSONArray("widgets") ?: JSONArray()
             require(values.length() <= DashboardLayout.MAX_WIDGETS_PER_PAGE) { "Too many widgets" }
-            val widgets = buildList { for (index in 0 until values.length()) add(DashboardWidget.parse(values.getJSONObject(index))) }
+            // A widget this build has never heard of is skipped, not fatal.
+            // A newer Home Assistant will send types this app does not know,
+            // and refusing the whole layout over one of them takes every
+            // page with it — which is exactly what an intercom page did to a
+            // panel that predated intercom.
+            val widgets = buildList {
+                for (index in 0 until values.length()) {
+                    val widget = values.getJSONObject(index)
+                    if (widget.optString("type").trim() !in DashboardWidget.SUPPORTED_TYPES) continue
+                    add(DashboardWidget.parse(widget))
+                }
+            }
             require(widgets.none { it.type in setOf("controls", "entity_button") } || widgets.size <= 4) {
                 "A controls page supports at most four controls"
             }
@@ -153,6 +201,12 @@ data class DashboardWidget(
     val gradualCloseScript: String? = null,
     /** The span a history page opens on, until someone picks another. */
     val historyRange: String = "24h",
+    /**
+     * Which climate modes to offer, in this order. Empty means whatever the
+     * entity reports, which is what a thermostat nobody has configured does.
+     */
+    val fanModes: List<String> = emptyList(),
+    val swingModes: List<String> = emptyList(),
 ) {
     fun toJson(): JSONObject = JSONObject().put("type", type).apply {
         entityId?.let { put("entity_id", it) }
@@ -188,7 +242,7 @@ data class DashboardWidget(
          */
         val HISTORY_RANGES = setOf("6h", "24h", "7d", "30d")
 
-        val SUPPORTED_TYPES = setOf("thermostat", "weather", "controls", "entity_button", "sensor", "camera", "history")
+        val SUPPORTED_TYPES = setOf("thermostat", "weather", "controls", "entity_button", "sensor", "camera", "history", "intercom")
 
         fun parse(json: JSONObject): DashboardWidget {
             val type = json.optString("type").trim()
@@ -220,6 +274,14 @@ data class DashboardWidget(
             val gradualCloseScript = json.optString("gradual_close_script").takeIf { it.startsWith("script.") }
             val historyRange = json.optString("history_range", "24h")
                 .takeIf { it in HISTORY_RANGES } ?: "24h"
+            fun modes(key: String): List<String> {
+                val values = json.optJSONArray(key) ?: return emptyList()
+                return buildList {
+                    for (index in 0 until values.length()) {
+                        values.optString(index).trim().takeIf(String::isNotEmpty)?.let(::add)
+                    }
+                }
+            }
             val streamBaseUrl = json.optString("stream_base_url").takeIf(String::isNotBlank)
             val streamName = json.optString("stream_name").takeIf(String::isNotBlank)
             val talkbackUrl = json.optString("talkback_url").takeIf(String::isNotBlank)
@@ -240,7 +302,8 @@ data class DashboardWidget(
             require(type != "camera" || streamBaseUrl == null || streamBaseUrl.startsWith("rtsp://") ||
                 streamBaseUrl.startsWith("rtsps://") || streamBaseUrl.startsWith("http://") ||
                 streamBaseUrl.startsWith("https://")) { "Invalid camera stream URL" }
-            return DashboardWidget(type, entityId, label, forecastDays, showHourly, icon, showTimer, timerPresets, cardTap, showFanSpeed, streamBaseUrl, streamName, talkbackUrl, talkbackKey, incomingAudio, showIntercom, showSchedule, gradualOpenScript, gradualCloseScript, historyRange)
+            return DashboardWidget(type, entityId, label, forecastDays, showHourly, icon, showTimer, timerPresets, cardTap, showFanSpeed, streamBaseUrl, streamName, talkbackUrl, talkbackKey, incomingAudio, showIntercom, showSchedule, gradualOpenScript, gradualCloseScript, historyRange,
+                fanModes = modes("fan_modes"), swingModes = modes("swing_modes"))
         }
 
         val CONTROL_ICONS = setOf(

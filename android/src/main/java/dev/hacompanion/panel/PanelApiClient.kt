@@ -9,6 +9,8 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import dev.hacompanion.panel.ui.model.HistorySeries
+import dev.hacompanion.panel.ui.model.IntercomPeer
+import dev.hacompanion.panel.ui.model.parseRoster
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -23,6 +25,13 @@ class PanelApiClient(
     private val onRestart: () -> Unit = {},
     private val onRevoked: () -> Unit = {},
     private val onHistory: (HistorySeries) -> Unit = {},
+    private val onRoster: (List<IntercomPeer>) -> Unit = {},
+    private val onRing: (String, String, String, Int) -> Unit = { _, _, _, _ -> },
+    private val onCalling: (String) -> Unit = {},
+    private val onCallAnswered: (String) -> Unit = {},
+    private val onCallSignal: (String, String) -> Unit = { _, _ -> },
+    private val onCallEnded: () -> Unit = {},
+    private val onCallBusy: () -> Unit = {},
     private val onWeatherForecast: (String, String, org.json.JSONArray) -> Unit = { _, _, _ -> },
     private val onSchedules: (List<ControlSchedule>) -> Unit = {},
     private val onServerTime: (Long, String) -> Unit = { _, _ -> },
@@ -51,6 +60,19 @@ class PanelApiClient(
     fun upsertSchedule(schedule: ControlSchedule): Boolean =
         socket?.send(JSONObject().put("type", "schedule_upsert").put("id", ids.getAndIncrement())
             .put("schedule", schedule.toJson()).toString()) == true
+
+    fun callPanel(panelId: String) = sendIntercom("intercom_call", JSONObject().put("panel_id", panelId))
+    fun answerCall(callId: String) = sendIntercom("intercom_answer", JSONObject().put("call_id", callId))
+    fun declineCall(callId: String) = sendIntercom("intercom_decline", JSONObject().put("call_id", callId))
+    fun endCall(callId: String) = sendIntercom("intercom_end", JSONObject().put("call_id", callId))
+
+    /** SDP or ICE, passed through Home Assistant without being read. */
+    fun sendCallSignal(callId: String, signal: String) =
+        sendIntercom("intercom_signal", JSONObject().put("call_id", callId).put("signal", signal))
+
+    private fun sendIntercom(type: String, body: JSONObject) {
+        socket?.send(body.put("type", type).toString())
+    }
 
     /** Ask for a span. What comes back is bucketed and ready to draw. */
     fun requestHistory(entityId: String, range: String) {
@@ -118,6 +140,9 @@ class PanelApiClient(
                     talkbackUrl = data.optString("talkback_url").takeIf(String::isNotBlank),
                     talkbackKey = data.optString("talkback_key").takeIf(String::isNotBlank),
                     quietMode = data.optBoolean("quiet_mode"),
+                    chime = data.optString("chime", "off"),
+                    chimeVolume = data.optInt("chime_volume", 70),
+                    talkbackGain = data.optInt("talkback_gain", 100),
                     autoCloseMs = data.optLong("auto_close_ms").takeIf { it > 0 },
                     talkExtendMs = data.optLong("talk_extend_ms", 15_000L).coerceIn(0L, 60_000L),
                     talkbackTestUrl = data.optString("talkback_test_url").takeIf(String::isNotBlank),
@@ -128,6 +153,22 @@ class PanelApiClient(
                 "history" -> HistorySeries.parse(message)?.let { series ->
                     handler.post { onHistory(series) }
                 }
+                "intercom_roster" -> handler.post { onRoster(parseRoster(message)) }
+                "intercom_ring" -> handler.post {
+                    onRing(
+                        message.optString("call_id"),
+                        message.optString("name").ifBlank { message.optString("panel_id") },
+                        message.optString("ring", "off"),
+                        message.optInt("ring_volume", 70),
+                    )
+                }
+                "intercom_calling" -> handler.post { onCalling(message.optString("call_id")) }
+                "intercom_answer" -> handler.post { onCallAnswered(message.optString("call_id")) }
+                "intercom_signal" -> handler.post {
+                    onCallSignal(message.optString("call_id"), message.optString("signal"))
+                }
+                "intercom_end" -> handler.post { onCallEnded() }
+                "intercom_busy" -> handler.post { onCallBusy() }
                 "restart" -> handler.post { onRestart() }
                 // Unpaired from Home Assistant, said while the panel is
                 // still listening. Without this it carries on showing a

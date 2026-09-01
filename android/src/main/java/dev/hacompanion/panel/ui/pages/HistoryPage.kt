@@ -25,6 +25,7 @@ import dev.hacompanion.panel.ui.components.PanelText
 import dev.hacompanion.panel.ui.model.HistorySeries
 import dev.hacompanion.panel.ui.model.barDayLabel
 import dev.hacompanion.panel.ui.model.barFraction
+import dev.hacompanion.panel.ui.model.barTimeLabel
 import dev.hacompanion.panel.ui.model.historyAxis
 import dev.hacompanion.panel.ui.slab.Band
 import dev.hacompanion.panel.ui.slab.CellRule
@@ -50,6 +51,7 @@ fun HistoryPage(
     series: HistorySeries?,
     range: String,
     online: Boolean,
+    zone: java.time.ZoneId,
     onRange: (String) -> Unit,
 ) {
     val colors = LocalPanelColors.current
@@ -59,9 +61,9 @@ fun HistoryPage(
 
     Column(Modifier.fillMaxSize().background(colors.canvas)) {
         Header(name, kind)
-        Hero(reading, series, picked)
+        Hero(reading, series, picked, range, zone)
         Bars(series, picked, { picked = if (picked == it) null else it }, Modifier.weight(1f))
-        if (series?.perBar == true) BarLabels(series) else Axis(range)
+        if (series?.perBar == true) BarLabels(series) else Axis(range, series, zone)
         Ranges(range, online, onRange)
     }
 }
@@ -86,7 +88,13 @@ private fun Header(name: String, kind: String) {
 
 /** The reading now, with the span's extremes under it. */
 @Composable
-private fun Hero(reading: String, series: HistorySeries?, picked: Int?) {
+private fun Hero(
+    reading: String,
+    series: HistorySeries?,
+    picked: Int?,
+    range: String,
+    zone: java.time.ZoneId,
+) {
     val type = LocalPanelType.current
     Band(LocalPanelSize.current.historyHero) {
       Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.Top) {
@@ -122,6 +130,18 @@ private fun Hero(reading: String, series: HistorySeries?, picked: Int?) {
         ) {
             val bar = picked?.let { series?.buckets?.getOrNull(it) }
             if (bar != null && series != null) {
+                // When, above what: a reading with no time attached is the
+                // one thing this corner could say that raises a question
+                // instead of answering it.
+                if (series.timed && picked != null) {
+                    PanelText(
+                        barTimeLabel(picked, series.startMs, series.bucketMs, range, zone),
+                        type.label,
+                        Modifier.padding(bottom = 3.dp),
+                        semibold = true, muted = true, maxLines = 1,
+                        letterSpacing = type.labelTracking,
+                    )
+                }
                 PanelText(
                     "${trim(bar.mean)}${series.unit}", type.subtitle,
                     bold = true, maxLines = 1,
@@ -253,7 +273,7 @@ private fun BarLabels(series: HistorySeries) {
 }
 
 @Composable
-private fun Axis(range: String) {
+private fun Axis(range: String, series: HistorySeries?, zone: java.time.ZoneId) {
     val type = LocalPanelType.current
     Band(LocalPanelSize.current.historyAxis) {
         Row(
@@ -261,7 +281,15 @@ private fun Axis(range: String) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            historyAxis(range).forEach {
+            // Nothing at all until the series says when it is: a row of
+            // times invented from the panel's own clock would be wrong by
+            // however long the series took to arrive.
+            val labels = if (series?.timed == true) {
+                historyAxis(range, series.startMs, series.endMs, zone)
+            } else {
+                List(4) { "" }
+            }
+            labels.forEach {
                 PanelText(it, type.micro, muted = true, maxLines = 1)
             }
         }

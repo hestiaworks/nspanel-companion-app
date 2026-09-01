@@ -26,6 +26,7 @@ import android.widget.FrameLayout
 class RtspDoorbellActivity : Activity() {
 
     private val handler = Handler(Looper.getMainLooper())
+    private val ringer by lazy { PanelRinger(this) }
     private val autoClose = Runnable { finish() }
     private var closeDeadline = 0L
     private var pausedCloseRemainingMs = 0L
@@ -73,9 +74,18 @@ class RtspDoorbellActivity : Activity() {
         window.decorView.systemUiVisibility =
             View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
                 View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+        // The chime, from the moment the picture is on screen until someone
+        // deals with the ring. It stops the instant talkback opens the
+        // microphone: ringing into an open mic is the far end's problem.
+        ringer.start(
+            intent.getStringExtra(DoorbellIntent.EXTRA_CHIME) ?: "off",
+            intent.getIntExtra(DoorbellIntent.EXTRA_CHIME_VOLUME, 70),
+            quiet = intent.getBooleanExtra(DoorbellIntent.EXTRA_QUIET_MODE, false),
+        )
         val camera = CameraPageView(
             this,
             widget,
+            talkbackGain = intent.getIntExtra(DoorbellIntent.EXTRA_TALKBACK_GAIN, 100),
             onClose = { finish() },
             // Quiet mode only says how the ring starts; muting mid-call is
             // the thing you reach for when the dog is barking.
@@ -83,7 +93,14 @@ class RtspDoorbellActivity : Activity() {
             // Talking is answering: the screen must not close under you
             // mid-sentence, and it gets a grace period afterwards.
             onTalkingChanged = { talking ->
-                if (talking) pauseAutoClose() else resumeAutoCloseWithGrace()
+                // Answering stops the chime for good. It does not come back
+                // when you stop speaking: by then someone is at the panel.
+                if (talking) {
+                    ringer.stop()
+                    pauseAutoClose()
+                } else {
+                    resumeAutoCloseWithGrace()
+                }
             },
         )
         setContentView(
@@ -117,6 +134,7 @@ class RtspDoorbellActivity : Activity() {
     }
 
     override fun onDestroy() {
+        ringer.stop()
         handler.removeCallbacksAndMessages(null)
         MicUsageTracker.setActive(this, false)
         super.onDestroy()

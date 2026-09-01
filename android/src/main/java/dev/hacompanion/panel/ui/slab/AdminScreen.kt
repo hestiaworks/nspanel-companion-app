@@ -33,6 +33,17 @@ data class AdminAction(
     val label: String,
     val detail: String? = null,
     val destructive: Boolean = false,
+    /**
+     * Whether picking it closes the menu.
+     *
+     * False for a row that opens another panel screen: that screen sits on
+     * top, and closing it comes back here rather than dropping to the
+     * dashboard — which is what someone reading down a menu expects, and
+     * what makes it possible to check two things without opening the menu
+     * twice. True for a row that acts, or that leaves for Android's own
+     * settings, where there is nothing to come back to.
+     */
+    val closes: Boolean = true,
     val onPick: () -> Unit,
 )
 
@@ -48,9 +59,14 @@ data class AdminAction(
  * Rows are 72 px, above the 64 px floor the spec sets for anything you touch.
  */
 @Composable
-fun ColumnScope.AdminScreen(actions: List<AdminAction>, dismiss: () -> Unit) {
+fun ColumnScope.AdminScreen(
+    actions: List<AdminAction>,
+    dismiss: () -> Unit,
+    title: String = "Administrator controls",
+    closeLabel: String = "CLOSE",
+) {
     val colors = LocalPanelColors.current
-    EditorHeader("Administrator controls")
+    EditorHeader(title)
     Column(
         Modifier.fillMaxWidth().weight(1f).background(colors.canvas)
             .verticalScroll(rememberScrollState()),
@@ -68,7 +84,7 @@ fun ColumnScope.AdminScreen(actions: List<AdminAction>, dismiss: () -> Unit) {
             .clickable { dismiss() },
         contentAlignment = Alignment.Center,
     ) {
-        PanelText("CLOSE", LocalPanelType.current.body, semibold = true, maxLines = 1)
+        PanelText(closeLabel, LocalPanelType.current.body, semibold = true, maxLines = 1)
     }
 }
 
@@ -80,7 +96,7 @@ private fun AdminRow(action: AdminAction, dismiss: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().height(72.dp)
             .clickable {
-                dismiss()
+                if (action.closes) dismiss()
                 action.onPick()
             }
             .padding(horizontal = LocalPanelSpace.current.edge),

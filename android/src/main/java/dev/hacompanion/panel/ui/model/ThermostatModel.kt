@@ -221,3 +221,21 @@ fun thermostatModel(
         targetUsable = live && !secondary && climate.state != "off",
     )
 }
+
+/**
+ * The modes a panel offers for a climate attribute.
+ *
+ * The entity is the authority on what exists; the layout only narrows it.
+ * A configured mode the entity no longer reports is dropped rather than
+ * offered, because a firmware update that renames "vertical" leaves a button
+ * that the unit will refuse — and a refusal looks exactly like a button that
+ * does nothing.
+ *
+ * If narrowing leaves nothing at all, the entity's own list is offered
+ * instead: a long sheet is a nuisance, an empty one is a broken page.
+ */
+fun offeredModes(reported: List<String>, chosen: List<String>): List<String> {
+    if (chosen.isEmpty()) return reported
+    val kept = chosen.filter { it in reported }
+    return kept.ifEmpty { reported }
+}

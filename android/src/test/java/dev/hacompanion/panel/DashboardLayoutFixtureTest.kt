@@ -57,8 +57,24 @@ class DashboardLayoutFixtureTest {
     @Test
     fun rejectsEveryInvalidLayout() {
         forEachCase("invalid") { name, layout ->
+            if (name in TOLERATED) return@forEachCase
             val parsed = runCatching { DashboardLayout.parse(layout) }
             if (parsed.isSuccess) fail("invalid layout accepted: $name")
+        }
+    }
+
+    @Test
+    fun toleratesAWidgetTypeThisBuildDoesNotKnow() {
+        // The two sides diverge here on purpose. Home Assistant is the
+        // authority and refuses a widget type it does not recognise, because
+        // that is a mistake someone can still fix in the editor. A panel
+        // cannot refuse: a newer Home Assistant will send types older
+        // firmware has never heard of, and rejecting the layout takes every
+        // page with it. It skips what it does not know and draws the rest.
+        forEachCase("invalid") { name, layout ->
+            if (name != "unsupported widget type") return@forEachCase
+            val parsed = runCatching { DashboardLayout.parse(layout) }
+            if (parsed.isFailure) fail("a panel must not refuse a layout over one unknown widget")
         }
     }
 
@@ -78,5 +94,8 @@ class DashboardLayoutFixtureTest {
         // from the integration. Update it with nspanel-companion/schema/sync.sh.
         const val LAYOUT_FIXTURE_SHA256 =
             "136f9aa3ce9b31ff60d8d2bc25d3dae93cc414ae1c03717efba244827dbb2a6c"
+
+        /** Invalid to Home Assistant, survivable on a panel. See above. */
+        val TOLERATED = setOf("unsupported widget type")
     }
 }

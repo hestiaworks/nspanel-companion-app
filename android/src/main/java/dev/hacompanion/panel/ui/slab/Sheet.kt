@@ -19,10 +19,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -93,12 +96,19 @@ fun showPanelSheet(
     // would never fire again.
     view.setContent {
         PanelThemeProvider(dark) {
-            Column(Modifier.fillMaxSize()) {
-                Box(
-                    Modifier.fillMaxWidth().weight(1f)
-                        .pointerInput(Unit) { detectTapGestures { dialog.dismiss() } },
-                )
-                content { dialog.dismiss() }
+            // The sheet may not grow past the screen. A climate unit that
+            // reports a dozen swing modes fills more than 480 px of rows,
+            // and an unbounded column pushes its own header off the top —
+            // taking the ✕ with it. Bounded here, it scrolls instead.
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val tallest = maxHeight
+                Column(Modifier.fillMaxSize()) {
+                    Box(
+                        Modifier.fillMaxWidth().weight(1f)
+                            .pointerInput(Unit) { detectTapGestures { dialog.dismiss() } },
+                    )
+                    Column(Modifier.heightIn(max = tallest)) { content { dialog.dismiss() } }
+                }
             }
         }
     }
@@ -182,6 +192,11 @@ fun SheetOptions(
     val colors = LocalPanelColors.current
     val type = LocalPanelType.current
     val size = LocalPanelSize.current
+    // Scrolls when the rows outrun the sheet. Two per row at 56 px means
+    // eight modes fill a bounded sheet, and some units report more than
+    // that — a swing setting nobody can reach is a setting the panel does
+    // not have.
+    Column(Modifier.verticalScroll(rememberScrollState())) {
     options.chunked(2).forEach { row ->
         Box(Modifier.fillMaxWidth().height(size.stroke).background(colors.line))
         Row(Modifier.fillMaxWidth().height(size.listRow)) {
@@ -205,6 +220,7 @@ fun SheetOptions(
                 }
             }
         }
+    }
     }
 }
 
