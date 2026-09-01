@@ -17,6 +17,7 @@ import dev.hacompanion.panel.ui.PanelDialogChoices
 import dev.hacompanion.panel.ui.PanelDialogHeader
 import dev.hacompanion.panel.ui.components.PanelText
 import dev.hacompanion.panel.ui.showPanelDialog
+import dev.hacompanion.panel.ui.model.offeredModes
 import dev.hacompanion.panel.ui.model.sentenceCase
 import dev.hacompanion.panel.ui.model.thermostatModel
 import dev.hacompanion.panel.ui.slab.Sheet
@@ -766,12 +767,17 @@ class PanelDashboardView(
     private fun showClimateAttributeSheet(climate: EntityState, key: String) {
         val optionsKey = if (key == "swing_mode") "swing_modes" else "fan_modes"
         val array = climate.attributes.optJSONArray(optionsKey) ?: return
-        val options = buildList<Pair<String, String>> {
+        val reported = buildList {
             for (index in 0 until array.length()) {
-                val value = array.optString(index)
-                if (value.isNotBlank()) add(value to sentenceCase(value))
+                array.optString(index).takeIf(String::isNotBlank)?.let(::add)
             }
         }
+        // Narrowed by the layout, if someone said which of these are worth
+        // offering on a wall: a unit reporting a dozen swing positions is
+        // reporting what it can do, not what anyone chooses between.
+        val widget = widgetFor(climate.entityId)
+        val chosen = if (key == "swing_mode") widget?.swingModes else widget?.fanModes
+        val options = offeredModes(reported, chosen.orEmpty()).map { it to sentenceCase(it) }
         if (options.isEmpty()) return
         val title = if (key == "swing_mode") "Swing" else "Fan speed"
         val name = widgetFor(climate.entityId)?.label ?: climate.friendlyName

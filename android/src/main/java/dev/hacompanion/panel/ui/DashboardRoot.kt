@@ -356,6 +356,9 @@ private fun HistoryBody(
         series = series,
         range = range,
         online = ui.online,
+        // The same zone the clock uses, so the axis agrees with the time in
+        // the corner of the screen above it.
+        zone = ui.timezone.toZoneId(),
         onRange = { actions.requestHistory(entityId, it) },
     )
 }

@@ -201,6 +201,12 @@ data class DashboardWidget(
     val gradualCloseScript: String? = null,
     /** The span a history page opens on, until someone picks another. */
     val historyRange: String = "24h",
+    /**
+     * Which climate modes to offer, in this order. Empty means whatever the
+     * entity reports, which is what a thermostat nobody has configured does.
+     */
+    val fanModes: List<String> = emptyList(),
+    val swingModes: List<String> = emptyList(),
 ) {
     fun toJson(): JSONObject = JSONObject().put("type", type).apply {
         entityId?.let { put("entity_id", it) }
@@ -268,6 +274,14 @@ data class DashboardWidget(
             val gradualCloseScript = json.optString("gradual_close_script").takeIf { it.startsWith("script.") }
             val historyRange = json.optString("history_range", "24h")
                 .takeIf { it in HISTORY_RANGES } ?: "24h"
+            fun modes(key: String): List<String> {
+                val values = json.optJSONArray(key) ?: return emptyList()
+                return buildList {
+                    for (index in 0 until values.length()) {
+                        values.optString(index).trim().takeIf(String::isNotEmpty)?.let(::add)
+                    }
+                }
+            }
             val streamBaseUrl = json.optString("stream_base_url").takeIf(String::isNotBlank)
             val streamName = json.optString("stream_name").takeIf(String::isNotBlank)
             val talkbackUrl = json.optString("talkback_url").takeIf(String::isNotBlank)
@@ -288,7 +302,8 @@ data class DashboardWidget(
             require(type != "camera" || streamBaseUrl == null || streamBaseUrl.startsWith("rtsp://") ||
                 streamBaseUrl.startsWith("rtsps://") || streamBaseUrl.startsWith("http://") ||
                 streamBaseUrl.startsWith("https://")) { "Invalid camera stream URL" }
-            return DashboardWidget(type, entityId, label, forecastDays, showHourly, icon, showTimer, timerPresets, cardTap, showFanSpeed, streamBaseUrl, streamName, talkbackUrl, talkbackKey, incomingAudio, showIntercom, showSchedule, gradualOpenScript, gradualCloseScript, historyRange)
+            return DashboardWidget(type, entityId, label, forecastDays, showHourly, icon, showTimer, timerPresets, cardTap, showFanSpeed, streamBaseUrl, streamName, talkbackUrl, talkbackKey, incomingAudio, showIntercom, showSchedule, gradualOpenScript, gradualCloseScript, historyRange,
+                fanModes = modes("fan_modes"), swingModes = modes("swing_modes"))
         }
 
         val CONTROL_ICONS = setOf(
