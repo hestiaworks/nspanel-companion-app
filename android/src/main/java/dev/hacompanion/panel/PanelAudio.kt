@@ -9,9 +9,9 @@ package dev.hacompanion.panel
  * layout parser follows for widgets it has never heard of.
  */
 val RING_SOUNDS = mapOf(
-    "chime" to R.raw.ring_chime,
-    "bell" to R.raw.ring_bell,
-    "ping" to R.raw.ring_ping,
+    "chime_1" to R.raw.chime_1,
+    "chime_2" to R.raw.chime_2,
+    "chime_3" to R.raw.chime_3,
 )
 
 /** Whether a sound should be made at all. */

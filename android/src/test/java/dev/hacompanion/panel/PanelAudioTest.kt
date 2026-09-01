@@ -75,14 +75,14 @@ class PanelAudioTest {
 
     @Test
     fun `a chosen sound plays`() {
-        assertTrue(shouldPlay("chime", quiet = false))
+        assertTrue(shouldPlay("chime_1", quiet = false))
     }
 
     @Test
     fun `a muted doorbell stays muted`() {
         // Quiet mode is what someone sets when the baby is asleep. A chime
         // that ignored it would be the loudest thing in the house.
-        assertFalse(shouldPlay("bell", quiet = true))
+        assertFalse(shouldPlay("chime_2", quiet = true))
     }
 
     @Test
