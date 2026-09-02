@@ -57,6 +57,12 @@ class ControlIconView(context: Context, private val iconId: String, color: Int) 
             "oven", "microwave", "dishwasher", "washing-machine", "dryer", "fridge", "kitchen", "coffee", "kettle", "ups", "battery", "solar", "energy" -> appliance(canvas)
             "bedroom", "bathroom", "office", "garden" -> house(canvas)
             "power" -> power(canvas)
+            // The three things a tile runs rather than switches: a scene as
+            // the spark it applies, a script as its lines, an automation as
+            // the bolt that fires it.
+            "scene" -> { canvas.drawLine(12f, 3f, 12f, 21f, stroke); canvas.drawLine(3f, 12f, 21f, 12f, stroke); canvas.drawLine(6f, 6f, 18f, 18f, stroke); canvas.drawLine(18f, 6f, 6f, 18f, stroke) }
+            "script" -> { canvas.drawRoundRect(RectF(5f, 3f, 19f, 21f), 2f, 2f, stroke); listOf(8f, 12f, 16f).forEach { canvas.drawLine(9f, it, 15f, it, stroke) } }
+            "automation" -> { val p = Path().apply { moveTo(13f, 2f); lineTo(6f, 13f); lineTo(11f, 13f); lineTo(10f, 22f); lineTo(18f, 10f); lineTo(13f, 10f); close() }; canvas.drawPath(p, stroke) }
             // The two marks the tile lays in its corner. Paths taken from the
             // spec: a clock face with hands at 12 and 2, and a calendar whose
             // header rule is what makes it read as a date rather than a box.

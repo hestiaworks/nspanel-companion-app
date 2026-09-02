@@ -58,7 +58,28 @@ data class ControlCardModel(
     /** The raw state, for the one case that needs the direction of travel. */
     val state: String,
     val subtitle: String?,
+    /** Scene, script, automation: a thing you run, not a device you switch. */
+    val runnable: Boolean,
 )
+
+/** The domains whose tile is a button: one tap, one run, no state to hold. */
+val RUNNABLE_DOMAINS = setOf("scene", "script", "automation")
+
+/**
+ * The service a tap calls, as domain to service.
+ *
+ * `toggle` is not universal. A scene has no such service at all — the call
+ * went out over the websocket and was dropped, which looks exactly like a
+ * tile that does nothing. An automation has one, but it enables and disables
+ * the automation rather than running it, which is not what tapping a tile on
+ * a wall means.
+ */
+fun tapService(entity: EntityState): Pair<String, String> = when (entity.domain) {
+    "cover" -> "cover" to if (entity.state in setOf("open", "opening")) "close_cover" else "open_cover"
+    "scene", "script" -> entity.domain to "turn_on"
+    "automation" -> "automation" to "trigger"
+    else -> entity.domain to "toggle"
+}
 
 // A cover is in here now. The admin hid its timer because a fourth footer
 // button did not fit; the footer is gone and the timer lives in the sheet.
@@ -85,6 +106,7 @@ fun controlIcon(entity: EntityState, configured: String): String {
         "fan" -> "fan"
         "cover" -> "curtains"
         "switch", "input_boolean" -> "power"
+        "scene", "script", "automation" -> entity.domain
         else -> "light"
     }
 }
@@ -102,6 +124,7 @@ fun controlCard(
     widget: DashboardWidget?,
     dense: Boolean,
 ): ControlCardModel {
+    val runnable = entity.domain in RUNNABLE_DOMAINS
     val fanHasSpeed = entity.domain == "fan" &&
         widget?.showFanSpeed == true &&
         entity.attributes.optInt("supported_features", 0) and FAN_SET_SPEED != 0
@@ -118,7 +141,7 @@ fun controlCard(
     // A cover is as open as its position says, whichever way it is heading.
     // Reading state alone blanked the fill for a whole descent and then
     // snapped it back at rest.
-    val on = available && when (entity.domain) {
+    val on = available && !runnable && when (entity.domain) {
         "cover" -> (position ?: if (entity.state == "closed") 0 else 100) > 0
         else -> entity.state in setOf("on", "open", "opening")
     }
@@ -156,7 +179,10 @@ fun controlCard(
         brightnessPercent = ((entity.numberAttribute("brightness") ?: 0.0) / 255.0 * 100.0).roundToInt(),
         showPower = entity.domain != "cover",
         showTimer = entity.domain in TIMER_DOMAINS && widget?.showTimer != false,
-        showSchedule = widget?.showSchedule != false,
+        // Home Assistant schedules turn things on and off. There is no "off"
+        // to schedule for a scene, and the sheet's rows would call services
+        // that do not exist.
+        showSchedule = !runnable && widget?.showSchedule != false,
         // The whole tile is the toggle. That was not true of a card, which
         // carried its own controls and could not also be one; a tile puts the
         // level in a sheet precisely so the surface is free to toggle.
@@ -164,7 +190,9 @@ fun controlCard(
         // An unavailable device cannot be toggled, whatever the layout says.
         // Its long press survives: that sheet is the only thing that can say
         // why the tile has gone quiet.
-        cardTap = available && (widget?.cardTap ?: (entity.domain != "cover")),
+        // A button is a button however the widget was configured: there is
+        // nothing else a tap on it could mean.
+        cardTap = available && (if (runnable) true else widget?.cardTap ?: (entity.domain != "cover")),
         dense = dense,
         level = level,
         levelText = levelText,
@@ -178,9 +206,13 @@ fun controlCard(
         state = entity.state,
         subtitle = when {
             !available -> "Unavailable"
+            // A scene's state is the time it was last applied, which is not a
+            // reading and read as gibberish under the name.
+            runnable -> null
             entity.domain == "cover" -> null
             levelText != null -> null
             else -> entity.state.replace('_', ' ').replaceFirstChar { it.uppercase() }
         },
+        runnable = runnable,
     )
 }

@@ -79,6 +79,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import dev.hacompanion.panel.ui.model.ControlBody
 import dev.hacompanion.panel.ui.model.ControlCardModel
 import dev.hacompanion.panel.ui.model.controlCard
+import dev.hacompanion.panel.ui.model.tapService
 import dev.hacompanion.panel.ui.model.coverIndeterminate
 import dev.hacompanion.panel.ui.model.timerRemaining
 import org.json.JSONObject
@@ -1048,15 +1049,8 @@ class PanelDashboardView(
     }
 
     private fun toggleEntity(entity: EntityState) {
-        when (entity.domain) {
-            "cover" -> callService(
-                "cover",
-                if (entity.state in setOf("open", "opening")) "close_cover" else "open_cover",
-                entity.entityId,
-                JSONObject(),
-            )
-            else -> callService(entity.domain, "toggle", entity.entityId, JSONObject())
-        }
+        val (domain, service) = tapService(entity)
+        callService(domain, service, entity.entityId, JSONObject())
     }
 
     private fun changeTemperature(climate: EntityState, value: Double) {

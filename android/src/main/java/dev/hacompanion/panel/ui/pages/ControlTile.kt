@@ -72,7 +72,10 @@ fun ControlTile(card: ControlCardModel, online: Boolean, actions: ControlActions
                     card.cardTap -> ({ actions.toggle(card.entityId) })
                     else -> ({ openSheet(card, actions) })
                 },
-                onLongPress = { openSheet(card, actions) },
+                // A scene's sheet would be a header over nothing: it has no
+                // level, no timer, and no schedule. Running it is the whole
+                // of what it does, and the tap already does that.
+                onLongPress = { if (!card.runnable) openSheet(card, actions) },
             ),
     ) {
         val level = card.level
