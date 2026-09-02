@@ -18,6 +18,16 @@ data class DashboardLayout(
     val themeDark: Boolean = false,
     val navBarMode: NavBarMode = NavBarMode.LISTENER,
     val hideAccessibilityButton: Boolean = false,
+    /**
+     * The hours the screen is held on, when it is held on at all.
+     *
+     * A window around [keepScreenOn] rather than a second mechanism:
+     * outside it the panel simply stops holding the screen, and the display
+     * timeout and the proximity sensor take it from there.
+     */
+    val screenScheduleEnabled: Boolean = false,
+    val screenOnFrom: String = "07:00",
+    val screenOnTo: String = "22:00",
     /** Light the screen when the proximity sensor sees someone. */
     val wakeOnApproach: Boolean = false,
     /** How far above the ambient reading counts as someone arriving. */
@@ -41,6 +51,9 @@ data class DashboardLayout(
         .put("default_page_return_seconds", defaultPageReturnSeconds)
         .put("weather_cache_max_age_minutes", weatherCacheMaxAgeMinutes)
         .put("keep_screen_on", keepScreenOn)
+        .put("screen_schedule_enabled", screenScheduleEnabled)
+        .put("screen_on_from", screenOnFrom)
+        .put("screen_on_to", screenOnTo)
         .put("intercom", JSONObject()
             .put("noise_suppression", intercomNoiseSuppression)
             .put("auto_gain", intercomAutoGain))
@@ -89,6 +102,9 @@ data class DashboardLayout(
             val cacheMinutes = json.optInt("weather_cache_max_age_minutes", 360)
             require(cacheMinutes in 0..10_080) { "Weather cache age must be 0–10080 minutes" }
             val keepScreenOn = json.optBoolean("keep_screen_on", false)
+            val screenScheduleEnabled = json.optBoolean("screen_schedule_enabled", false)
+            val screenOnFrom = json.optString("screen_on_from", "07:00")
+            val screenOnTo = json.optString("screen_on_to", "22:00")
             val intercom = json.optJSONObject("intercom")
             val noiseSuppression = intercom?.optBoolean("noise_suppression", true) ?: true
             val autoGain = intercom?.optBoolean("auto_gain", true) ?: true
@@ -104,10 +120,29 @@ data class DashboardLayout(
             val wakeOnApproach = json.optBoolean("wake_on_approach", false)
             val wakeSensitivity = json.optString("wake_sensitivity", "medium")
                 .takeIf { it in setOf("low", "medium", "high") } ?: "medium"
+            // Named, not positional: a field added in the middle of the
+            // data class silently re-aims every argument after it that
+            // happens to share a type.
             return DashboardLayout(
-                version, revision, defaultPageId, pages, returnSeconds, cacheMinutes,
-                keepScreenOn, showClock, showMicIndicator, micIndicatorLingerSeconds,
-                themeMode, themeDark, navBarMode, hideAccessibilityButton, wakeOnApproach, wakeSensitivity,
+                schemaVersion = version,
+                revision = revision,
+                defaultPageId = defaultPageId,
+                pages = pages,
+                defaultPageReturnSeconds = returnSeconds,
+                weatherCacheMaxAgeMinutes = cacheMinutes,
+                keepScreenOn = keepScreenOn,
+                showClock = showClock,
+                showMicIndicator = showMicIndicator,
+                micIndicatorLingerSeconds = micIndicatorLingerSeconds,
+                themeMode = themeMode,
+                themeDark = themeDark,
+                navBarMode = navBarMode,
+                hideAccessibilityButton = hideAccessibilityButton,
+                screenScheduleEnabled = screenScheduleEnabled,
+                screenOnFrom = screenOnFrom,
+                screenOnTo = screenOnTo,
+                wakeOnApproach = wakeOnApproach,
+                wakeSensitivity = wakeSensitivity,
                 intercomNoiseSuppression = noiseSuppression,
                 intercomAutoGain = autoGain,
             )

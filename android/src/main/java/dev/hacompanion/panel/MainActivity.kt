@@ -98,7 +98,23 @@ class MainActivity : Activity() {
     private var offlineSinceMs = 0L
     private var lastWatchdogRecoveryMs = 0L
     private var serverTimeMs = System.currentTimeMillis()
+    private var serverTimeSyncedAtMs = 0L
     private var serverTimezone = java.util.TimeZone.getDefault().id
+    /** Ringing, calling, or talking: any of them outranks the schedule. */
+    private var callActive = false
+    /**
+     * Re-check the hour.
+     *
+     * A schedule is a setting that changes with nothing happening, so
+     * something has to look. Twice a minute: the boundary is a minute wide
+     * and this is one comparison.
+     */
+    private val displayTick = object : Runnable {
+        override fun run() {
+            applyDisplayPolicy()
+            watchdogHandler.postDelayed(this, DISPLAY_TICK_MS)
+        }
+    }
     private val watchdog = object : Runnable {
         override fun run() {
             checkWatchdog()
@@ -143,6 +159,7 @@ class MainActivity : Activity() {
         connectWithSavedSettings()
         startPanelSync()
         watchdogHandler.postDelayed(watchdog, WATCHDOG_INTERVAL_MS)
+        watchdogHandler.postDelayed(displayTick, DISPLAY_TICK_MS)
         openDebugDoorbell(intent)
     }
 
@@ -194,6 +211,7 @@ class MainActivity : Activity() {
         pairingAdvertiser?.stop()
         pairingAdvertiser = null
         watchdogHandler.removeCallbacks(watchdog)
+        watchdogHandler.removeCallbacks(displayTick)
         healthJournal.record("app", "Application stopped")
         super.onDestroy()
     }
@@ -250,11 +268,10 @@ class MainActivity : Activity() {
             val deviceId = PanelIdentityStore(this).deviceId
             dashboardView.showUnconfigured("Living Room NSPanel", deviceId)
         } else if (activeLayout != null) {
-            applyKeepScreenOn(activeLayout.keepScreenOn)
             // A panel that boots before Home Assistant answers still has its
             // saved layout, and should not spend that time in the wrong mode.
             applySystemUi(activeLayout)
-            applyProximityWake(activeLayout)
+            applyDisplayPolicy()
             dashboardView.setLayout(activeLayout)
             dashboardView.setCachedWeather(weatherCacheStore.load(activeLayout.weatherCacheMaxAgeMinutes))
         } else if (credentials != null) {
@@ -633,6 +650,10 @@ class MainActivity : Activity() {
                 onRoster = dashboardView::setRoster,
                 onRing = { callId, name, ring, volume ->
                     intercomCallId = callId
+                    // A call arrives at a dark panel more often than a lit
+                    // one. The doorbell has always lit the screen for its
+                    // ring; this rings behind one and was never seen.
+                    wakeForCall()
                     dashboardView.setCall(CallPhase.RINGING, peer = name)
                     ringer.start(ring, volume)
                 },
@@ -656,14 +677,27 @@ class MainActivity : Activity() {
                     }
                 },
                 onCallEnded = ::closeIntercom,
-                onCallBusy = ::closeIntercom,
+                onCallBusy = { name ->
+                    // The roster said this panel was free, which it no longer
+                    // is. Closing without a word looked like a dead button.
+                    closeIntercom()
+                    Toast.makeText(
+                        this,
+                        if (name.isBlank()) "That panel is already in a call"
+                        else "$name is already in a call",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                },
                 onHistory = dashboardView::setHistory,
                 onWeatherForecast = dashboardView::updateWeatherForecast,
                 onSchedules = dashboardView::setSchedules,
                 onServerTime = { millis, timezone ->
                     serverTimeMs = millis
+                    serverTimeSyncedAtMs = android.os.SystemClock.elapsedRealtime()
                     serverTimezone = timezone
                     dashboardView.synchronizeServerTime(millis, timezone)
+                    // The hour just became knowable, or moved.
+                    applyDisplayPolicy()
                 },
             ).also { it.start() }
             return
@@ -710,9 +744,8 @@ class MainActivity : Activity() {
             PanelTheme.apply(layout.themeMode, layout.themeDark)
             rootView.setBackgroundColor(PanelTheme.canvas)
             (dashboardView.parent as? View)?.setBackgroundColor(PanelTheme.canvas)
-            applyKeepScreenOn(layout.keepScreenOn)
             applySystemUi(layout)
-            applyProximityWake(layout)
+            applyDisplayPolicy()
             dashboardView.setLayout(layout)
             if (PanelProvisioningStore(this).load() != null) connectWithSavedSettings()
             Toast.makeText(this, "Layout updated", Toast.LENGTH_SHORT).show()
@@ -794,18 +827,49 @@ class MainActivity : Activity() {
         if (SystemUiPolicy.barsHidden(navBarMode)) enterImmersiveMode() else exitImmersiveMode()
     }
 
-    /**
-     * Listen for someone approaching, when asked to.
-     *
-     * Pointless while the display is held on — there is nothing to wake —
-     * so the two settings are read together rather than the sensor running
-     * to no purpose.
-     */
-    private fun applyProximityWake(layout: DashboardLayout) {
+    private fun applyDisplayPolicy() {
+        val layout = layoutStore.loadOrNull() ?: return
+        if (demoMode) return
+        val minute = DisplayPolicy.minuteOfDay(currentServerTimeMs(), currentTimezone())
+        applyKeepScreenOn(DisplayPolicy.keepScreenOn(layout, callActive, minute))
         proximityWake.setEnabled(
-            layout.wakeOnApproach && !layout.keepScreenOn,
+            DisplayPolicy.wakeOnApproach(layout, callActive, minute),
             layout.wakeSensitivity,
         )
+    }
+
+    /** Home Assistant's clock, carried forward since it last spoke. */
+    private fun currentServerTimeMs(): Long =
+        if (serverTimeSyncedAtMs == 0L) System.currentTimeMillis()
+        else serverTimeMs + (android.os.SystemClock.elapsedRealtime() - serverTimeSyncedAtMs)
+
+    private fun currentTimezone(): java.util.TimeZone =
+        java.util.TimeZone.getTimeZone(serverTimezone)
+
+    /**
+     * Light the screen for an incoming call.
+     *
+     * The doorbell gets this for free: it is a separate activity, and its
+     * window asks to turn the screen on as it comes up. A call arrives into
+     * the activity that is already running, so nothing asks — the panel rang
+     * in the dark and the ring timed out unanswered.
+     */
+    private fun wakeForCall() {
+        window.addFlags(
+            android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON,
+        )
+        val power = getSystemService(POWER_SERVICE) as android.os.PowerManager
+        if (!power.isInteractive) {
+            @Suppress("DEPRECATION")
+            power.newWakeLock(
+                android.os.PowerManager.FULL_WAKE_LOCK or
+                    android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                "nspanel:call",
+            ).acquire(CALL_WAKE_MS)
+        }
+        callActive = true
+        applyDisplayPolicy()
     }
 
     private fun applyKeepScreenOn(enabled: Boolean) {
@@ -847,6 +911,8 @@ class MainActivity : Activity() {
     private fun runIntercom(command: IntercomCommand) {
         when (command) {
             is IntercomCommand.Call -> {
+                callActive = true
+                applyDisplayPolicy()
                 openIntercomSession()
                 panelApiClient?.callPanel(command.panelId)
             }
@@ -907,6 +973,12 @@ class MainActivity : Activity() {
     }
 
     private fun closeIntercom() {
+        callActive = false
+        window.clearFlags(
+            android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON,
+        )
+        applyDisplayPolicy()
         ringer.stop()
         watchdogHandler.removeCallbacks(intercomTick)
         intercomSession?.stop()
@@ -1199,6 +1271,9 @@ class MainActivity : Activity() {
         private const val EXTRA_HA_URL = "dev.hacompanion.panel.HA_URL"
         private const val EXTRA_HA_TOKEN = "dev.hacompanion.panel.HA_TOKEN"
         private const val WATCHDOG_INTERVAL_MS = 30_000L
+        private const val DISPLAY_TICK_MS = 30_000L
+        /** Long enough to light the screen and hand it to the call. */
+        private const val CALL_WAKE_MS = 30_000L
         private const val WATCHDOG_OFFLINE_MS = 120_000L
         private const val WATCHDOG_COOLDOWN_MS = 300_000L
         private val BACKGROUND = Color.rgb(16, 20, 22)

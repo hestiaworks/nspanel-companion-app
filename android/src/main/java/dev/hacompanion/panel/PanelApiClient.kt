@@ -31,7 +31,8 @@ class PanelApiClient(
     private val onCallAnswered: (String) -> Unit = {},
     private val onCallSignal: (String, String) -> Unit = { _, _ -> },
     private val onCallEnded: () -> Unit = {},
-    private val onCallBusy: () -> Unit = {},
+    /** Who was already in a call, so the panel can say so rather than close. */
+    private val onCallBusy: (String) -> Unit = {},
     private val onWeatherForecast: (String, String, org.json.JSONArray) -> Unit = { _, _, _ -> },
     private val onSchedules: (List<ControlSchedule>) -> Unit = {},
     private val onServerTime: (Long, String) -> Unit = { _, _ -> },
@@ -168,7 +169,9 @@ class PanelApiClient(
                     onCallSignal(message.optString("call_id"), message.optString("signal"))
                 }
                 "intercom_end" -> handler.post { onCallEnded() }
-                "intercom_busy" -> handler.post { onCallBusy() }
+                "intercom_busy" -> handler.post {
+                    onCallBusy(message.optString("name").ifBlank { message.optString("panel_id") })
+                }
                 "restart" -> handler.post { onRestart() }
                 // Unpaired from Home Assistant, said while the panel is
                 // still listening. Without this it carries on showing a

@@ -46,6 +46,30 @@ class DashboardLayoutTest {
     }
 
     @Test
+    fun parsesTheScreenOnScheduleAndWritesItBack() {
+        val parsed = DashboardLayout.parse(
+            """{"schema_version":1,"revision":"hours","keep_screen_on":true,""" +
+                """"screen_schedule_enabled":true,"screen_on_from":"08:15","screen_on_to":"23:45",""" +
+                """"pages":[{"id":"main","widgets":[]}]}""",
+        )
+        assertEquals(true, parsed.screenScheduleEnabled)
+        assertEquals("08:15", parsed.screenOnFrom)
+        assertEquals("23:45", parsed.screenOnTo)
+        // Round trip: the panel writes its layout back to disk, and a field
+        // that parses but is not written is lost at the next restart.
+        assertEquals(parsed, DashboardLayout.parse(parsed.toJson()))
+    }
+
+    @Test
+    fun anOlderLayoutHasNoScheduleAndKeepsTheOldBehaviour() {
+        val parsed = DashboardLayout.parse(
+            """{"schema_version":1,"revision":"old","keep_screen_on":true,"pages":[{"id":"m","widgets":[]}]}""",
+        )
+        assertEquals(false, parsed.screenScheduleEnabled)
+        assertEquals(true, DisplayPolicy.keepScreenOn(parsed, callActive = false, minuteOfDay = 3 * 60))
+    }
+
+    @Test
     fun parsesPanelThemeAndPreservesLegacyLightDefault() {
         val inherited = DashboardLayout.parse(
             """{"schema_version":1,"revision":"theme","theme_mode":"inherit","theme_dark":true,"pages":[{"id":"main","widgets":[]}]}""",
