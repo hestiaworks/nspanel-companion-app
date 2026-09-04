@@ -35,6 +35,17 @@ import java.util.concurrent.TimeUnit
 internal fun chooseStreamSource(fresh: String?, stored: String?): String =
     fresh?.takeIf(String::isNotBlank) ?: stored.orEmpty()
 
+/**
+ * What to say when nothing resolved.
+ *
+ * A camera that names a bridge or carries an address is configured; it is
+ * just not answering this second. Saying it was never set up sends someone
+ * to the wrong place — and now that Home Assistant stores no dead fallback,
+ * a moment of bad Wi-Fi is enough to land here.
+ */
+internal fun unresolvedStatus(hasBridge: Boolean, hasStored: Boolean): String =
+    if (hasBridge || hasStored) "unavailable" else "not configured"
+
 /** Lightweight page-scoped RTSP player backed by Scrypted's prebuffered stream. */
 class CameraPageView(
     context: Context,
@@ -198,6 +209,8 @@ class CameraPageView(
     // A warmed URL is a session someone else minted; if it turns out to be
     // dead, the page resolves for itself once rather than showing a failure.
     private var playingWarmed = false
+    /** The layout's address is playing because the bridge gave nothing. */
+    private var playingStored = false
     private var retriedFresh = false
     private fun since() = android.os.SystemClock.elapsedRealtime() - startedAt
     private var attached = false
@@ -314,12 +327,17 @@ class CameraPageView(
             Log.i(TAG, "timing: source resolved at ${since()} ms")
             if (!attached || player != null || !target.isValid) return@resolveSource
             if (source.isBlank()) {
-                say("not configured")
+                say(unresolvedStatus(hasBridge(), hasStoredSource()))
                 return@resolveSource
             }
             beginPlayback(target, source)
         }
     }
+
+    private fun hasBridge(): Boolean =
+        !widget.talkbackUrl.isNullOrBlank() && !widget.talkbackKey.isNullOrBlank()
+
+    private fun hasStoredSource(): Boolean = !widget.streamBaseUrl.isNullOrBlank()
 
     /** Ask the bridge where the stream is now, falling back to what the layout carries. */
     private fun resolveSource(allowWarmed: Boolean, onResolved: (String) -> Unit) {
@@ -337,12 +355,18 @@ class CameraPageView(
         }
         playingWarmed = false
         if (endpoint == null || key == null) {
+            playingStored = true
             onResolved(chooseStreamSource(null, stored))
             return
         }
         Thread {
             val fresh = fetchStreamUrl(client, endpoint, key)
-            handler.post { onResolved(chooseStreamSource(fresh, stored)) }
+            handler.post {
+                // Remember whether this is the bridge's answer or the layout's
+                // last resort: only the latter is worth a second attempt.
+                playingStored = fresh.isBlank()
+                onResolved(chooseStreamSource(fresh, stored))
+            }
         }.start()
     }
 
@@ -398,7 +422,7 @@ class CameraPageView(
      * the page would have made anyway costs the user a delay, not the stream.
      */
     private fun retryWithFreshSource(): Boolean {
-        if (!playingWarmed || retriedFresh) return false
+        if ((!playingWarmed && !playingStored) || retriedFresh) return false
         val target = currentSurface() ?: return false
         if (!attached) return false
         retriedFresh = true
@@ -408,7 +432,7 @@ class CameraPageView(
         resolveSource(allowWarmed = false) { source ->
             if (!attached || player != null || !target.isValid) return@resolveSource
             if (source.isBlank()) {
-                say("not configured")
+                say(unresolvedStatus(hasBridge(), hasStoredSource()))
                 return@resolveSource
             }
             beginPlayback(target, source)
