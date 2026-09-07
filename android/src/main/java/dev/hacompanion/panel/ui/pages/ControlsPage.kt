@@ -39,4 +39,7 @@ interface ControlActions {
 
     /** Whether a cover is on its way somewhere worth drawing. */
     fun coverTravelling(entityId: String, shown: Int): Boolean
+
+    /** The stretch of track a cover has still to cross, as fractions. */
+    fun coverTravelSpan(entityId: String, shown: Int): ClosedFloatingPointRange<Float>?
 }

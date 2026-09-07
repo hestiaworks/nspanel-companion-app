@@ -83,6 +83,7 @@ import dev.hacompanion.panel.ui.model.tapService
 import dev.hacompanion.panel.ui.model.CoverTargets
 import dev.hacompanion.panel.ui.model.coverIndeterminate
 import dev.hacompanion.panel.ui.model.coverTravelling
+import dev.hacompanion.panel.ui.model.motionSpan
 import dev.hacompanion.panel.ui.model.sentPosition
 import dev.hacompanion.panel.ui.model.shownPosition
 import dev.hacompanion.panel.ui.model.timerRemaining
@@ -275,9 +276,13 @@ class PanelDashboardView(
                 target = coverTargets.target(entityId),
                 position = shown,
                 moving = entity.state in setOf("opening", "closing"),
-                sincePosition = dashboardState.sincePosition(entityId, SystemClock.elapsedRealtime()),
+                sinceProgress = sinceTravelProgress(entityId, SystemClock.elapsedRealtime()),
             )
         }
+
+        override fun coverTravelSpan(entityId: String, shown: Int): ClosedFloatingPointRange<Float>? =
+            if (!coverTravelling(entityId, shown)) null
+            else motionSpan(shown, coverTargets.target(entityId))
 
         override fun coverIndeterminate(entityId: String): Boolean {
             // Reading the tick is what makes a tile redraw when the silence
@@ -574,6 +579,7 @@ class PanelDashboardView(
             coverTargets.requested(
                 cover.entityId,
                 shownPosition(if (action == "open") 100 else 0, invertsPosition(cover.entityId)),
+                SystemClock.elapsedRealtime(),
             )
             callService("cover", "${action}_cover", cover.entityId, JSONObject())
             return
@@ -607,7 +613,7 @@ class PanelDashboardView(
                     target = coverTargets.target(entity.entityId),
                     position = shown,
                     moving = entity.state in setOf("opening", "closing"),
-                    sincePosition = dashboardState.sincePosition(entity.entityId, now),
+                    sinceProgress = sinceTravelProgress(entity.entityId, now),
                 )
             ) {
                 coverTargets.forget(entity.entityId)
@@ -618,7 +624,9 @@ class PanelDashboardView(
     private fun sendCoverPosition(entityId: String, raw: Int) {
         // The note is kept the way the room reads it, because that is what
         // the band draws against; the motor is told its own way round.
-        coverTargets.requested(entityId, shownPosition(raw, invertsPosition(entityId)))
+        coverTargets.requested(
+            entityId, shownPosition(raw, invertsPosition(entityId)), SystemClock.elapsedRealtime(),
+        )
         callService(
             "cover", "set_cover_position", entityId,
             JSONObject().put("position", raw),
@@ -627,6 +635,18 @@ class PanelDashboardView(
 
     private fun invertsPosition(entityId: String): Boolean =
         widgetFor(entityId)?.invertPosition == true
+
+    /**
+     * How long since anything happened on a cover's journey.
+     *
+     * The request counts as much as a position report: a curtain parked at a
+     * limit has been silent for hours, and that silence says nothing about
+     * the journey it was just sent on.
+     */
+    private fun sinceTravelProgress(entityId: String, now: Long): Long? = minOf(
+        dashboardState.sincePosition(entityId, now) ?: Long.MAX_VALUE,
+        coverTargets.sinceRequest(entityId, now) ?: Long.MAX_VALUE,
+    ).takeIf { it != Long.MAX_VALUE }
 
     /** A sheet that the panel knows about, so returning home can clear it. */
     private fun panelSheet(content: @Composable ColumnScope.(dismiss: () -> Unit) -> Unit) =
@@ -782,6 +802,7 @@ class PanelDashboardView(
                                         if (action == "open") 100 else 0,
                                         invertsPosition(entityId),
                                     ),
+                                    SystemClock.elapsedRealtime(),
                                 )
                             }
                             callService("cover", "${action}_cover", entityId, JSONObject())

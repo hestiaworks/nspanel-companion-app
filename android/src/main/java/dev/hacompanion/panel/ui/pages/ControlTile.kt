@@ -90,21 +90,34 @@ fun ControlTile(card: ControlCardModel, online: Boolean, actions: ControlActions
                 )
             }
         }
-        // The zone sits on the side the edge is moving toward: outside the
-        // fill while opening, inside it while closing. Anchoring it to the
-        // boundary is what makes it read as a leading edge rather than a
-        // rectangle floating on the track.
-        if (indeterminate && level != null) {
+        // The ground still to cross, the same as the sheet's band draws.
+        // A step from the arrows covers a little of the tile and a jump from
+        // the band covers most of it, which is the difference a fixed zone
+        // pinned to the edge could not show.
+        val travel = if (level == null) null else actions.coverTravelSpan(card.entityId, level)
+        if (travel != null || (indeterminate && level != null)) {
             // The direction the fill is moving, which an inverted curtain
             // reverses relative to the motor's own idea of opening.
             val opening = card.fillGrowing
             BoxWithConstraints(Modifier.fillMaxSize()) {
-                val edge = maxWidth * fillFraction(level)
-                val zone = size.motionZone
-                MotionZone(
-                    opening = opening,
-                    modifier = Modifier.offset(x = if (opening) edge else edge - zone),
-                )
+                if (travel != null) {
+                    MotionZone(
+                        opening = opening,
+                        width = maxWidth * (travel.endInclusive - travel.start),
+                        modifier = Modifier.offset(x = maxWidth * travel.start),
+                    )
+                } else {
+                    // Moving with nowhere known to go — someone used the wall
+                    // switch. The zone sits on the side the edge is moving
+                    // toward, which is what makes it read as a leading edge
+                    // rather than a rectangle floating on the track.
+                    val edge = maxWidth * fillFraction(level!!)
+                    val zone = size.motionZone
+                    MotionZone(
+                        opening = opening,
+                        modifier = Modifier.offset(x = if (opening) edge else edge - zone),
+                    )
+                }
             }
         }
 

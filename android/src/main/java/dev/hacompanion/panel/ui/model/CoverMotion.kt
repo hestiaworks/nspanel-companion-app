@@ -54,20 +54,27 @@ const val TRAVEL_SILENCE_MS = 6_000L
  * anything for a tap.
  *
  * What is actually known: where it was sent, where it last said it was, and
- * when it last said anything. A cover that has arrived is done; one that
- * has gone quiet for [giveUpAfter] has stopped short and is done too.
+ * how long it has been since anything happened. A cover that has arrived is
+ * done; one quiet for [giveUpAfter] has stopped short and is done too.
+ *
+ * [sinceProgress] is time since the last thing that counts as progress —
+ * a position report, or the request itself, whichever is more recent. Time
+ * since the position last changed is not enough on its own: a curtain parked
+ * open since this morning has been quiet for hours, and reading that as
+ * having stopped short meant no loader from 0% or 100%, which is where a
+ * curtain spends most of its life.
  */
 fun coverTravelling(
     target: Int?,
     position: Int,
     moving: Boolean,
-    sincePosition: Long?,
+    sinceProgress: Long?,
     giveUpAfter: Long = TRAVEL_SILENCE_MS,
 ): Boolean {
     if (target == null || target == position) return false
     if (moving) return true
     // Nothing heard yet: the tap has only just happened.
-    return sincePosition == null || sincePosition < giveUpAfter
+    return sinceProgress == null || sinceProgress < giveUpAfter
 }
 
 /**
@@ -108,13 +115,17 @@ class CoverTargets {
      * as "finished" threw the destination away before the journey began,
      * and the band was left with nothing to draw.
      */
-    private class Journey(val target: Int, var started: Boolean = false)
+    private class Journey(val target: Int, val at: Long, var started: Boolean = false)
 
     private val journeys = mutableMapOf<String, Journey>()
 
-    fun requested(entityId: String, position: Int) {
-        journeys[entityId] = Journey(position.coerceIn(0, 100))
+    fun requested(entityId: String, position: Int, at: Long) {
+        journeys[entityId] = Journey(position.coerceIn(0, 100), at)
     }
+
+    /** How long since this cover was told where to go, or null if it wasn't. */
+    fun sinceRequest(entityId: String, now: Long): Long? =
+        journeys[entityId]?.let { now - it.at }
 
     /** Take a cover's word for what it is doing, and forget the rest. */
     fun report(entityId: String, state: String, position: Int?) {

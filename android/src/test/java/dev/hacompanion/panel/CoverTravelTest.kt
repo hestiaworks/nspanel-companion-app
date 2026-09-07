@@ -43,7 +43,7 @@ class CoverTravelTest {
     @Test
     fun `a request is remembered until the cover stops`() {
         val targets = CoverTargets()
-        targets.requested("cover.left", 50)
+        targets.requested("cover.left", 50, at = 0L)
         assertEquals(50, targets.target("cover.left"))
         targets.report("cover.left", state = "closing", position = 80)
         assertEquals(50, targets.target("cover.left"))
@@ -55,7 +55,7 @@ class CoverTravelTest {
     fun `arriving early forgets the target even while the state lags`() {
         // Some covers report the position first and the state a moment later.
         val targets = CoverTargets()
-        targets.requested("cover.left", 50)
+        targets.requested("cover.left", 50, at = 0L)
         targets.report("cover.left", state = "closing", position = 50)
         assertNull(targets.target("cover.left"))
     }
@@ -63,7 +63,7 @@ class CoverTravelTest {
     @Test
     fun `a cover stopped by hand forgets where it was sent`() {
         val targets = CoverTargets()
-        targets.requested("cover.left", 0)
+        targets.requested("cover.left", 0, at = 0L)
         targets.report("cover.left", state = "closing", position = 90)
         targets.report("cover.left", state = "open", position = 62)
         assertNull(targets.target("cover.left"))
@@ -77,7 +77,7 @@ class CoverTravelTest {
         // threw the target away before the journey began — so the band had
         // nothing to draw and fell back to the small zone.
         val targets = CoverTargets()
-        targets.requested("cover.left", 60)
+        targets.requested("cover.left", 60, at = 0L)
         targets.report("cover.left", state = "open", position = 100)
         assertEquals(60, targets.target("cover.left"))
         targets.report("cover.left", state = "closing", position = 100)
@@ -89,7 +89,7 @@ class CoverTravelTest {
     @Test
     fun `a cover asked for where it already is has nothing to travel`() {
         val targets = CoverTargets()
-        targets.requested("cover.left", 100)
+        targets.requested("cover.left", 100, at = 0L)
         targets.report("cover.left", state = "open", position = 100)
         assertNull(targets.target("cover.left"))
     }
@@ -102,7 +102,7 @@ class CoverTravelTest {
         // second and a half of every journey, exactly when someone is
         // looking at it to see whether their tap did anything.
         val targets = CoverTargets()
-        targets.requested("cover.left", 60)
+        targets.requested("cover.left", 60, at = 0L)
         targets.report("cover.left", state = "closing", position = 100)
         assertEquals(0.6f..1.0f, motionSpan(position = 100, target = targets.target("cover.left")))
     }
@@ -114,21 +114,50 @@ class CoverTravelTest {
         // "opening" for the open and close buttons. Gating the loader on
         // that state meant the band could never draw one for a tap.
         assertTrue(
-            coverTravelling(target = 60, position = 100, moving = false, sincePosition = 800L),
+            coverTravelling(target = 60, position = 100, moving = false, sinceProgress = 800L),
         )
     }
 
     @Test
     fun `nothing is drawn once it has arrived`() {
         assertFalse(
-            coverTravelling(target = 60, position = 60, moving = true, sincePosition = 100L),
+            coverTravelling(target = 60, position = 60, moving = true, sinceProgress = 100L),
         )
     }
 
     @Test
     fun `nor when it was never sent anywhere`() {
         assertFalse(
-            coverTravelling(target = null, position = 60, moving = true, sincePosition = 100L),
+            coverTravelling(target = null, position = 60, moving = true, sinceProgress = 100L),
+        )
+    }
+
+    @Test
+    fun `a curtain parked at a limit still gets its loader`() {
+        // The silence that matters runs from the tap, not from the last time
+        // the curtain moved. One sitting open since this morning has been
+        // quiet for hours, and reading that as "given up on" meant the
+        // loader never appeared from 0% or 100% — the two places a curtain
+        // spends most of its life.
+        val targets = CoverTargets()
+        targets.requested("cover.left", 60, at = 5_000_000L)
+        assertEquals(0L, targets.sinceRequest("cover.left", now = 5_000_000L))
+        assertTrue(
+            coverTravelling(
+                target = 60, position = 100, moving = false,
+                // Hours since it last moved, no time at all since it was told to.
+                sinceProgress = minOf(9_000_000L, targets.sinceRequest("cover.left", 5_000_000L)!!),
+            ),
+        )
+    }
+
+    @Test
+    fun `a request that goes nowhere is given up on too`() {
+        val targets = CoverTargets()
+        targets.requested("cover.left", 60, at = 1_000L)
+        assertEquals(9_000L, targets.sinceRequest("cover.left", now = 10_000L))
+        assertFalse(
+            coverTravelling(target = 60, position = 100, moving = false, sinceProgress = 9_000L),
         )
     }
 
@@ -138,32 +167,32 @@ class CoverTravelTest {
         // "closing" to end and no arrival to wait for, silence is the only
         // thing left to read, so the loader stops rather than marching on.
         assertTrue(
-            coverTravelling(target = 60, position = 80, moving = false, sincePosition = 3_000L),
+            coverTravelling(target = 60, position = 80, moving = false, sinceProgress = 3_000L),
         )
         assertFalse(
-            coverTravelling(target = 60, position = 80, moving = false, sincePosition = 9_000L),
+            coverTravelling(target = 60, position = 80, moving = false, sinceProgress = 9_000L),
         )
     }
 
     @Test
     fun `a motor that does say it is moving is believed over the silence`() {
         assertTrue(
-            coverTravelling(target = 60, position = 80, moving = true, sincePosition = 60_000L),
+            coverTravelling(target = 60, position = 80, moving = true, sinceProgress = 60_000L),
         )
     }
 
     @Test
     fun `the moment after a tap, before anything has been heard`() {
         assertTrue(
-            coverTravelling(target = 60, position = 100, moving = false, sincePosition = null),
+            coverTravelling(target = 60, position = 100, moving = false, sinceProgress = null),
         )
     }
 
     @Test
     fun `each cover is remembered on its own`() {
         val targets = CoverTargets()
-        targets.requested("cover.left", 0)
-        targets.requested("cover.right", 100)
+        targets.requested("cover.left", 0, at = 0L)
+        targets.requested("cover.right", 100, at = 0L)
         targets.report("cover.left", state = "closed", position = 0)
         assertNull(targets.target("cover.left"))
         assertEquals(100, targets.target("cover.right"))
