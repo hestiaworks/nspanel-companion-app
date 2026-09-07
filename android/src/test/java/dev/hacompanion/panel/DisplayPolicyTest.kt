@@ -131,6 +131,35 @@ class DisplayPolicyTest {
     }
 
     @Test
+    fun `the window opening in the morning lights the screen`() {
+        // Holding the screen on does not turn one on that has gone dark:
+        // Android's flag only stops it timing out. A panel scheduled from
+        // 07:00 stayed black until someone walked up to it, which is not
+        // what "on from seven" means.
+        val panel = layout(scheduled = true, from = "07:00", to = "22:00")
+        assertTrue(DisplayPolicy.shouldWake(was = false, now = true, layout = panel))
+    }
+
+    @Test
+    fun `nothing wakes it while the window is simply open`() {
+        val panel = layout(scheduled = true, from = "07:00", to = "22:00")
+        assertFalse(DisplayPolicy.shouldWake(was = true, now = true, layout = panel))
+        assertFalse(DisplayPolicy.shouldWake(was = true, now = false, layout = panel))
+    }
+
+    @Test
+    fun `the first look after a restart is not a boundary`() {
+        // Nothing is known about what came before, so nothing is claimed.
+        val panel = layout(scheduled = true, from = "07:00", to = "22:00")
+        assertFalse(DisplayPolicy.shouldWake(was = null, now = true, layout = panel))
+    }
+
+    @Test
+    fun `a panel with no schedule is never woken by one`() {
+        assertFalse(DisplayPolicy.shouldWake(was = false, now = true, layout = layout()))
+    }
+
+    @Test
     fun `minutes of the day are read off the wall clock`() {
         assertEquals(0, DisplayPolicy.minuteOfDay("00:00"))
         assertEquals(7 * 60 + 30, DisplayPolicy.minuteOfDay("07:30"))

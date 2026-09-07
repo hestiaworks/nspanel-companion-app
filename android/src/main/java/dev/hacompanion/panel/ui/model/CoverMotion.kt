@@ -34,6 +34,43 @@ fun levelReading(level: Int, indeterminate: Boolean): String =
     if (indeterminate) "~$level%" else "$level%"
 
 /**
+ * How long a cover on its way somewhere may go silent before the panel gives
+ * up on the journey.
+ *
+ * Measured on the curtains this was written for: they report a new position
+ * every three seconds or so while they run. Twice that is long enough not to
+ * flicker and short enough that a curtain stopped by an obstruction — or a
+ * command that never landed — does not leave the band marching for ever.
+ */
+const val TRAVEL_SILENCE_MS = 6_000L
+
+/**
+ * Whether there is a journey worth drawing.
+ *
+ * Not the same question as whether Home Assistant says the cover is moving.
+ * A Zigbee2MQTT curtain sent to a position reports the new positions with
+ * its state left at "open" — it only says "opening" for the open and close
+ * buttons — so a band that waited to be told it was moving never drew
+ * anything for a tap.
+ *
+ * What is actually known: where it was sent, where it last said it was, and
+ * when it last said anything. A cover that has arrived is done; one that
+ * has gone quiet for [giveUpAfter] has stopped short and is done too.
+ */
+fun coverTravelling(
+    target: Int?,
+    position: Int,
+    moving: Boolean,
+    sincePosition: Long?,
+    giveUpAfter: Long = TRAVEL_SILENCE_MS,
+): Boolean {
+    if (target == null || target == position) return false
+    if (moving) return true
+    // Nothing heard yet: the tap has only just happened.
+    return sincePosition == null || sincePosition < giveUpAfter
+}
+
+/**
  * The stretch of track a travelling cover is somewhere within.
  *
  * Between where it last said it was and where it was asked to go. This is
@@ -62,23 +99,47 @@ fun motionSpan(position: Int, target: Int?): ClosedFloatingPointRange<Float>? {
  * is never drawn over a cover that is no longer going there.
  */
 class CoverTargets {
-    private val targets = mutableMapOf<String, Int>()
+    /**
+     * A journey, and whether the motor has been seen on it.
+     *
+     * The distinction matters for the moment between the tap and the first
+     * report of movement. The cover is still standing where it was, and any
+     * unrelated state change brings that through — so reading "not moving"
+     * as "finished" threw the destination away before the journey began,
+     * and the band was left with nothing to draw.
+     */
+    private class Journey(val target: Int, var started: Boolean = false)
+
+    private val journeys = mutableMapOf<String, Journey>()
 
     fun requested(entityId: String, position: Int) {
-        targets[entityId] = position.coerceIn(0, 100)
+        journeys[entityId] = Journey(position.coerceIn(0, 100))
     }
 
-    /** Take a cover's word for where it is, and forget the rest. */
+    /** Take a cover's word for what it is doing, and forget the rest. */
     fun report(entityId: String, state: String, position: Int?) {
-        val target = targets[entityId] ?: return
-        if (position == target || state !in MOVING) targets.remove(entityId)
+        val journey = journeys[entityId] ?: return
+        when {
+            state in MOVING -> {
+                journey.started = true
+                // Some covers report the position before the state catches
+                // up: arriving ends the journey whatever the state says.
+                if (position == journey.target) journeys.remove(entityId)
+            }
+            // It set off and has come to rest, wherever that turned out to
+            // be: arrived, stopped at the wall, or stopped from here.
+            journey.started -> journeys.remove(entityId)
+            // Never set off, and is already where it was sent.
+            position == journey.target -> journeys.remove(entityId)
+            // Otherwise it has not started yet. Wait for it.
+        }
     }
 
     fun forget(entityId: String) {
-        targets.remove(entityId)
+        journeys.remove(entityId)
     }
 
-    fun target(entityId: String): Int? = targets[entityId]
+    fun target(entityId: String): Int? = journeys[entityId]?.target
 
     private companion object {
         val MOVING = setOf("opening", "closing")

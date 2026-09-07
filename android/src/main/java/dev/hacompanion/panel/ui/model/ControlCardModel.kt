@@ -60,6 +60,14 @@ data class ControlCardModel(
     val subtitle: String?,
     /** Scene, script, automation: a thing you run, not a device you switch. */
     val runnable: Boolean,
+    /**
+     * Whether the fill is getting longer while the cover travels.
+     *
+     * Not the same as opening once the percentage is inverted: the curtain
+     * opens and the band empties. The marching bars follow the fill, because
+     * that is the edge someone is watching.
+     */
+    val fillGrowing: Boolean = false,
 )
 
 /** The domains whose tile is a button: one tap, one run, no state to hold. */
@@ -84,6 +92,17 @@ fun tapService(entity: EntityState): Pair<String, String> = when (entity.domain)
 // A cover is in here now. The admin hid its timer because a fourth footer
 // button did not fit; the footer is gone and the timer lives in the sheet.
 private val TIMER_DOMAINS = setOf("light", "switch", "fan", "cover", "input_boolean")
+
+/**
+ * The colour modes that carry a brightness worth a band.
+ *
+ * Home Assistant's own list, minus the two that cannot be dimmed: a light in
+ * onoff has nothing to set, and unknown says the light has not told anyone
+ * yet.
+ */
+private val DIMMABLE_COLOR_MODES = setOf(
+    "brightness", "color_temp", "hs", "xy", "rgb", "rgbw", "rgbww", "white",
+)
 
 // Home Assistant's SET_SPEED bit. A fan without it has no speed to adjust,
 // however the widget is configured.
@@ -111,11 +130,27 @@ fun controlIcon(entity: EntityState, configured: String): String {
     }
 }
 
-fun deviceTypeLabel(entity: EntityState): String = when {
+/**
+ * A cover's percentage as the room reads it.
+ *
+ * A Zigbee2MQTT motor has one inversion setting covering both the buttons
+ * and the percentage, so a curtain whose open and close are right can report
+ * its position backwards. Everything shown goes through here; everything
+ * sent goes through [sentPosition]. The two are the same arithmetic, named
+ * from each end so a call site says which way it is facing.
+ */
+fun shownPosition(raw: Int, invert: Boolean): Int = if (invert) 100 - raw else raw
+
+/** A percentage picked in the room, as the motor reads it. */
+fun sentPosition(shown: Int, invert: Boolean): Int = if (invert) 100 - shown else shown
+
+fun deviceTypeLabel(entity: EntityState, invertPosition: Boolean = false): String = when {
     entity.domain == "light" && entity.numberAttribute("brightness") != null -> "Dimmable light"
     entity.domain == "light" -> "Light"
     entity.domain == "fan" -> "Speed · ${entity.numberAttribute("percentage")?.roundToInt() ?: 0}%"
-    entity.domain == "cover" -> "Position · ${entity.numberAttribute("current_position")?.roundToInt() ?: 0}%"
+    entity.domain == "cover" -> "Position · ${
+        shownPosition(entity.numberAttribute("current_position")?.roundToInt() ?: 0, invertPosition)
+    }%"
     else -> entity.domain.replace('_', ' ').replaceFirstChar { it.uppercase() }
 }
 
@@ -128,13 +163,24 @@ fun controlCard(
     val fanHasSpeed = entity.domain == "fan" &&
         widget?.showFanSpeed == true &&
         entity.attributes.optInt("supported_features", 0) and FAN_SET_SPEED != 0
+    // A light that is off reports no brightness, so there is nothing to draw
+    // a band from — but a light that can be dimmed still has one to set, and
+    // setting it from off is how you turn it on at a level.
+    val dimmable = entity.attributes.optJSONArray("supported_color_modes")?.let { modes ->
+        (0 until modes.length()).any { modes.optString(it) in DIMMABLE_COLOR_MODES }
+    } ?: false
     val body = when (entity.domain) {
-        "light" -> if (entity.numberAttribute("brightness") != null) ControlBody.DIMMER else ControlBody.BINARY
+        "light" -> if (
+            entity.numberAttribute("brightness") != null ||
+            (widget?.brightnessWhenOff == true && dimmable)
+        ) ControlBody.DIMMER else ControlBody.BINARY
         "fan" -> if (fanHasSpeed) ControlBody.FAN else ControlBody.BINARY
         "cover" -> ControlBody.COVER
         else -> ControlBody.BINARY
     }
+    val invert = widget?.invertPosition == true && entity.domain == "cover"
     val position = entity.numberAttribute("current_position")?.roundToInt()
+        ?.let { shownPosition(it, invert) }
     // Neither state carries a value, so neither can be drawn as one.
     val available = entity.state !in setOf("unavailable", "unknown")
     val moving = entity.state in setOf("opening", "closing")
@@ -142,7 +188,9 @@ fun controlCard(
     // Reading state alone blanked the fill for a whole descent and then
     // snapped it back at rest.
     val on = available && !runnable && when (entity.domain) {
-        "cover" -> (position ?: if (entity.state == "closed") 0 else 100) > 0
+        // Read from the shown percentage, so the tile's fill and whether it
+        // reads as lit agree with each other and with the number beside them.
+        "cover" -> (position ?: shownPosition(if (entity.state == "closed") 0 else 100, invert)) > 0
         else -> entity.state in setOf("on", "open", "opening")
     }
 
@@ -166,7 +214,8 @@ fun controlCard(
     return ControlCardModel(
         entityId = entity.entityId,
         name = widget?.label ?: entity.friendlyName,
-        typeLabel = if (entity.domain == "fan" && widget?.showFanSpeed != true) "Fan" else deviceTypeLabel(entity),
+        typeLabel = if (entity.domain == "fan" && widget?.showFanSpeed != true) "Fan"
+        else deviceTypeLabel(entity, invert),
         icon = controlIcon(entity, widget?.icon ?: "auto"),
         active = on,
         body = body,
@@ -214,5 +263,6 @@ fun controlCard(
             else -> entity.state.replace('_', ' ').replaceFirstChar { it.uppercase() }
         },
         runnable = runnable,
+        fillGrowing = (entity.state == "opening") != invert,
     )
 }

@@ -103,6 +103,13 @@ class MainActivity : Activity() {
     /** Ringing, calling, or talking: any of them outranks the schedule. */
     private var callActive = false
     /**
+     * Whether the screen was being held on, as of the last look.
+     *
+     * Null until the first one: a restart knows nothing about what came
+     * before, and an unknown is not a boundary to wake for.
+     */
+    private var holdingScreenOn: Boolean? = null
+    /**
      * Re-check the hour.
      *
      * A schedule is a setting that changes with nothing happening, so
@@ -831,7 +838,12 @@ class MainActivity : Activity() {
         val layout = layoutStore.loadOrNull() ?: return
         if (demoMode) return
         val minute = DisplayPolicy.minuteOfDay(currentServerTimeMs(), currentTimezone())
-        applyKeepScreenOn(DisplayPolicy.keepScreenOn(layout, callActive, minute))
+        val keepOn = DisplayPolicy.keepScreenOn(layout, callActive, minute)
+        // Crossing into the window is what lights a dark panel; the flag only
+        // keeps a lit one from timing out.
+        if (DisplayPolicy.shouldWake(holdingScreenOn, keepOn, layout)) lightTheScreen()
+        holdingScreenOn = keepOn
+        applyKeepScreenOn(keepOn)
         proximityWake.setEnabled(
             DisplayPolicy.wakeOnApproach(layout, callActive, minute),
             layout.wakeSensitivity,
@@ -859,17 +871,27 @@ class MainActivity : Activity() {
             android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
                 android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON,
         )
-        val power = getSystemService(POWER_SERVICE) as android.os.PowerManager
-        if (!power.isInteractive) {
-            @Suppress("DEPRECATION")
-            power.newWakeLock(
-                android.os.PowerManager.FULL_WAKE_LOCK or
-                    android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP,
-                "nspanel:call",
-            ).acquire(CALL_WAKE_MS)
-        }
+        lightTheScreen("nspanel:call")
         callActive = true
         applyDisplayPolicy()
+    }
+
+    /**
+     * Turn a dark screen on.
+     *
+     * The keep-screen-on flag only stops a display timing out; it does
+     * nothing to one that already has. A brief wake lock is what lights it,
+     * and the flag then holds it there.
+     */
+    private fun lightTheScreen(tag: String = "nspanel:schedule") {
+        val power = getSystemService(POWER_SERVICE) as android.os.PowerManager
+        if (power.isInteractive) return
+        @Suppress("DEPRECATION")
+        power.newWakeLock(
+            android.os.PowerManager.FULL_WAKE_LOCK or
+                android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP,
+            tag,
+        ).acquire(CALL_WAKE_MS)
     }
 
     private fun applyKeepScreenOn(enabled: Boolean) {

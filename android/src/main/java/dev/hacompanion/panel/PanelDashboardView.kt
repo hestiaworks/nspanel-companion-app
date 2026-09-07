@@ -82,6 +82,9 @@ import dev.hacompanion.panel.ui.model.controlCard
 import dev.hacompanion.panel.ui.model.tapService
 import dev.hacompanion.panel.ui.model.CoverTargets
 import dev.hacompanion.panel.ui.model.coverIndeterminate
+import dev.hacompanion.panel.ui.model.coverTravelling
+import dev.hacompanion.panel.ui.model.sentPosition
+import dev.hacompanion.panel.ui.model.shownPosition
 import dev.hacompanion.panel.ui.model.timerRemaining
 import org.json.JSONObject
 import org.json.JSONArray
@@ -261,6 +264,19 @@ class PanelDashboardView(
             // Read the tick so this recomposes each second while one runs.
             ui.timerTick
             return timerRemaining(timerDeadlines[entityId], SystemClock.elapsedRealtime())
+        }
+
+        override fun coverTravelling(entityId: String, shown: Int): Boolean {
+            // The tick is read so the band redraws when the silence crosses
+            // the give-up mark with no state arriving to trigger it.
+            ui.timerTick
+            val entity = states[entityId] ?: return false
+            return coverTravelling(
+                target = coverTargets.target(entityId),
+                position = shown,
+                moving = entity.state in setOf("opening", "closing"),
+                sincePosition = dashboardState.sincePosition(entityId, SystemClock.elapsedRealtime()),
+            )
         }
 
         override fun coverIndeterminate(entityId: String): Boolean {
@@ -555,12 +571,17 @@ class PanelDashboardView(
         val canPosition = cover.attributes.optInt("supported_features", 0) and COVER_SET_POSITION != 0
         if (position == null || !canPosition) {
             // A cover with only limits is being sent to one of them.
-            coverTargets.requested(cover.entityId, if (action == "open") 100 else 0)
+            coverTargets.requested(
+                cover.entityId,
+                shownPosition(if (action == "open") 100 else 0, invertsPosition(cover.entityId)),
+            )
             callService("cover", "${action}_cover", cover.entityId, JSONObject())
             return
         }
+        // The arrows open and close, which the motor already agrees with:
+        // they step its own percentage, not the one on screen.
         val step = if (action == "open") COVER_NUDGE else -COVER_NUDGE
-        moveCoverTo(cover.entityId, (position + step).coerceIn(0, 100))
+        sendCoverPosition(cover.entityId, (position + step).coerceIn(0, 100))
     }
 
     /**
@@ -570,25 +591,42 @@ class PanelDashboardView(
      * is the difference between saying a curtain is moving and saying how
      * much of the window is about to change.
      */
-    /** Let every cover that has arrived or stopped forget where it was sent. */
+    /** Let every cover that has arrived, stopped, or gone quiet forget where it was sent. */
     private fun noteCoverArrivals() {
+        val now = SystemClock.elapsedRealtime()
         states.values.forEach { entity ->
             if (entity.domain != "cover") return@forEach
-            coverTargets.report(
-                entity.entityId,
-                entity.state,
-                entity.numberAttribute("current_position")?.roundToInt(),
-            )
+            val shown = entity.numberAttribute("current_position")?.roundToInt()
+                ?.let { shownPosition(it, invertsPosition(entity.entityId)) }
+            coverTargets.report(entity.entityId, entity.state, shown)
+            // A motor that never says it is moving has only its silence to
+            // end the journey with. Drop it here as well as stopping the
+            // drawing, so a stale destination cannot be picked up by the
+            // next movement.
+            if (shown != null && !coverTravelling(
+                    target = coverTargets.target(entity.entityId),
+                    position = shown,
+                    moving = entity.state in setOf("opening", "closing"),
+                    sincePosition = dashboardState.sincePosition(entity.entityId, now),
+                )
+            ) {
+                coverTargets.forget(entity.entityId)
+            }
         }
     }
 
-    private fun moveCoverTo(entityId: String, position: Int) {
-        coverTargets.requested(entityId, position)
+    private fun sendCoverPosition(entityId: String, raw: Int) {
+        // The note is kept the way the room reads it, because that is what
+        // the band draws against; the motor is told its own way round.
+        coverTargets.requested(entityId, shownPosition(raw, invertsPosition(entityId)))
         callService(
             "cover", "set_cover_position", entityId,
-            JSONObject().put("position", position),
+            JSONObject().put("position", raw),
         )
     }
+
+    private fun invertsPosition(entityId: String): Boolean =
+        widgetFor(entityId)?.invertPosition == true
 
     /** A sheet that the panel knows about, so returning home can clear it. */
     private fun panelSheet(content: @Composable ColumnScope.(dismiss: () -> Unit) -> Unit) =
@@ -698,8 +736,10 @@ class PanelDashboardView(
                     }
                     ControlBody.COVER -> {
                         if (canPosition) {
-                            val position =
-                                live.numberAttribute("current_position")?.roundToInt() ?: 0
+                            val invert = invertsPosition(entityId)
+                            val position = shownPosition(
+                                live.numberAttribute("current_position")?.roundToInt() ?: 0, invert,
+                            )
                             SheetLevel(
                                 position,
                                 height = LocalPanelSize.current.coverBand,
@@ -709,9 +749,17 @@ class PanelDashboardView(
                                 // The sheet is not a different device: a cover
                                 // that has gone quiet is quiet here too.
                                 indeterminate = dashboardActions.coverIndeterminate(entityId),
-                                moving = moving,
-                                opening = live.state == "opening",
-                            ) { moveCoverTo(entityId, it) }
+                                // Whether there is a journey to draw, which
+                                // is not the same as whether Home Assistant
+                                // says the cover is moving: this motor
+                                // reports positions with its state left at
+                                // "open" unless one of the buttons was used.
+                                moving = dashboardActions.coverTravelling(entityId, position),
+                                // Which way the fill is travelling, not which
+                                // way the motor is: inverted, an opening
+                                // curtain empties the band.
+                                opening = (live.state == "opening") != invert,
+                            ) { sendCoverPosition(entityId, sentPosition(it, invert)) }
                         }
                         SheetActions(
                             listOf(
@@ -720,8 +768,23 @@ class PanelDashboardView(
                                 SheetAction("close", "\u25bc", "CLOSE"),
                             ),
                         ) { action ->
+                            // The sheet stays put. Sending a curtain to a
+                            // limit is the start of a journey you watch — the
+                            // band is drawing it — and closing the one thing
+                            // showing it, mid-travel, took away both the
+                            // picture and the stop button.
+                            if (action == "stop") {
+                                coverTargets.forget(entityId)
+                            } else {
+                                coverTargets.requested(
+                                    entityId,
+                                    shownPosition(
+                                        if (action == "open") 100 else 0,
+                                        invertsPosition(entityId),
+                                    ),
+                                )
+                            }
                             callService("cover", "${action}_cover", entityId, JSONObject())
-                            if (action != "stop") dismiss()
                         }
                     }
                     // A binary control has no level to set, so its sheet is
@@ -1062,8 +1125,14 @@ class PanelDashboardView(
         }
     }
 
-    private fun anyCoverMoving() =
-        states.values.any { it.state == "opening" || it.state == "closing" }
+    private fun anyCoverMoving() = states.values.any { entity ->
+        entity.state == "opening" || entity.state == "closing" ||
+            // A cover on its way somewhere it has not announced. Without this
+            // the tick never starts for a motor that reports positions with
+            // its state left alone, and nothing would redraw at the moment
+            // its silence becomes long enough to give up on.
+            (entity.domain == "cover" && coverTargets.target(entity.entityId) != null)
+    }
 
     /**
      * A travelling cover needs the same tick a timer does: without a state

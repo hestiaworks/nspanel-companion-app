@@ -237,6 +237,23 @@ data class DashboardWidget(
     /** The span a history page opens on, until someone picks another. */
     val historyRange: String = "24h",
     /**
+     * Read a cover's percentage the other way round.
+     *
+     * A Zigbee2MQTT motor inverts as a whole: invert it and the open and
+     * close buttons come out right while the percentage does not, or the
+     * other way about. This settles the percentage on its own, so a curtain
+     * at rest can read 0% in a room that calls that open.
+     */
+    val invertPosition: Boolean = false,
+    /**
+     * Offer a light's brightness band while it is off.
+     *
+     * Home Assistant drops the brightness attribute when a light is off, so
+     * there is nothing to draw a band from and the sheet falls back to on and
+     * off. Setting a level from that band turns the light on at it.
+     */
+    val brightnessWhenOff: Boolean = false,
+    /**
      * Which climate modes to offer, in this order. Empty means whatever the
      * entity reports, which is what a thermostat nobody has configured does.
      */
@@ -257,6 +274,8 @@ data class DashboardWidget(
             put("timer_presets", JSONArray(timerPresets))
             cardTap?.let { put("card_tap", it) }
             put("show_fan_speed", showFanSpeed)
+            put("invert_position", invertPosition)
+            put("brightness_when_off", brightnessWhenOff)
             gradualOpenScript?.let { put("gradual_open_script", it) }
             gradualCloseScript?.let { put("gradual_close_script", it) }
             put("history_range", historyRange)
@@ -304,6 +323,8 @@ data class DashboardWidget(
             }
             val cardTap = if (json.has("card_tap")) json.optBoolean("card_tap") else null
             val showFanSpeed = json.optBoolean("show_fan_speed", false)
+            val invertPosition = json.optBoolean("invert_position", false)
+            val brightnessWhenOff = json.optBoolean("brightness_when_off", false)
             val legacyGradualScript = json.optString("gradual_cover_script").takeIf { it.startsWith("script.") }
             val gradualOpenScript = json.optString("gradual_open_script").takeIf { it.startsWith("script.") } ?: legacyGradualScript
             val gradualCloseScript = json.optString("gradual_close_script").takeIf { it.startsWith("script.") }
@@ -338,7 +359,8 @@ data class DashboardWidget(
                 streamBaseUrl.startsWith("rtsps://") || streamBaseUrl.startsWith("http://") ||
                 streamBaseUrl.startsWith("https://")) { "Invalid camera stream URL" }
             return DashboardWidget(type, entityId, label, forecastDays, showHourly, icon, showTimer, timerPresets, cardTap, showFanSpeed, streamBaseUrl, streamName, talkbackUrl, talkbackKey, incomingAudio, showIntercom, showSchedule, gradualOpenScript, gradualCloseScript, historyRange,
-                fanModes = modes("fan_modes"), swingModes = modes("swing_modes"))
+                fanModes = modes("fan_modes"), swingModes = modes("swing_modes"),
+                invertPosition = invertPosition, brightnessWhenOff = brightnessWhenOff)
         }
 
         val CONTROL_ICONS = setOf(

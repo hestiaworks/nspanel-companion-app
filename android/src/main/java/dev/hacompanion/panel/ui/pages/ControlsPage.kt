@@ -36,4 +36,7 @@ interface ControlActions {
      * or animating the fill, because both of those claim something untrue.
      */
     fun coverIndeterminate(entityId: String): Boolean
+
+    /** Whether a cover is on its way somewhere worth drawing. */
+    fun coverTravelling(entityId: String, shown: Int): Boolean
 }

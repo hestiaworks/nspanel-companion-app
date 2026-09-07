@@ -95,7 +95,9 @@ fun ControlTile(card: ControlCardModel, online: Boolean, actions: ControlActions
         // boundary is what makes it read as a leading edge rather than a
         // rectangle floating on the track.
         if (indeterminate && level != null) {
-            val opening = card.state == "opening"
+            // The direction the fill is moving, which an inverted curtain
+            // reverses relative to the motor's own idea of opening.
+            val opening = card.fillGrowing
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val edge = maxWidth * fillFraction(level)
                 val zone = size.motionZone

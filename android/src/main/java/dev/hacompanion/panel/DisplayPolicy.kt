@@ -69,6 +69,21 @@ object DisplayPolicy {
             calendar.get(java.util.Calendar.MINUTE)
     }
 
+    /**
+     * Whether the screen should be lit because the window has just opened.
+     *
+     * Holding the screen on does not turn one on: Android's flag stops a
+     * display timing out and does nothing to one that already has. A panel
+     * scheduled from seven stayed dark until someone walked up to it, which
+     * is not what the setting says.
+     *
+     * Only the boundary counts, and only when there is a schedule to have
+     * crossed one. [was] is null on the first look after a restart, when
+     * nothing is known about what came before and nothing is claimed.
+     */
+    fun shouldWake(was: Boolean?, now: Boolean, layout: DashboardLayout): Boolean =
+        layout.screenScheduleEnabled && was == false && now
+
     /** The sensor listens exactly when there is a dark screen to light. */
     fun wakeOnApproach(layout: DashboardLayout, callActive: Boolean, minuteOfDay: Int): Boolean =
         layout.wakeOnApproach && !keepScreenOn(layout, callActive, minuteOfDay)
