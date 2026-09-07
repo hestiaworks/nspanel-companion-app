@@ -80,6 +80,7 @@ import dev.hacompanion.panel.ui.model.ControlBody
 import dev.hacompanion.panel.ui.model.ControlCardModel
 import dev.hacompanion.panel.ui.model.controlCard
 import dev.hacompanion.panel.ui.model.tapService
+import dev.hacompanion.panel.ui.model.CoverTargets
 import dev.hacompanion.panel.ui.model.coverIndeterminate
 import dev.hacompanion.panel.ui.model.timerRemaining
 import org.json.JSONObject
@@ -106,6 +107,14 @@ class PanelDashboardView(
     // Snapshot-backed so Compose pages recompose from it directly. The pages
     // still built as views keep using the binding registry below.
     private val dashboardState = DashboardState()
+    /**
+     * Where each cover was last sent.
+     *
+     * Home Assistant reports where a cover is and which way it is heading,
+     * never what it was asked for, so the panel keeps that itself — and
+     * forgets it the moment the cover arrives or comes to rest.
+     */
+    private val coverTargets = CoverTargets()
     private val states get() = dashboardState.entities
     private val weatherUpdatedAt = mutableMapOf<String, Long>()
     private val pageHost = FrameLayout(context)
@@ -475,6 +484,7 @@ class PanelDashboardView(
         postDelayed({
             renderPending = false
             dashboardState.noteCoverPositions(SystemClock.elapsedRealtime())
+            noteCoverArrivals()
             startMotionTickIfMoving()
             render()
         }, 120)
@@ -537,19 +547,46 @@ class PanelDashboardView(
      */
     private fun nudgeCover(cover: EntityState, action: String) {
         if (action == "stop") {
+            coverTargets.forget(cover.entityId)
             callService("cover", "stop_cover", cover.entityId, JSONObject())
             return
         }
         val position = cover.numberAttribute("current_position")?.roundToInt()
         val canPosition = cover.attributes.optInt("supported_features", 0) and COVER_SET_POSITION != 0
         if (position == null || !canPosition) {
+            // A cover with only limits is being sent to one of them.
+            coverTargets.requested(cover.entityId, if (action == "open") 100 else 0)
             callService("cover", "${action}_cover", cover.entityId, JSONObject())
             return
         }
         val step = if (action == "open") COVER_NUDGE else -COVER_NUDGE
+        moveCoverTo(cover.entityId, (position + step).coerceIn(0, 100))
+    }
+
+    /**
+     * Send a cover somewhere, and remember where.
+     *
+     * Home Assistant carries no destination, so the panel keeps its own: it
+     * is the difference between saying a curtain is moving and saying how
+     * much of the window is about to change.
+     */
+    /** Let every cover that has arrived or stopped forget where it was sent. */
+    private fun noteCoverArrivals() {
+        states.values.forEach { entity ->
+            if (entity.domain != "cover") return@forEach
+            coverTargets.report(
+                entity.entityId,
+                entity.state,
+                entity.numberAttribute("current_position")?.roundToInt(),
+            )
+        }
+    }
+
+    private fun moveCoverTo(entityId: String, position: Int) {
+        coverTargets.requested(entityId, position)
         callService(
-            "cover", "set_cover_position", cover.entityId,
-            JSONObject().put("position", (position + step).coerceIn(0, 100)),
+            "cover", "set_cover_position", entityId,
+            JSONObject().put("position", position),
         )
     }
 
@@ -666,16 +703,15 @@ class PanelDashboardView(
                             SheetLevel(
                                 position,
                                 height = LocalPanelSize.current.coverBand,
+                                // Where it is going, so the band can mark how
+                                // much of the window is about to change.
+                                target = coverTargets.target(entityId),
                                 // The sheet is not a different device: a cover
                                 // that has gone quiet is quiet here too.
                                 indeterminate = dashboardActions.coverIndeterminate(entityId),
+                                moving = moving,
                                 opening = live.state == "opening",
-                            ) {
-                                callService(
-                                    "cover", "set_cover_position", entityId,
-                                    JSONObject().put("position", it),
-                                )
-                            }
+                            ) { moveCoverTo(entityId, it) }
                         }
                         SheetActions(
                             listOf(

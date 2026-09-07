@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import dev.hacompanion.panel.ui.components.PanelText
 import dev.hacompanion.panel.ui.model.fillFraction
 import dev.hacompanion.panel.ui.model.levelReading
+import dev.hacompanion.panel.ui.model.motionSpan
 import dev.hacompanion.panel.ui.installComposeHost
 import dev.hacompanion.panel.ui.theme.LocalPanelColors
 import dev.hacompanion.panel.ui.theme.LocalPanelSize
@@ -276,10 +277,27 @@ fun SheetLevel(
      * floating over the fill, the one thing 7e says it must not look like.
      */
     zoneBaseline: Dp = 0.dp,
-    /** Where a moving cover is heading, marked while it is still short of it. */
+    /**
+     * Where a moving cover is heading.
+     *
+     * Used to size the striped zone — the ground still to cross — and for
+     * nothing else. It was once drawn as a rule across the band as well, and
+     * that line was both unwanted and wrong: the target is remembered in a
+     * plain map, which Compose does not watch, so the rule sat on the band
+     * after the cover had stopped until something unrelated redrew it.
+     */
     target: Int? = null,
     /** A cover travelling with nothing to report, which stripes its edge. */
     indeterminate: Boolean = false,
+    /**
+     * A cover on its way somewhere, reporting or not.
+     *
+     * Separate from [indeterminate], which is the narrower case of a cover
+     * that has also gone quiet. Somewhere to go is enough to draw the ground
+     * left to cover; silence is not required, and waiting for it left the
+     * band blank for the first second and a half of every journey.
+     */
+    moving: Boolean = false,
     opening: Boolean = false,
     onSet: (Int) -> Unit,
 ) {
@@ -294,31 +312,41 @@ fun SheetLevel(
         indeterminate = indeterminate,
         onSet = onSet,
     ) {
-        if (target != null && target != percent) {
-            // Drawn against the ink rather than the accent: it marks where the
-            // cover is going, which is the one thing the fill cannot say.
-            Box(Modifier.fillMaxWidth(fillFraction(target)).fillMaxHeight()) {
-                Box(
-                    Modifier.align(Alignment.CenterEnd)
-                        .width(size.railRule).fillMaxHeight().background(colors.ink)
-                )
-            }
-        }
         // The band's zone stops short of the baseline, so the scale labels
         // printed inside it stay legible under a marching edge.
-        if (indeterminate) {
+        val span = if (moving) motionSpan(percent, target) else null
+        if (span != null || indeterminate) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
-                val edge = maxWidth * fillFraction(percent)
-                MotionZone(
-                    opening = opening,
-                    // A band gets a wider zone than a tile: it is four times
-                    // the width, so the same 64 px would read as a smudge
-                    // rather than an edge in motion.
-                    width = size.motionZoneBand,
-                    modifier = Modifier
-                        .offset(x = if (opening) edge else edge - size.motionZoneBand)
-                        .padding(bottom = zoneBaseline),
-                )
+                if (span != null) {
+                    // The ground still to cross: from where the cover last
+                    // said it was to where it was sent. Striped rather than
+                    // filled, because it says the cover is somewhere in here
+                    // — which is true — where a fill would say it has
+                    // arrived. A short hop stripes a little, a long one
+                    // stripes a lot, and it runs until the cover reports that
+                    // it has stopped.
+                    MotionZone(
+                        opening = opening,
+                        width = maxWidth * (span.endInclusive - span.start),
+                        modifier = Modifier
+                            .offset(x = maxWidth * span.start)
+                            .padding(bottom = zoneBaseline),
+                    )
+                } else {
+                    // Moving with nowhere known to go — someone used the wall
+                    // switch. The edge is all there is to mark.
+                    val edge = maxWidth * fillFraction(percent)
+                    MotionZone(
+                        opening = opening,
+                        // A band gets a wider zone than a tile: it is four
+                        // times the width, so the same 64 px would read as a
+                        // smudge rather than an edge in motion.
+                        width = size.motionZoneBand,
+                        modifier = Modifier
+                            .offset(x = if (opening) edge else edge - size.motionZoneBand)
+                            .padding(bottom = zoneBaseline),
+                    )
+                }
             }
         }
         Box(
