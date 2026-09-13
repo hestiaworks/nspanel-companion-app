@@ -1,5 +1,8 @@
 package dev.hacompanion.panel
 
+/** How a room reads to the panel's light sensor. */
+enum class RoomLight { BRIGHT, DARK }
+
 /**
  * Whether the panel holds its screen on, and whether it listens for someone
  * approaching.
@@ -47,12 +50,7 @@ object DisplayPolicy {
         if (callActive) return true
         if (!layout.keepScreenOn) return false
         if (!layout.screenScheduleEnabled) return true
-        val from = minuteOfDay(layout.screenOnFrom)
-        val to = minuteOfDay(layout.screenOnTo)
-        // A layout the panel cannot read leaves the setting as it was. Dark
-        // all day with no way to say why is the worse failure on a wall.
-        if (from == null || to == null) return true
-        return within(from, to, minuteOfDay)
+        return withinSchedule(layout, minuteOfDay)
     }
 
     /**
@@ -83,6 +81,72 @@ object DisplayPolicy {
      */
     fun shouldWake(was: Boolean?, now: Boolean, layout: DashboardLayout): Boolean =
         layout.screenScheduleEnabled && was == false && now
+
+    /**
+     * Which the room reads as, given a sensor reading.
+     *
+     * Two thresholds with a band between them. Below [darkBelow] it is dark,
+     * above [brightAbove] it is bright, and in between whatever it already
+     * was continues — a single line with a sensor that jitters by a few
+     * counts would have the screen stepping between levels all evening.
+     *
+     * A reading of null keeps [previous] too: a light sensor reports on
+     * change, so there can be nothing at all for the first moments after a
+     * start. Thresholds typed the wrong way round still decide something,
+     * because a screen nobody can settle is worse than one that guesses.
+     */
+    fun roomLight(
+        reading: Float?,
+        darkBelow: Int,
+        brightAbove: Int,
+        previous: RoomLight,
+    ): RoomLight {
+        if (reading == null) return previous
+        val dark = minOf(darkBelow, brightAbove)
+        val bright = maxOf(darkBelow, brightAbove)
+        return when {
+            reading < dark -> RoomLight.DARK
+            reading > bright -> RoomLight.BRIGHT
+            else -> previous
+        }
+    }
+
+    /**
+     * The brightness to hold the screen at, or null to leave it to Android.
+     *
+     * Null is the default and means the window sets no brightness at all, so
+     * the system's automatic brightness continues to decide. Once a panel is
+     * given a brightness the app owns it entirely — a window that sets one
+     * replaces the automatic curve for as long as it is in front, which on
+     * this panel is always.
+     *
+     * Which level applies comes from the room rather than from the clock:
+     * the hours were only ever a guess at how dark it is, and the panel has
+     * a sensor that knows. A call is the exception whatever the room —
+     * someone got up to look at it.
+     */
+    fun brightness(layout: DashboardLayout, callActive: Boolean, room: RoomLight): Float? {
+        if (!layout.brightnessEnabled) return null
+        val dark = room == RoomLight.DARK && !callActive
+        val percent = if (dark) layout.darkBrightness else layout.brightness
+        // Zero is the dimmest the hardware goes rather than off, so it is a
+        // legitimate choice for a bedroom at night.
+        return percent.coerceIn(0, 100) / 100f
+    }
+
+    /**
+     * Whether [minuteOfDay] is inside the configured window.
+     *
+     * A layout whose times cannot be read counts as inside it: a panel dark
+     * all day, or dimmed to nothing, with no way to say why is the worse
+     * failure on a wall.
+     */
+    private fun withinSchedule(layout: DashboardLayout, minuteOfDay: Int): Boolean {
+        val from = minuteOfDay(layout.screenOnFrom)
+        val to = minuteOfDay(layout.screenOnTo)
+        if (from == null || to == null) return true
+        return within(from, to, minuteOfDay)
+    }
 
     /** The sensor listens exactly when there is a dark screen to light. */
     fun wakeOnApproach(layout: DashboardLayout, callActive: Boolean, minuteOfDay: Int): Boolean =

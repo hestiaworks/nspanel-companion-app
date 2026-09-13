@@ -109,6 +109,8 @@ class MainActivity : Activity() {
      * before, and an unknown is not a boundary to wake for.
      */
     private var holdingScreenOn: Boolean? = null
+    /** Whether the room last read as bright or dark, for the hysteresis band. */
+    private var roomLight = RoomLight.BRIGHT
     /**
      * Re-check the hour.
      *
@@ -116,6 +118,26 @@ class MainActivity : Activity() {
      * something has to look. Twice a minute: the boundary is a minute wide
      * and this is one comparison.
      */
+    /**
+     * The light sensor, read only so the health report can carry it.
+     *
+     * Nothing acts on it yet: these panels report a number that is plainly
+     * not lux, and a curve built on a scale nobody has watched move would be
+     * a guess. The system already samples this sensor for its own
+     * brightness, so one more listener costs nothing.
+     */
+    private val lightSensing = object : android.hardware.SensorEventListener {
+        override fun onAccuracyChanged(sensor: android.hardware.Sensor?, accuracy: Int) = Unit
+        override fun onSensorChanged(event: android.hardware.SensorEvent) {
+            LightReading.latest = event.values.firstOrNull()
+            // Follow the room as it changes rather than waiting for the next
+            // tick: turning the lights off should dim the panel now, not in
+            // half a minute. The work is two comparisons, and the window is
+            // only touched when the level actually differs.
+            applyDisplayPolicy()
+        }
+    }
+
     private val displayTick = object : Runnable {
         override fun run() {
             applyDisplayPolicy()
@@ -167,6 +189,13 @@ class MainActivity : Activity() {
         startPanelSync()
         watchdogHandler.postDelayed(watchdog, WATCHDOG_INTERVAL_MS)
         watchdogHandler.postDelayed(displayTick, DISPLAY_TICK_MS)
+        (getSystemService(SENSOR_SERVICE) as? android.hardware.SensorManager)?.let { sensors ->
+            sensors.getDefaultSensor(android.hardware.Sensor.TYPE_LIGHT)?.let { sensor ->
+                sensors.registerListener(
+                    lightSensing, sensor, android.hardware.SensorManager.SENSOR_DELAY_NORMAL,
+                )
+            }
+        }
         openDebugDoorbell(intent)
     }
 
@@ -219,6 +248,8 @@ class MainActivity : Activity() {
         pairingAdvertiser = null
         watchdogHandler.removeCallbacks(watchdog)
         watchdogHandler.removeCallbacks(displayTick)
+        (getSystemService(SENSOR_SERVICE) as? android.hardware.SensorManager)
+            ?.unregisterListener(lightSensing)
         healthJournal.record("app", "Application stopped")
         super.onDestroy()
     }
@@ -838,6 +869,12 @@ class MainActivity : Activity() {
         val layout = layoutStore.loadOrNull() ?: return
         if (demoMode) return
         val minute = DisplayPolicy.minuteOfDay(currentServerTimeMs(), currentTimezone())
+        // What the room reads as, remembered between looks so the band
+        // between the two thresholds has something to hold.
+        roomLight = DisplayPolicy.roomLight(
+            LightReading.latest, layout.darkBelow, layout.brightAbove, roomLight,
+        )
+        applyBrightness(DisplayPolicy.brightness(layout, callActive, roomLight))
         val keepOn = DisplayPolicy.keepScreenOn(layout, callActive, minute)
         // Crossing into the window is what lights a dark panel; the flag only
         // keeps a lit one from timing out.
@@ -892,6 +929,23 @@ class MainActivity : Activity() {
                 android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP,
             tag,
         ).acquire(CALL_WAKE_MS)
+    }
+
+    /**
+     * Hold the screen at a brightness, or hand it back to Android.
+     *
+     * A window that sets a brightness replaces the system's automatic curve
+     * while it is in front; BRIGHTNESS_OVERRIDE_NONE gives it back. Set on
+     * the window rather than in system settings, which needs a permission
+     * this app does not hold and would change the panel for everything, not
+     * only for the dashboard.
+     */
+    private fun applyBrightness(level: Float?) {
+        val attributes = window.attributes
+        val wanted = level ?: android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        if (attributes.screenBrightness == wanted) return
+        attributes.screenBrightness = wanted
+        window.attributes = attributes
     }
 
     private fun applyKeepScreenOn(enabled: Boolean) {

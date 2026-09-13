@@ -1,7 +1,9 @@
 package dev.hacompanion.panel
 
+import dev.hacompanion.panel.RoomLight
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -23,6 +25,11 @@ class DisplayPolicyTest {
         from: String = "07:00",
         to: String = "22:00",
         wakeOnApproach: Boolean = true,
+        brightnessEnabled: Boolean = false,
+        brightness: Int = 60,
+        darkBrightness: Int = 15,
+        darkBelow: Int = 3000,
+        brightAbove: Int = 6000,
     ) = DashboardLayout(
         schemaVersion = 1,
         revision = "r",
@@ -33,6 +40,11 @@ class DisplayPolicyTest {
         screenOnFrom = from,
         screenOnTo = to,
         wakeOnApproach = wakeOnApproach,
+        brightnessEnabled = brightnessEnabled,
+        brightness = brightness,
+        darkBrightness = darkBrightness,
+        darkBelow = darkBelow,
+        brightAbove = brightAbove,
     )
 
     private fun at(hour: Int, minute: Int = 0) = hour * 60 + minute
@@ -157,6 +169,76 @@ class DisplayPolicyTest {
     @Test
     fun `a panel with no schedule is never woken by one`() {
         assertFalse(DisplayPolicy.shouldWake(was = false, now = true, layout = layout()))
+    }
+
+    @Test
+    fun `a panel that was never told a brightness leaves the system alone`() {
+        // Setting the window brightness replaces Android's automatic
+        // brightness for as long as the app is in front, which here is
+        // always. A panel updating to this version must not have its screen
+        // change because of something nobody asked for.
+        assertNull(DisplayPolicy.brightness(layout(), callActive = false, room = RoomLight.BRIGHT))
+    }
+
+    @Test
+    fun `a lit room gets the bright level`() {
+        val panel = layout(brightnessEnabled = true, brightness = 80)
+        assertEquals(0.8f, DisplayPolicy.brightness(panel, false, RoomLight.BRIGHT)!!, 0.001f)
+    }
+
+    @Test
+    fun `a dark room gets the dark one`() {
+        val panel = layout(brightnessEnabled = true, brightness = 80, darkBrightness = 10)
+        assertEquals(0.1f, DisplayPolicy.brightness(panel, false, RoomLight.DARK)!!, 0.001f)
+    }
+
+    @Test
+    fun `a call is shown at the bright level whatever the room`() {
+        // Someone got up to look at it; dimming that is the one case where
+        // following the room is wrong.
+        val panel = layout(brightnessEnabled = true, brightness = 80, darkBrightness = 10)
+        assertEquals(
+            0.8f,
+            DisplayPolicy.brightness(panel, callActive = true, room = RoomLight.DARK)!!,
+            0.001f,
+        )
+    }
+
+    @Test
+    fun `the room is read from the sensor, with a band between the two answers`() {
+        // One threshold and a sensor that jitters by a few counts would have
+        // the screen stepping between levels all evening. Between the two,
+        // whatever it was doing continues.
+        val dark = DisplayPolicy.roomLight(2_000f, 3_000, 6_000, RoomLight.BRIGHT)
+        assertEquals(RoomLight.DARK, dark)
+        val bright = DisplayPolicy.roomLight(7_000f, 3_000, 6_000, RoomLight.DARK)
+        assertEquals(RoomLight.BRIGHT, bright)
+        assertEquals(RoomLight.DARK, DisplayPolicy.roomLight(4_500f, 3_000, 6_000, RoomLight.DARK))
+        assertEquals(RoomLight.BRIGHT, DisplayPolicy.roomLight(4_500f, 3_000, 6_000, RoomLight.BRIGHT))
+    }
+
+    @Test
+    fun `a panel with no reading yet keeps what it had`() {
+        // A sensor reports on change, so there may be nothing at all for the
+        // first moments after a start.
+        assertEquals(RoomLight.DARK, DisplayPolicy.roomLight(null, 3_000, 6_000, RoomLight.DARK))
+    }
+
+    @Test
+    fun `thresholds the wrong way round still decide something`() {
+        // Nothing stops someone typing a dark threshold above the bright
+        // one. Whatever they meant, the screen must not be left undecidable.
+        assertEquals(RoomLight.DARK, DisplayPolicy.roomLight(1_000f, 6_000, 3_000, RoomLight.BRIGHT))
+        assertEquals(RoomLight.BRIGHT, DisplayPolicy.roomLight(9_000f, 6_000, 3_000, RoomLight.DARK))
+    }
+
+    @Test
+    fun `a brightness out of range is brought back into it`() {
+        // Zero is the dimmest the hardware goes, not off, so it is allowed.
+        val dim = layout(brightnessEnabled = true, brightness = 0)
+        assertEquals(0.0f, DisplayPolicy.brightness(dim, false, RoomLight.BRIGHT)!!, 0.001f)
+        val silly = layout(brightnessEnabled = true, brightness = 900)
+        assertEquals(1.0f, DisplayPolicy.brightness(silly, false, RoomLight.BRIGHT)!!, 0.001f)
     }
 
     @Test

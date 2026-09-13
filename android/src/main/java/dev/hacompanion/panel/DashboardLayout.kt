@@ -28,6 +28,31 @@ data class DashboardLayout(
     val screenScheduleEnabled: Boolean = false,
     val screenOnFrom: String = "07:00",
     val screenOnTo: String = "22:00",
+    /**
+     * Whether the panel sets its own brightness.
+     *
+     * Off by default, and off means Android's automatic brightness is left
+     * alone — a panel that has never been told otherwise must behave on the
+     * next update exactly as it did before it.
+     */
+    val brightnessEnabled: Boolean = false,
+    /** Per cent, while the room reads as bright. */
+    val brightness: Int = 60,
+    /** Per cent, while it reads as dark: a lit panel need not light the room. */
+    val darkBrightness: Int = 15,
+    /**
+     * The readings that count as dark and as bright.
+     *
+     * Two thresholds rather than one, so there is a band between them where
+     * nothing changes. A single line with a sensor that jitters by a few
+     * counts would have the screen stepping between two levels all evening.
+     *
+     * In this hardware's own units, which are not lux: it reads about 8900
+     * in a lit room and about 4300 as the evening comes in. The panel
+     * reports what it sees so the numbers can be chosen by looking.
+     */
+    val darkBelow: Int = 3000,
+    val brightAbove: Int = 6000,
     /** Light the screen when the proximity sensor sees someone. */
     val wakeOnApproach: Boolean = false,
     /** How far above the ambient reading counts as someone arriving. */
@@ -54,6 +79,11 @@ data class DashboardLayout(
         .put("screen_schedule_enabled", screenScheduleEnabled)
         .put("screen_on_from", screenOnFrom)
         .put("screen_on_to", screenOnTo)
+        .put("brightness_enabled", brightnessEnabled)
+        .put("brightness", brightness)
+        .put("dark_brightness", darkBrightness)
+        .put("dark_below", darkBelow)
+        .put("bright_above", brightAbove)
         .put("intercom", JSONObject()
             .put("noise_suppression", intercomNoiseSuppression)
             .put("auto_gain", intercomAutoGain))
@@ -105,6 +135,14 @@ data class DashboardLayout(
             val screenScheduleEnabled = json.optBoolean("screen_schedule_enabled", false)
             val screenOnFrom = json.optString("screen_on_from", "07:00")
             val screenOnTo = json.optString("screen_on_to", "22:00")
+            val brightnessEnabled = json.optBoolean("brightness_enabled", false)
+            val brightness = json.optInt("brightness", 60)
+            // night_brightness is what this was called when the level
+            // followed the clock; a panel that has not been republished
+            // since still carries it.
+            val darkBrightness = json.optInt("dark_brightness", json.optInt("night_brightness", 15))
+            val darkBelow = json.optInt("dark_below", 3000)
+            val brightAbove = json.optInt("bright_above", 6000)
             val intercom = json.optJSONObject("intercom")
             val noiseSuppression = intercom?.optBoolean("noise_suppression", true) ?: true
             val autoGain = intercom?.optBoolean("auto_gain", true) ?: true
@@ -141,6 +179,11 @@ data class DashboardLayout(
                 screenScheduleEnabled = screenScheduleEnabled,
                 screenOnFrom = screenOnFrom,
                 screenOnTo = screenOnTo,
+                brightnessEnabled = brightnessEnabled,
+                brightness = brightness,
+                darkBrightness = darkBrightness,
+                darkBelow = darkBelow,
+                brightAbove = brightAbove,
                 wakeOnApproach = wakeOnApproach,
                 wakeSensitivity = wakeSensitivity,
                 intercomNoiseSuppression = noiseSuppression,

@@ -12,9 +12,56 @@ import android.media.MediaCodecList
 import android.media.MediaRecorder
 import android.net.ConnectivityManager
 import android.os.Build
+import android.hardware.Sensor
+import android.hardware.SensorManager
 import android.provider.Settings
 import android.view.WindowManager
 import java.util.Locale
+
+/**
+ * What the light sensor says, and what the panel is doing about it.
+ *
+ * Reported so a brightness curve can be built from what these rooms
+ * actually read rather than from the units the sensor claims. This hardware
+ * reports its proximity sensor as raw reflectance rather than centimetres,
+ * and the light sensor reads about 8890 in a lit room in the evening, which
+ * is far too high to be lux — so the number means nothing until it has been
+ * watched moving.
+ */
+internal fun ambientLight(context: Context): String {
+    val sensors = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+    val sensor = sensors?.getDefaultSensor(Sensor.TYPE_LIGHT) ?: return "no sensor"
+    val reading = LightReading.latest
+    val auto = Settings.System.getInt(
+        context.contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, -1,
+    )
+    return buildString {
+        append(if (reading == null) "not read yet" else String.format(Locale.US, "%.1f", reading))
+        append(" (range ${String.format(Locale.US, "%.1f", sensor.maximumRange)}")
+        append(", android auto-brightness ")
+        append(
+            when (auto) {
+                Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC -> "on"
+                Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL -> "off"
+                else -> "unknown"
+            },
+        )
+        append(")")
+    }
+}
+
+/**
+ * The last thing the light sensor said.
+ *
+ * Held rather than asked for: a sensor reports on change, so a reading taken
+ * at the moment a report is built could be minutes old or absent entirely.
+ * One listener, kept by the activity, costs nothing on a panel where the
+ * system already samples this sensor for its own brightness.
+ */
+object LightReading {
+    @Volatile
+    var latest: Float? = null
+}
 
 object DeviceDiagnostics {
     fun createReport(context: Context): String {
@@ -56,6 +103,7 @@ object DeviceDiagnostics {
         lines += "Microphone permission: ${permissionState(context)}"
         lines += "AudioRecord 16 kHz mono: ${audioRecordSupport(context)}"
         lines += "Touchscreen: ${packageManager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)}"
+        lines += "Ambient light: ${ambientLight(context)}"
         lines += "Network connected: ${connectivity.activeNetworkInfo?.isConnected == true}"
         lines += "Lock task permitted: ${dpm.isLockTaskPermitted(context.packageName)}"
         lines += "Android ID: ${Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)}"

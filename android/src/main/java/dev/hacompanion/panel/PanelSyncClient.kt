@@ -36,6 +36,11 @@ class PanelSyncClient(
             .put("app_version", BuildConfig.VERSION_NAME)
             .put("layout_revision", currentRevision())
             .put("diagnostics", diagnostics().take(16_384))
+            // Sent as its own field, not only inside the report: choosing
+            // the thresholds means watching this number move, and a figure
+            // buried in a text blob updated on the same beat is not
+            // something anyone can watch.
+            .put("ambient_light", LightReading.latest ?: JSONObject.NULL)
         val request = Request.Builder()
             .url("${credentials.baseUrl}/api/nspanel_companion/panel/sync")
             .header("Authorization", "Bearer ${credentials.token}")
