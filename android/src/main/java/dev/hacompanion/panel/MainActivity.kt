@@ -112,6 +112,16 @@ class MainActivity : Activity() {
     /** Whether the room last read as bright or dark, for the hysteresis band. */
     private var roomLight = RoomLight.BRIGHT
     /**
+     * The device's display timeout as it was before the schedule borrowed it.
+     *
+     * Null while nothing is borrowed. Held only in memory: the vendor's app
+     * rewrites this setting whenever its own screens appear, so a value
+     * remembered across a restart would be stale more often than not — and
+     * while this app is in front the timeout is academic anyway, because the
+     * flag holds the screen regardless of it.
+     */
+    private var borrowedScreenTimeout: Int? = null
+    /**
      * Re-check the hour.
      *
      * A schedule is a setting that changes with nothing happening, so
@@ -248,6 +258,9 @@ class MainActivity : Activity() {
         pairingAdvertiser = null
         watchdogHandler.removeCallbacks(watchdog)
         watchdogHandler.removeCallbacks(displayTick)
+        // Give the device its own timeout back rather than leaving a panel
+        // that is no longer running to have shortened it.
+        applyScreenOffTimeout(null)
         (getSystemService(SENSOR_SERVICE) as? android.hardware.SensorManager)
             ?.unregisterListener(lightSensing)
         healthJournal.record("app", "Application stopped")
@@ -881,6 +894,10 @@ class MainActivity : Activity() {
         if (DisplayPolicy.shouldWake(holdingScreenOn, keepOn, layout)) lightTheScreen()
         holdingScreenOn = keepOn
         applyKeepScreenOn(keepOn)
+        // Re-asserted on every look rather than once at the boundary: the
+        // vendor's app moves this setting under us, and half a minute of a
+        // lit bedroom is the worst this can then cost.
+        applyScreenOffTimeout(DisplayPolicy.screenOffTimeoutMs(layout, callActive, minute))
         proximityWake.setEnabled(
             DisplayPolicy.wakeOnApproach(layout, callActive, minute),
             layout.wakeSensitivity,
@@ -946,6 +963,28 @@ class MainActivity : Activity() {
         if (attributes.screenBrightness == wanted) return
         attributes.screenBrightness = wanted
         window.attributes = attributes
+    }
+
+    /**
+     * Impose [wanted] as the display timeout, or hand back what was borrowed.
+     *
+     * Needs the WRITE_SETTINGS app op, which the updater grants at install
+     * time alongside WRITE_SECURE_SETTINGS. Without it this does nothing and
+     * the schedule behaves as it did before — a panel that has not been
+     * updated should not start failing, it should just not gain this.
+     */
+    private fun applyScreenOffTimeout(wanted: Int?) {
+        if (!Settings.System.canWrite(this)) return
+        val current = runCatching {
+            Settings.System.getInt(contentResolver, Settings.System.SCREEN_OFF_TIMEOUT)
+        }.getOrNull() ?: return
+        val target = wanted ?: borrowedScreenTimeout ?: return
+        if (wanted != null && borrowedScreenTimeout == null) borrowedScreenTimeout = current
+        if (wanted == null) borrowedScreenTimeout = null
+        if (current == target) return
+        runCatching {
+            Settings.System.putInt(contentResolver, Settings.System.SCREEN_OFF_TIMEOUT, target)
+        }.onFailure { Log.w(TAG, "Could not set the display timeout", it) }
     }
 
     private fun applyKeepScreenOn(enabled: Boolean) {
