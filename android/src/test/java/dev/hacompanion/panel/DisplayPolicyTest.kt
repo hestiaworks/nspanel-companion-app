@@ -14,8 +14,14 @@ import org.junit.Test
  * wrong for a bedroom: the panel that should be lit all day is the same one
  * that should be dark at night. The schedule is a window around that
  * setting rather than a second mechanism — outside the window the panel
- * simply stops holding the screen, and Android's own display timeout and
- * the proximity sensor take over, both of which already work.
+ * stops holding the screen, and the proximity sensor takes over.
+ *
+ * Releasing the flag was originally assumed to be enough, on the grounds
+ * that Android's own display timeout would finish the job. It does not:
+ * these panels rest at a timeout of two and a quarter hours, set by the
+ * vendor's app rather than by us, so a window closing at 22:00 left a
+ * bedroom lit past midnight. The schedule imposes its own timeout while it
+ * is the thing holding the screen back.
  */
 class DisplayPolicyTest {
 
@@ -250,4 +256,64 @@ class DisplayPolicyTest {
         assertEquals(null, DisplayPolicy.minuteOfDay("7:30"))
         assertEquals(null, DisplayPolicy.minuteOfDay(""))
     }
+
+    /**
+     * Releasing the flag is not the same as turning the screen off.
+     *
+     * The panel these run on leaves `screen_off_timeout` at 8,081,000 ms —
+     * two and a quarter hours — and the vendor's own app moves it around
+     * under us. So a schedule that closes at 22:00 and then waits for
+     * Android to time out lights a bedroom until after midnight. Measured
+     * on all three panels: the flag was correctly released, wake locks were
+     * empty, and `Display Power: state=ON` an hour later.
+     *
+     * The schedule promises the screen goes off at a time. It has to be the
+     * one that makes that happen.
+     */
+    @Test
+    fun `outside the window the schedule imposes a short display timeout`() {
+        val panel = layout(scheduled = true, from = "08:00", to = "22:00")
+        assertEquals(
+            DisplayPolicy.SLEEP_TIMEOUT_MS,
+            DisplayPolicy.screenOffTimeoutMs(panel, callActive = false, minuteOfDay = at(22, 20)),
+        )
+        assertEquals(
+            DisplayPolicy.SLEEP_TIMEOUT_MS,
+            DisplayPolicy.screenOffTimeoutMs(panel, false, at(3)),
+        )
+    }
+
+    @Test
+    fun `inside the window the device's own timeout is left alone`() {
+        val panel = layout(scheduled = true, from = "08:00", to = "22:00")
+        assertNull(DisplayPolicy.screenOffTimeoutMs(panel, false, at(12)))
+        assertNull(DisplayPolicy.screenOffTimeoutMs(panel, false, at(21, 59)))
+    }
+
+    /**
+     * Only the schedule imposes a timeout, because only the schedule
+     * promised one. A panel with the setting simply switched off has said
+     * nothing about when the screen should sleep, and a wall panel whose
+     * timeout silently shortened would be a regression nobody asked for.
+     */
+    @Test
+    fun `without a schedule the device's timeout is never touched`() {
+        assertNull(DisplayPolicy.screenOffTimeoutMs(layout(), false, at(3)))
+        assertNull(
+            DisplayPolicy.screenOffTimeoutMs(layout(keepScreenOn = false), false, at(3)),
+        )
+        assertNull(
+            DisplayPolicy.screenOffTimeoutMs(
+                layout(keepScreenOn = false, scheduled = true), false, at(3),
+            ),
+        )
+    }
+
+    /** A call outranks the schedule here exactly as it does everywhere else. */
+    @Test
+    fun `a call leaves the timeout alone even outside the window`() {
+        val panel = layout(scheduled = true, from = "08:00", to = "22:00")
+        assertNull(DisplayPolicy.screenOffTimeoutMs(panel, callActive = true, minuteOfDay = at(3)))
+    }
+
 }

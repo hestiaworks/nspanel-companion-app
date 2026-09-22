@@ -148,6 +148,47 @@ object DisplayPolicy {
         return within(from, to, minuteOfDay)
     }
 
+
+    /**
+     * How long the display may idle before sleeping, or null to leave the
+     * device's own setting alone.
+     *
+     * Clearing the flag was never enough. Android's flag stops a display
+     * timing out; it does not shorten the timeout, and on this hardware the
+     * timeout is not ours. The panels ship with `screen_off_timeout` at
+     * 8,081,000 ms — two and a quarter hours — and the vendor's app moves it
+     * between two minutes and that resting value as its own screens come and
+     * go. A schedule closing at 22:00 therefore left a bedroom lit past
+     * midnight, which is what it was written to prevent.
+     *
+     * Imposed only while the schedule is the thing holding the screen back,
+     * because only the schedule promised an hour. A panel with the setting
+     * plainly off has said nothing about when its display should sleep, and
+     * quietly shortening it would be a change nobody asked for.
+     *
+     * The caller restores what it found when this returns to null: the
+     * device belongs to whoever set it, and a panel that permanently
+     * rewrites a system setting is a panel that has to be remembered about.
+     */
+    fun screenOffTimeoutMs(
+        layout: DashboardLayout,
+        callActive: Boolean,
+        minuteOfDay: Int,
+    ): Int? = if (
+        layout.keepScreenOn &&
+        layout.screenScheduleEnabled &&
+        !keepScreenOn(layout, callActive, minuteOfDay)
+    ) SLEEP_TIMEOUT_MS else null
+
+    /**
+     * Fifteen seconds, the shortest Android's own settings offer.
+     *
+     * Long enough to read the temperature on the way past at three in the
+     * morning — a touch wakes the screen and restarts the count — and short
+     * enough that the room is dark again straight afterwards.
+     */
+    const val SLEEP_TIMEOUT_MS = 15_000
+
     /** The sensor listens exactly when there is a dark screen to light. */
     fun wakeOnApproach(layout: DashboardLayout, callActive: Boolean, minuteOfDay: Int): Boolean =
         layout.wakeOnApproach && !keepScreenOn(layout, callActive, minuteOfDay)
