@@ -174,20 +174,9 @@ object DisplayPolicy {
         layout: DashboardLayout,
         callActive: Boolean,
         minuteOfDay: Int,
-    ): Int? = if (
-        layout.keepScreenOn &&
-        layout.screenScheduleEnabled &&
-        !keepScreenOn(layout, callActive, minuteOfDay)
-    ) SLEEP_TIMEOUT_MS else null
+    ): Int? = if (keepScreenOn(layout, callActive, minuteOfDay)) null
+              else layout.screenOffAfterSeconds.coerceIn(10, 600) * 1_000
 
-    /**
-     * Fifteen seconds, the shortest Android's own settings offer.
-     *
-     * Long enough to read the temperature on the way past at three in the
-     * morning — a touch wakes the screen and restarts the count — and short
-     * enough that the room is dark again straight afterwards.
-     */
-    const val SLEEP_TIMEOUT_MS = 15_000
 
     /** The sensor listens exactly when there is a dark screen to light. */
     fun wakeOnApproach(layout: DashboardLayout, callActive: Boolean, minuteOfDay: Int): Boolean =

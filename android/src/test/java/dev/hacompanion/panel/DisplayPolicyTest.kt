@@ -36,6 +36,7 @@ class DisplayPolicyTest {
         darkBrightness: Int = 15,
         darkBelow: Int = 3000,
         brightAbove: Int = 6000,
+        screenOffAfterSeconds: Int = 30,
     ) = DashboardLayout(
         schemaVersion = 1,
         revision = "r",
@@ -51,6 +52,7 @@ class DisplayPolicyTest {
         darkBrightness = darkBrightness,
         darkBelow = darkBelow,
         brightAbove = brightAbove,
+        screenOffAfterSeconds = screenOffAfterSeconds,
     )
 
     private fun at(hour: Int, minute: Int = 0) = hour * 60 + minute
@@ -273,14 +275,8 @@ class DisplayPolicyTest {
     @Test
     fun `outside the window the schedule imposes a short display timeout`() {
         val panel = layout(scheduled = true, from = "08:00", to = "22:00")
-        assertEquals(
-            DisplayPolicy.SLEEP_TIMEOUT_MS,
-            DisplayPolicy.screenOffTimeoutMs(panel, callActive = false, minuteOfDay = at(22, 20)),
-        )
-        assertEquals(
-            DisplayPolicy.SLEEP_TIMEOUT_MS,
-            DisplayPolicy.screenOffTimeoutMs(panel, false, at(3)),
-        )
+        assertEquals(30_000, DisplayPolicy.screenOffTimeoutMs(panel, callActive = false, minuteOfDay = at(22, 20)))
+        assertEquals(30_000, DisplayPolicy.screenOffTimeoutMs(panel, false, at(3)))
     }
 
     @Test
@@ -291,21 +287,22 @@ class DisplayPolicyTest {
     }
 
     /**
-     * Only the schedule imposes a timeout, because only the schedule
-     * promised one. A panel with the setting simply switched off has said
-     * nothing about when the screen should sleep, and a wall panel whose
-     * timeout silently shortened would be a regression nobody asked for.
+     * A panel that is not holding its screen on gets the delay too.
+     *
+     * This began as "only the schedule imposes a timeout, because only the
+     * schedule promised one". That was wrong about the hardware: with the
+     * setting simply off, the panel follows its own Android timeout, and
+     * here that is the vendor's two and a quarter hours. Saying "do not keep
+     * the display on" and getting a display that stays on all night is not
+     * what anyone meant.
      */
     @Test
-    fun `without a schedule the device's timeout is never touched`() {
+    fun `a panel that is not holding its screen on still goes dark`() {
         assertNull(DisplayPolicy.screenOffTimeoutMs(layout(), false, at(3)))
-        assertNull(
-            DisplayPolicy.screenOffTimeoutMs(layout(keepScreenOn = false), false, at(3)),
-        )
-        assertNull(
-            DisplayPolicy.screenOffTimeoutMs(
-                layout(keepScreenOn = false, scheduled = true), false, at(3),
-            ),
+        assertEquals(30_000, DisplayPolicy.screenOffTimeoutMs(layout(keepScreenOn = false), false, at(3)))
+        assertEquals(
+            30_000,
+            DisplayPolicy.screenOffTimeoutMs(layout(keepScreenOn = false, scheduled = true), false, at(3)),
         )
     }
 
@@ -314,6 +311,33 @@ class DisplayPolicyTest {
     fun `a call leaves the timeout alone even outside the window`() {
         val panel = layout(scheduled = true, from = "08:00", to = "22:00")
         assertNull(DisplayPolicy.screenOffTimeoutMs(panel, callActive = true, minuteOfDay = at(3)))
+    }
+
+
+    /**
+     * The delay is configured, and applies whenever the panel lets go.
+     *
+     * It used to be fifteen seconds hard-coded, imposed only while a schedule
+     * had the screen off. But the same hardware fact applies with no schedule
+     * at all: "keep display on" switched off means the panel follows its own
+     * Android timeout, and that is the vendor's two and a quarter hours. A
+     * panel told not to hold its screen on should still go dark.
+     */
+    @Test
+    fun `the configured delay applies whenever the screen is not held on`() {
+        val scheduled = layout(scheduled = true, from = "08:00", to = "22:00", screenOffAfterSeconds = 45)
+        assertEquals(45_000, DisplayPolicy.screenOffTimeoutMs(scheduled, false, at(23)))
+        // and with no schedule at all, simply not holding the screen on
+        val unheld = layout(keepScreenOn = false, screenOffAfterSeconds = 45)
+        assertEquals(45_000, DisplayPolicy.screenOffTimeoutMs(unheld, false, at(12)))
+    }
+
+    @Test
+    fun `the device's own timeout is left alone while the screen is held on`() {
+        val scheduled = layout(scheduled = true, from = "08:00", to = "22:00")
+        assertNull(DisplayPolicy.screenOffTimeoutMs(scheduled, false, at(12)))
+        assertNull(DisplayPolicy.screenOffTimeoutMs(layout(), false, at(3)))
+        assertNull(DisplayPolicy.screenOffTimeoutMs(scheduled, callActive = true, minuteOfDay = at(3)))
     }
 
 }
