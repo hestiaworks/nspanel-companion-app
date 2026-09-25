@@ -62,6 +62,17 @@ class PanelApiClient(
         socket?.send(JSONObject().put("type", "schedule_upsert").put("id", ids.getAndIncrement())
             .put("schedule", schedule.toJson()).toString()) == true
 
+    /**
+     * Tell Home Assistant something is wrong with this panel.
+     *
+     * Its own health journal only arrives inside the diagnostics blob, which
+     * nobody reads. This lands in the panel's event list, which the interface
+     * already shows.
+     */
+    fun reportEvent(message: String, level: String = "warn"): Boolean =
+        socket?.send(JSONObject().put("type", "panel_event")
+            .put("message", message).put("level", level).toString()) ?: false
+
     fun callPanel(panelId: String) = sendIntercom("intercom_call", JSONObject().put("panel_id", panelId))
     fun answerCall(callId: String) = sendIntercom("intercom_answer", JSONObject().put("call_id", callId))
     fun declineCall(callId: String) = sendIntercom("intercom_decline", JSONObject().put("call_id", callId))

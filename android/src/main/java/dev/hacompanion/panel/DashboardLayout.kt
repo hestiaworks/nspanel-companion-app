@@ -58,6 +58,17 @@ data class DashboardLayout(
     /** How far above the ambient reading counts as someone arriving. */
     val wakeSensitivity: String = "medium",
     /**
+     * How long the display stays lit once the panel stops holding it on.
+     *
+     * Android's own timeout would do this, except that here it is not ours:
+     * the vendor's app rests it at two and a quarter hours, so a panel that
+     * is not holding its screen on does not really sleep.
+     */
+    val screenOffAfterSeconds: Int = 30,
+    /** Reconnect WiFi when the signal stays poor, for a panel that will not roam. */
+    val wifiReconnectEnabled: Boolean = false,
+    val wifiReconnectBelowDbm: Int = -70,
+    /**
      * WebRTC's own software processing for a call.
      *
      * Both default on, which is what libwebrtc does when asked for nothing.
@@ -96,6 +107,9 @@ data class DashboardLayout(
         .put("hide_accessibility_button", hideAccessibilityButton)
         .put("wake_on_approach", wakeOnApproach)
         .put("wake_sensitivity", wakeSensitivity)
+        .put("screen_off_after_seconds", screenOffAfterSeconds)
+        .put("wifi_reconnect_enabled", wifiReconnectEnabled)
+        .put("wifi_reconnect_below_dbm", wifiReconnectBelowDbm)
         .put("pages", JSONArray().apply { pages.forEach { put(it.toJson()) } })
 
     companion object {
@@ -158,6 +172,12 @@ data class DashboardLayout(
             val wakeOnApproach = json.optBoolean("wake_on_approach", false)
             val wakeSensitivity = json.optString("wake_sensitivity", "medium")
                 .takeIf { it in setOf("low", "medium", "high") } ?: "medium"
+            // Clamped here as well as in Home Assistant: a layout can arrive
+            // from a store written by an older version, and a zero here would
+            // mean a display that sleeps the instant it is woken.
+            val screenOffAfterSeconds = json.optInt("screen_off_after_seconds", 30).coerceIn(10, 600)
+            val wifiReconnectEnabled = json.optBoolean("wifi_reconnect_enabled", false)
+            val wifiReconnectBelowDbm = json.optInt("wifi_reconnect_below_dbm", -70).coerceIn(-90, -40)
             // Named, not positional: a field added in the middle of the
             // data class silently re-aims every argument after it that
             // happens to share a type.
@@ -186,6 +206,9 @@ data class DashboardLayout(
                 brightAbove = brightAbove,
                 wakeOnApproach = wakeOnApproach,
                 wakeSensitivity = wakeSensitivity,
+                screenOffAfterSeconds = screenOffAfterSeconds,
+                wifiReconnectEnabled = wifiReconnectEnabled,
+                wifiReconnectBelowDbm = wifiReconnectBelowDbm,
                 intercomNoiseSuppression = noiseSuppression,
                 intercomAutoGain = autoGain,
             )

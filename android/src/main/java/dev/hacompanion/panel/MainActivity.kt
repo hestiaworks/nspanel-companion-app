@@ -121,6 +121,8 @@ class MainActivity : Activity() {
      * flag holds the screen regardless of it.
      */
     private var borrowedScreenTimeout: Int? = null
+    /** Watches the WiFi link and makes the panel choose again when it stays poor. */
+    private val linkWatch by lazy { LinkWatch(this) }
     /**
      * Re-check the hour.
      *
@@ -157,6 +159,7 @@ class MainActivity : Activity() {
     private val watchdog = object : Runnable {
         override fun run() {
             checkWatchdog()
+            checkLink()
             watchdogHandler.postDelayed(this, WATCHDOG_INTERVAL_MS)
         }
     }
@@ -788,6 +791,10 @@ class MainActivity : Activity() {
         try {
             val previous = layoutStore.loadOrNull()
             layoutStore.save(layout)
+            // Saving the panel's settings is how someone asks for another
+            // round of reconnection attempts, so a published layout clears
+            // the count the watcher gave up on.
+            linkWatch.reset()
             if (previous == null || previous.themeMode != layout.themeMode || previous.themeDark != layout.themeDark) {
                 recreate()
                 return
@@ -1275,6 +1282,21 @@ class MainActivity : Activity() {
                 else -> PanelTheme.muted
             },
         )
+    }
+
+    /**
+     * Ask the link watcher to look, and pass on anything it gives up over.
+     *
+     * Reported into the panel's own event list in Home Assistant rather than
+     * only the health journal, because a panel that keeps dropping off the
+     * network is something someone has to see.
+     */
+    private fun checkLink() {
+        val layout = layoutStore.loadOrNull() ?: return
+        linkWatch.check(layout) { message ->
+            healthJournal.record("link", message)
+            panelApiClient?.reportEvent(message)
+        }
     }
 
     private fun checkWatchdog() {
