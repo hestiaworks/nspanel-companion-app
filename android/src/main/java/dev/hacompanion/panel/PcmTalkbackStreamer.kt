@@ -25,6 +25,13 @@ class PcmTalkbackStreamer(
      */
     private val gainPercent: Int = 100,
     private val onStatus: (String) -> Unit,
+    /**
+     * Called when the endpoint itself is unusable — refused, unauthorised,
+     * or gone. Distinct from [onStatus], which also carries ordinary
+     * progress: a caller that wants to try somewhere else needs to know
+     * which of the two it is hearing.
+     */
+    private val onFailed: (String) -> Unit = {},
 ) {
     private val active = AtomicBoolean(false)
     private val talking = AtomicBoolean(false)
@@ -70,7 +77,11 @@ class PcmTalkbackStreamer(
         }
         catch (error: Exception) {
             Log.e(TAG, "Talkback streaming failed", error)
-            if (active.get()) onStatus(error.message?.take(100) ?: "Talkback failed")
+            if (active.get()) {
+                val detail = error.message?.take(100) ?: "Talkback failed"
+                onStatus(detail)
+                onFailed(detail)
+            }
         }
         finally {
             active.set(false)

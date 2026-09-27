@@ -67,6 +67,8 @@ class CameraPageView(
     private val showMute: Boolean = false,
     /** Told while the microphone is live, so a ring can hold its timer open. */
     private val onTalkingChanged: (Boolean) -> Unit = {},
+    /** Somewhere for the host to report a talkback problem to Home Assistant. */
+    private val onTalkbackProblem: (String) -> Unit = {},
     /** How much to raise what the microphone hears; 100 sends it as captured. */
     private val talkbackGain: Int = 100,
 ) : FrameLayout(context), TextureView.SurfaceTextureListener {
@@ -451,12 +453,52 @@ class CameraPageView(
      * and Scrypted otherwise. Not the same place as the video URL — see
      * [DashboardWidget.talkUrl].
      */
-    private fun talkEndpoint(): Pair<String, String>? {
-        val url = widget.talkUrl?.takeIf(String::isNotBlank)
-            ?: widget.talkbackUrl?.takeIf(String::isNotBlank) ?: return null
-        val key = (if (widget.talkUrl.isNullOrBlank()) widget.talkbackKey else widget.talkKey)
-            ?.takeIf(String::isNotBlank) ?: return null
-        return url to key
+    /**
+     * Where the microphone goes: the talkback add-on when one is configured
+     * and answering, and Scrypted otherwise.
+     *
+     * The add-on is an optimisation — the same audio, seconds sooner — so
+     * losing it should cost speed and not the ability to speak to whoever is
+     * at the door. Once [fellBackToScrypted] is set, the slower path is used
+     * for the life of this page.
+     */
+    private fun talkEndpoint(): Pair<String, String>? =
+        TalkRouting.endpoint(widget, fellBackToScrypted)
+
+    /** Whether the add-on has already failed on this page. */
+    private var fellBackToScrypted = false
+
+    /**
+     * Whether the button is being held right now.
+     *
+     * The streamer knows, but it is the thing being replaced on a fallback,
+     * so the page has to remember for itself or a sentence would be cut off
+     * mid-word by its own recovery.
+     */
+    private var holdingTalk = false
+
+    /**
+     * The add-on refused or vanished. Move to Scrypted and say so.
+     *
+     * Silence would be the worst outcome: a stopped add-on, a reinstalled
+     * one that no longer recognises the key, or an unplugged one all present
+     * to the person holding the button as a door that cannot hear them, with
+     * nothing on screen and nothing in a log they would ever read.
+     */
+    private fun fallBackToScrypted(reason: String) {
+        if (fellBackToScrypted) return
+        if (widget.talkbackUrl.isNullOrBlank() || widget.talkbackKey.isNullOrBlank()) return
+        fellBackToScrypted = true
+        Log.w(TAG, "Talkback add-on unusable ($reason); falling back to Scrypted")
+        onTalkbackProblem("Talkback add-on unavailable — using the slower path")
+        handler.post {
+            say("talkback slower")
+            val wasTalking = holdingTalk
+            talkback?.stop()
+            talkback = null
+            prepareTalkback()
+            if (wasTalking) talkback?.setTalking(true)
+        }
     }
 
     private fun startTalking() {
@@ -471,6 +513,7 @@ class CameraPageView(
             return
         }
         prepareTalkback()
+        holdingTalk = true
         talkback?.setTalking(true)
         MicUsageTracker.setActive(context, true)
         onTalkingChanged(true)
@@ -494,12 +537,17 @@ class CameraPageView(
         if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) !=
             PackageManager.PERMISSION_GRANTED
         ) return
-        talkback = PcmTalkbackStreamer(endpoint, key, talkbackGain) { message ->
-            handler.post { if (message.contains("failed", true)) say("talkback failed") }
-        }.also { it.start() }
+        talkback = PcmTalkbackStreamer(
+            endpoint, key, talkbackGain,
+            onStatus = { message ->
+                handler.post { if (message.contains("failed", true)) say("talkback failed") }
+            },
+            onFailed = { reason -> fallBackToScrypted(reason) },
+        ).also { it.start() }
     }
 
     private fun stopTalking() {
+        holdingTalk = false
         talkback?.setTalking(false)
         MicUsageTracker.setActive(context, false)
         onTalkingChanged(false)
