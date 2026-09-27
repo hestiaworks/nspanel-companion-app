@@ -5,6 +5,9 @@ data class DoorbellEvent(
     val streamName: String? = null,
     val talkbackUrl: String? = null,
     val talkbackKey: String? = null,
+    /** Where the microphone goes, if a talkback add-on is configured. */
+    val talkUrl: String? = null,
+    val talkKey: String? = null,
     val quietMode: Boolean = false,
     val autoCloseMs: Long? = null,
     val talkExtendMs: Long = 15_000L,

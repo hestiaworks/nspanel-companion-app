@@ -100,8 +100,7 @@ class CameraPageView(
      * fullscreen action it replaced did.
      */
     private val talkButton: TextView? =
-        if (!widget.showIntercom || widget.talkbackUrl.isNullOrBlank() ||
-            widget.talkbackKey.isNullOrBlank()
+        if (!widget.showIntercom || talkEndpoint() == null
         ) null else TextView(context).apply {
             text = "HOLD TO TALK"
             gravity = Gravity.CENTER
@@ -335,7 +334,7 @@ class CameraPageView(
     }
 
     private fun hasBridge(): Boolean =
-        !widget.talkbackUrl.isNullOrBlank() && !widget.talkbackKey.isNullOrBlank()
+        talkEndpoint() != null
 
     private fun hasStoredSource(): Boolean = !widget.streamBaseUrl.isNullOrBlank()
 
@@ -447,9 +446,21 @@ class CameraPageView(
      * activity hosting the page; the button does nothing until it is
      * granted, and the next press works.
      */
+    /**
+     * Where the microphone goes: the talkback add-on when one is configured,
+     * and Scrypted otherwise. Not the same place as the video URL — see
+     * [DashboardWidget.talkUrl].
+     */
+    private fun talkEndpoint(): Pair<String, String>? {
+        val url = widget.talkUrl?.takeIf(String::isNotBlank)
+            ?: widget.talkbackUrl?.takeIf(String::isNotBlank) ?: return null
+        val key = (if (widget.talkUrl.isNullOrBlank()) widget.talkbackKey else widget.talkKey)
+            ?.takeIf(String::isNotBlank) ?: return null
+        return url to key
+    }
+
     private fun startTalking() {
-        val endpoint = widget.talkbackUrl ?: return
-        val key = widget.talkbackKey ?: return
+        talkEndpoint() ?: return
         if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) !=
             PackageManager.PERMISSION_GRANTED
         ) {
@@ -479,8 +490,7 @@ class CameraPageView(
      */
     private fun prepareTalkback() {
         if (talkback != null) return
-        val endpoint = widget.talkbackUrl?.takeIf(String::isNotBlank) ?: return
-        val key = widget.talkbackKey?.takeIf(String::isNotBlank) ?: return
+        val (endpoint, key) = talkEndpoint() ?: return
         if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) !=
             PackageManager.PERMISSION_GRANTED
         ) return

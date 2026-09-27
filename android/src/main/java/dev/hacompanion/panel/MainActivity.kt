@@ -1145,6 +1145,8 @@ class MainActivity : Activity() {
         camera?.streamName?.let { intent.putExtra(DoorbellIntent.EXTRA_STREAM_NAME, it) }
         camera?.talkbackUrl?.let { intent.putExtra(DoorbellIntent.EXTRA_TALKBACK_URL, it) }
         camera?.talkbackKey?.let { intent.putExtra(DoorbellIntent.EXTRA_TALKBACK_KEY, it) }
+        camera?.talkUrl?.let { intent.putExtra(DoorbellIntent.EXTRA_TALK_URL, it) }
+        camera?.talkKey?.let { intent.putExtra(DoorbellIntent.EXTRA_TALK_KEY, it) }
         startActivity(intent)
     }
 
@@ -1165,6 +1167,12 @@ class MainActivity : Activity() {
         }
         event.talkbackKey?.let {
             intent.putExtra(DoorbellIntent.EXTRA_TALKBACK_KEY, it)
+        }
+        event.talkUrl?.let {
+            intent.putExtra(DoorbellIntent.EXTRA_TALK_URL, it)
+        }
+        event.talkKey?.let {
+            intent.putExtra(DoorbellIntent.EXTRA_TALK_KEY, it)
         }
         event.talkbackTestUrl?.let {
             intent.putExtra(DoorbellIntent.EXTRA_TALKBACK_TEST_URL, it)

@@ -325,6 +325,20 @@ data class DashboardWidget(
      */
     val fanModes: List<String> = emptyList(),
     val swingModes: List<String> = emptyList(),
+    /**
+     * Where the microphone goes, when that is not where the video URL is.
+     *
+     * [talkbackUrl] does two jobs: audio is posted to it, and a fresh stream
+     * URL is fetched from it, because Scrypted's are session scoped. A
+     * talkback add-on takes over only the audio — it reaches the doorbell
+     * over the camera's own protocol, which is seconds faster — so it needs
+     * a field of its own rather than repointing that one.
+     *
+     * Null means there is no add-on, and the audio goes to [talkbackUrl] as
+     * it always did.
+     */
+    val talkUrl: String? = null,
+    val talkKey: String? = null,
 ) {
     fun toJson(): JSONObject = JSONObject().put("type", type).apply {
         entityId?.let { put("entity_id", it) }
@@ -349,6 +363,7 @@ data class DashboardWidget(
         if (type == "camera") {
             streamBaseUrl?.let { put("stream_base_url", it) }; streamName?.let { put("stream_name", it) }
             talkbackUrl?.let { put("talkback_url", it) }; talkbackKey?.let { put("talkback_key", it) }
+            talkUrl?.let { put("talk_url", it) }; talkKey?.let { put("talk_key", it) }
             put("incoming_audio", incomingAudio); put("show_intercom", showIntercom)
         }
     }
@@ -408,6 +423,8 @@ data class DashboardWidget(
             val streamName = json.optString("stream_name").takeIf(String::isNotBlank)
             val talkbackUrl = json.optString("talkback_url").takeIf(String::isNotBlank)
             val talkbackKey = json.optString("talkback_key").takeIf(String::isNotBlank)
+            val talkUrl = json.optString("talk_url").takeIf(String::isNotBlank)
+            val talkKey = json.optString("talk_key").takeIf(String::isNotBlank)
             val incomingAudio = json.optBoolean("incoming_audio", false)
             // A layout written before the checkbox existed still answers
             // the question, in the old language.
@@ -426,7 +443,8 @@ data class DashboardWidget(
                 streamBaseUrl.startsWith("https://")) { "Invalid camera stream URL" }
             return DashboardWidget(type, entityId, label, forecastDays, showHourly, icon, showTimer, timerPresets, cardTap, showFanSpeed, streamBaseUrl, streamName, talkbackUrl, talkbackKey, incomingAudio, showIntercom, showSchedule, gradualOpenScript, gradualCloseScript, historyRange,
                 fanModes = modes("fan_modes"), swingModes = modes("swing_modes"),
-                invertPosition = invertPosition, brightnessWhenOff = brightnessWhenOff)
+                invertPosition = invertPosition, brightnessWhenOff = brightnessWhenOff,
+                talkUrl = talkUrl, talkKey = talkKey)
         }
 
         val CONTROL_ICONS = setOf(
