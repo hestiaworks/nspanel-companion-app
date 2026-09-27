@@ -252,6 +252,10 @@ private fun PageContent(
                 CameraPageView(
                     context,
                     only,
+                    // Without this the page used 100 regardless of the
+                    // doorbell's talkback gain, so the setting applied to a
+                    // ring and was ignored on the same camera opened here.
+                    talkbackGain = only.talkbackGain,
                     claimWarmed = { actions.claimWarmedStream(only) },
                 )
             },

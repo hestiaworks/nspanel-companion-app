@@ -56,6 +56,8 @@ class RtspDoorbellActivity : Activity() {
                 ?: DoorbellIntent.DEFAULT_STREAM_NAME,
             talkbackUrl = intent.getStringExtra(DoorbellIntent.EXTRA_TALKBACK_URL)?.trim(),
             talkbackKey = intent.getStringExtra(DoorbellIntent.EXTRA_TALKBACK_KEY)?.trim(),
+            talkUrl = intent.getStringExtra(DoorbellIntent.EXTRA_TALK_URL)?.trim(),
+            talkKey = intent.getStringExtra(DoorbellIntent.EXTRA_TALK_KEY)?.trim(),
             // Quiet mode is a ring you can see but not hear.
             incomingAudio = !intent.getBooleanExtra(DoorbellIntent.EXTRA_QUIET_MODE, false),
             showIntercom = true,

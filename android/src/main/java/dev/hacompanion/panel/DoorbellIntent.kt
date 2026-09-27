@@ -20,6 +20,10 @@ object DoorbellIntent {
     const val EXTRA_TALKBACK_TEST_URL = "dev.hacompanion.panel.DOORBELL_TALKBACK_TEST_URL"
     const val EXTRA_TALKBACK_URL = "dev.hacompanion.panel.DOORBELL_TALKBACK_URL"
     const val EXTRA_TALKBACK_KEY = "dev.hacompanion.panel.DOORBELL_TALKBACK_KEY"
+    // Where the microphone goes when a talkback add-on is configured. The
+    // talkback extras above still carry video resolution.
+    const val EXTRA_TALK_URL = "dev.hacompanion.panel.DOORBELL_TALK_URL"
+    const val EXTRA_TALK_KEY = "dev.hacompanion.panel.DOORBELL_TALK_KEY"
 
     /** RFC 5737 documentation address: a placeholder, never a real panel's. */
     const val DEFAULT_STREAM_BASE_URL = "http://192.0.2.76:1984"

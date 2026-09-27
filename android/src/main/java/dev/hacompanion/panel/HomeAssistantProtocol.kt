@@ -128,6 +128,8 @@ object HomeAssistantProtocol {
             streamName = data.optString("stream_name").takeIf(String::isNotBlank),
             talkbackUrl = data.optString("talkback_url").takeIf(String::isNotBlank),
             talkbackKey = data.optString("talkback_key").takeIf(String::isNotBlank),
+            talkUrl = data.optString("talk_url").takeIf(String::isNotBlank),
+            talkKey = data.optString("talk_key").takeIf(String::isNotBlank),
             quietMode = data.optBoolean("quiet_mode", false),
                     chime = data.optString("chime", "off"),
                     chimeVolume = data.optInt("chime_volume", 70),

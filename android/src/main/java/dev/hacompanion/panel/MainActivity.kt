@@ -35,6 +35,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
@@ -123,6 +124,7 @@ class MainActivity : Activity() {
     private var borrowedScreenTimeout: Int? = null
     /** Watches the WiFi link and makes the panel choose again when it stays poor. */
     private val linkWatch by lazy { LinkWatch(this) }
+    private var lastLinkReport = 0L
     /**
      * Re-check the hour.
      *
@@ -1145,6 +1147,8 @@ class MainActivity : Activity() {
         camera?.streamName?.let { intent.putExtra(DoorbellIntent.EXTRA_STREAM_NAME, it) }
         camera?.talkbackUrl?.let { intent.putExtra(DoorbellIntent.EXTRA_TALKBACK_URL, it) }
         camera?.talkbackKey?.let { intent.putExtra(DoorbellIntent.EXTRA_TALKBACK_KEY, it) }
+        camera?.talkUrl?.let { intent.putExtra(DoorbellIntent.EXTRA_TALK_URL, it) }
+        camera?.talkKey?.let { intent.putExtra(DoorbellIntent.EXTRA_TALK_KEY, it) }
         startActivity(intent)
     }
 
@@ -1165,6 +1169,12 @@ class MainActivity : Activity() {
         }
         event.talkbackKey?.let {
             intent.putExtra(DoorbellIntent.EXTRA_TALKBACK_KEY, it)
+        }
+        event.talkUrl?.let {
+            intent.putExtra(DoorbellIntent.EXTRA_TALK_URL, it)
+        }
+        event.talkKey?.let {
+            intent.putExtra(DoorbellIntent.EXTRA_TALK_KEY, it)
         }
         event.talkbackTestUrl?.let {
             intent.putExtra(DoorbellIntent.EXTRA_TALKBACK_TEST_URL, it)
@@ -1292,11 +1302,26 @@ class MainActivity : Activity() {
      * network is something someone has to see.
      */
     private fun checkLink() {
+        reportLinkOccasionally()
         val layout = layoutStore.loadOrNull() ?: return
         linkWatch.check(layout) { message ->
             healthJournal.record("link", message)
             panelApiClient?.reportEvent(message)
         }
+    }
+
+    /**
+     * Tell Home Assistant what the radio sees, every few minutes.
+     *
+     * Not on every watchdog tick: a signal reading is worth having to hand,
+     * not worth two messages a minute from every panel for ever. Five
+     * minutes is far finer than the timescale on which a panel moves house.
+     */
+    private fun reportLinkOccasionally() {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastLinkReport < LINK_REPORT_INTERVAL_MS) return
+        val reading = linkWatch.reading() ?: return
+        if (panelApiClient?.reportLink(reading) == true) lastLinkReport = now
     }
 
     private fun checkWatchdog() {
@@ -1407,6 +1432,7 @@ class MainActivity : Activity() {
         private const val HOME_ROLE_REQUEST = 11
         private const val EXTRA_HA_URL = "dev.hacompanion.panel.HA_URL"
         private const val EXTRA_HA_TOKEN = "dev.hacompanion.panel.HA_TOKEN"
+        private const val LINK_REPORT_INTERVAL_MS = 5L * 60 * 1000
         private const val WATCHDOG_INTERVAL_MS = 30_000L
         private const val DISPLAY_TICK_MS = 30_000L
         /** Long enough to light the screen and hand it to the call. */
