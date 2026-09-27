@@ -33,6 +33,27 @@ class LinkWatch(context: Context) {
     val rssi: Int? get() = runCatching { wifi?.connectionInfo?.rssi }.getOrNull()
 
     /**
+     * Everything worth reporting about the link, for the admin list.
+     *
+     * A weak link does not present as a weak link. It presents as video that
+     * takes sixteen seconds, talkback that arrives four seconds late, and
+     * timeouts against a service that is plainly running — three faults that
+     * look unrelated until someone reads the signal. The access point matters
+     * as much as the strength: a panel holding a distant one while a nearer
+     * one sits unused is only visible by comparing panels.
+     */
+    fun reading(): Map<String, Any>? = runCatching {
+        val info = wifi?.connectionInfo ?: return@runCatching null
+        mapOf(
+            "rssi" to info.rssi,
+            "bssid" to (info.bssid ?: ""),
+            "ssid" to info.ssid.orEmpty().trim('"'),
+            "link_speed_mbps" to info.linkSpeed,
+            "frequency_mhz" to runCatching { info.frequency }.getOrDefault(0),
+        )
+    }.getOrNull()
+
+    /**
      * Look once, and act if the link has been bad for long enough.
      *
      * [onGivingUp] is called with a message the moment reconnecting has been

@@ -69,6 +69,13 @@ class PanelApiClient(
      * nobody reads. This lands in the panel's event list, which the interface
      * already shows.
      */
+    /** What this panel's radio currently sees. Shown in the admin list. */
+    fun reportLink(reading: Map<String, Any>): Boolean {
+        val body = JSONObject().put("type", "panel_link")
+        reading.forEach { (key, value) -> body.put(key, value) }
+        return socket?.send(body.toString()) ?: false
+    }
+
     fun reportEvent(message: String, level: String = "warn"): Boolean =
         socket?.send(JSONObject().put("type", "panel_event")
             .put("message", message).put("level", level).toString()) ?: false
