@@ -91,4 +91,31 @@ class TalkEndpointTest {
         assertNull(event.talkUrl)
         assertEquals("http://192.0.2.9:11081/talk/44", event.talkbackUrl)
     }
+
+    @Test
+    fun `a camera widget carries the talkback gain`() {
+        // The ring screen has always had this from the doorbell config. A
+        // camera page opened from the dashboard could not reach it, so the
+        // setting worked on a ring and was silently 100 on the same camera.
+        val widget = camera("""{"type":"camera","talkback_gain":70}""")
+        assertEquals(70, widget.talkbackGain)
+    }
+
+    @Test
+    fun `a widget without one sends audio as heard`() {
+        assertEquals(100, camera("""{"type":"camera"}""").talkbackGain)
+    }
+
+    @Test
+    fun `an out of range gain is clamped rather than obeyed`() {
+        // 300% already clips; beyond it the signal is only noise.
+        assertEquals(300, camera("""{"type":"camera","talkback_gain":900}""").talkbackGain)
+        assertEquals(50, camera("""{"type":"camera","talkback_gain":1}""").talkbackGain)
+    }
+
+    @Test
+    fun `the gain survives a round trip through json`() {
+        val widget = camera("""{"type":"camera","talkback_gain":70}""")
+        assertEquals(70, DashboardWidget.parse(widget.toJson()).talkbackGain)
+    }
 }
