@@ -52,7 +52,35 @@ data class ThermostatModel(
     val available: Boolean,
     /** False in dry and fan_only: the rail greys out rather than disappearing. */
     val targetUsable: Boolean,
+    /** Which equipment the house permits, when exactly one is; see [Season]. */
+    val season: Season? = null,
 )
+
+/**
+ * Which equipment is permitted to run, when exactly one is.
+ *
+ * Named for the equipment in charge rather than drawn as weather: a
+ * snowflake already means COOL in the mode row, and one in the header
+ * beside a lit HEAT cell would contradict itself.
+ */
+enum class Season(val label: String, val icon: String) {
+    WINTER("WINTER", "radiator"),
+    SUMMER("SUMMER", "air-conditioner"),
+}
+
+/** From room_thermostat's two attributes; an ordinary climate entity has neither. */
+private fun seasonOf(attributes: org.json.JSONObject): Season? {
+    if (!attributes.has("heating_season") || !attributes.has("cooling_season")) return null
+    val heating = attributes.optBoolean("heating_season")
+    val cooling = attributes.optBoolean("cooling_season")
+    return when {
+        heating && !cooling -> Season.WINTER
+        cooling && !heating -> Season.SUMMER
+        // Both: nothing is constrained, so there is nothing to explain.
+        // Neither: the owner's decision, recorded in the design record.
+        else -> null
+    }
+}
 
 /**
  * The mode row's fourth slot.
@@ -219,6 +247,7 @@ fun thermostatModel(
         cooling = climate.attributes.optString("hvac_action") == "cooling",
         available = live,
         targetUsable = live && !secondary && climate.state != "off",
+        season = seasonOf(climate.attributes),
     )
 }
 

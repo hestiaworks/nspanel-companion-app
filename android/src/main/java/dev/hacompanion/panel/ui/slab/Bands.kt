@@ -13,7 +13,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.viewinterop.AndroidView
+import dev.hacompanion.panel.ControlIconView
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -76,7 +81,19 @@ fun CellRule() {
  * band that shows what is selected.
  */
 @Composable
-fun HeaderRow(title: String, status: String, tint: Color? = null, onLongPress: (() -> Unit)? = null) {
+fun HeaderRow(
+    title: String,
+    status: String,
+    tint: Color? = null,
+    onLongPress: (() -> Unit)? = null,
+    /**
+     * A word and an icon explaining the status — the thermostat's season.
+     * Always muted: accent and warm already mean the mode that is running.
+     * The title ellipsises before this or the status ever does.
+     */
+    note: String? = null,
+    noteIcon: String? = null,
+) {
     val colors = LocalPanelColors.current
     val type = LocalPanelType.current
     // Canvas, not panel: the header is the page's own ground, and the bands
@@ -95,6 +112,25 @@ fun HeaderRow(title: String, status: String, tint: Color? = null, onLongPress: (
                 semibold = true,
                 maxLines = 1,
             )
+            if (note != null) {
+                Box(Modifier.width(14.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (noteIcon != null) {
+                        key(noteIcon, colors.muted) {
+                            AndroidView(
+                                modifier = Modifier.size(18.dp),
+                                factory = { context -> ControlIconView(context, noteIcon, colors.muted.toArgb()) },
+                            )
+                        }
+                    }
+                    PanelText(note, type.label, semibold = true, muted = true, letterSpacing = type.labelTracking, maxLines = 1)
+                }
+                if (status.isNotBlank()) {
+                    Box(Modifier.width(14.dp))
+                    Box(Modifier.width(1.dp).height(22.dp).background(colors.line))
+                    Box(Modifier.width(14.dp))
+                }
+            }
             if (status.isNotBlank()) {
                 PanelText(
                     status,
