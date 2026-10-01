@@ -446,6 +446,18 @@ class PanelDashboardView(
         scheduleDefaultPageReturn()
     }
 
+    /** The page on screen, as Home Assistant names it; null before a layout. */
+    fun currentPageId(): String? =
+        if (configured) layout.pages.getOrNull(pageIndex)?.id else null
+
+    /** Show the page Home Assistant asked for; false if this layout lacks it. */
+    fun showPage(id: String): Boolean {
+        val index = layout.pages.indexOfFirst { it.id == id }
+        if (!configured || index < 0) return false
+        setPage(index)
+        return true
+    }
+
     fun setDashboardActive(value: Boolean) {
         dashboardActive = value
         if (value) scheduleDefaultPageReturn() else removeCallbacks(returnToDefault)
