@@ -356,7 +356,9 @@ class MainActivity : Activity() {
             ::runIntercom,
             { schedule -> panelApiClient?.upsertSchedule(schedule) == true },
             { scheduleId -> panelApiClient?.deleteSchedule(scheduleId) == true },
+            notifications,
         )
+        notifications.refresh()
         val demo = DemoHarness.apply(intent, dashboardView)
         demoMode = demo
         if (demo) {
@@ -747,16 +749,25 @@ class MainActivity : Activity() {
                 onDoorbellEvent = ::showDoorbellEvent,
                 onRestart = ::restartPanel,
                 onCommand = ::runCommand,
+                onNotification = ::receiveNotification,
                 onRevoked = ::handlePairingRevoked,
                 onRoster = dashboardView::setRoster,
                 onRing = { callId, name, ring, volume ->
-                    intercomCallId = callId
-                    // A call arrives at a dark panel more often than a lit
-                    // one. The doorbell has always lit the screen for its
-                    // ring; this rings behind one and was never seen.
-                    wakeForCall()
-                    dashboardView.setCall(CallPhase.RINGING, peer = name)
-                    ringer.start(ring, volume)
+                    val treatment = alertTreatment(Kind.INTERCOM)
+                    if (treatment == Treatment.SUPPRESS) {
+                        // Declined rather than ignored, so the caller is told
+                        // instead of ringing into silence until they give up.
+                        panelApiClient?.declineCall(callId)
+                        recordMissed("Missed call", "$name called during quiet hours.")
+                    } else {
+                        intercomCallId = callId
+                        // A call arrives at a dark panel more often than a lit
+                        // one. The doorbell has always lit the screen for its
+                        // ring; this rings behind one and was never seen.
+                        wakeForCall()
+                        dashboardView.setCall(CallPhase.RINGING, peer = name)
+                        ringer.start(if (treatment == Treatment.SILENT) "off" else ring, volume)
+                    }
                 },
                 onCalling = { callId -> intercomCallId = callId },
                 onCallAnswered = {
@@ -1112,6 +1123,63 @@ class MainActivity : Activity() {
 
     private val intercomHandshake = IntercomHandshake()
     private val ringer by lazy { PanelRinger(this) }
+    private val notificationSound by lazy { NotificationSoundPlayer(this) }
+    /** The last twenty, the queue on screen, and the list. */
+    private val notifications by lazy {
+        NotificationCenter(
+            NotificationStore(this),
+            publish = { items, showing, screen ->
+                if (::dashboardView.isInitialized) dashboardView.setNotifications(items, showing, screen)
+            },
+            play = ::playNotificationSound,
+        )
+    }
+
+    /** The settings that decide what an alert does at this hour. */
+    private fun alertTreatment(kind: Kind, important: Boolean = false): Treatment {
+        val settings = layoutStore.loadOrNull()?.notifications ?: NotificationSettings.DEFAULT
+        val minute = DisplayPolicy.minuteOfDay(currentServerTimeMs(), currentTimezone())
+        return NotificationPolicy.treatment(kind, important, settings, minute)
+    }
+
+    /**
+     * A notification from an automation. Lands in the list whatever the
+     * hour; whether it is shown and heard is the policy's decision.
+     */
+    private fun receiveNotification(data: org.json.JSONObject) {
+        val message = data.optString("message").takeIf(String::isNotBlank) ?: return
+        val item = PanelNotification(
+            id = data.optString("id").ifBlank { java.util.UUID.randomUUID().toString() },
+            title = data.optString("title"),
+            message = message,
+            important = data.optString("importance") == "important",
+            at = currentServerTimeMs(),
+            sound = data.optString("sound").takeIf(String::isNotBlank),
+        )
+        val treatment = alertTreatment(Kind.NOTIFICATION, item.important)
+        if (treatment != Treatment.SUPPRESS) lightTheScreen("nspanel:notification")
+        notifications.receive(item, treatment)
+    }
+
+    /** Never over a call: a sound into an open microphone is the far end's problem. */
+    private fun playNotificationSound(item: PanelNotification) {
+        if (callActive) return
+        val settings = layoutStore.loadOrNull()?.notifications ?: NotificationSettings.DEFAULT
+        val name = item.sound ?: if (item.important) settings.importantSound else settings.normalSound
+        val volume = if (item.important) settings.importantVolume else settings.normalVolume
+        notificationSound(name)?.let { notificationSound.play(it, volume) }
+    }
+
+    /** A ring quiet hours suppressed: not shown, not heard, but in the list. */
+    private fun recordMissed(title: String, message: String) {
+        notifications.receive(
+            PanelNotification(
+                id = java.util.UUID.randomUUID().toString(), title = title, message = message,
+                important = false, at = currentServerTimeMs(),
+            ),
+            Treatment.SUPPRESS,
+        )
+    }
 
     private fun openIntercomSession(): IntercomSession {
         intercomSession?.let { return it }
@@ -1201,9 +1269,14 @@ class MainActivity : Activity() {
     }
 
     private fun showDoorbellEvent(event: DoorbellEvent) {
+        val treatment = alertTreatment(Kind.DOORBELL)
+        if (treatment == Treatment.SUPPRESS) {
+            recordMissed("Front door", "Someone rang the doorbell during quiet hours.")
+            return
+        }
         val intent = rtspDoorbellIntent()
             .putExtra(DoorbellIntent.EXTRA_QUIET_MODE, event.quietMode)
-            .putExtra(DoorbellIntent.EXTRA_CHIME, event.chime)
+            .putExtra(DoorbellIntent.EXTRA_CHIME, if (treatment == Treatment.SILENT) "off" else event.chime)
             .putExtra(DoorbellIntent.EXTRA_CHIME_VOLUME, event.chimeVolume)
             .putExtra(DoorbellIntent.EXTRA_TALKBACK_GAIN, event.talkbackGain)
         event.streamBaseUrl?.let {

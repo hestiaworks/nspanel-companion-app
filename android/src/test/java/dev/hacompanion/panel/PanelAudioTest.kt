@@ -98,4 +98,14 @@ class PanelAudioTest {
         // Anything the panel is handed out of range is pulled back in.
         assertEquals(1f, volumeOf(140), 0.001f)
     }
+
+    @Test
+    fun `a silent notification plays nothing`() {
+        assertEquals(null, notificationSound("off"))
+    }
+
+    @Test
+    fun `a notification sound not yet bundled plays the cut-short chime`() {
+        assertEquals(OneShot(R.raw.chime_1, NOTIFICATION_STOPGAP_MS), notificationSound("notify_soft"))
+    }
 }

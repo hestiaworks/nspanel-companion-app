@@ -14,6 +14,31 @@ val RING_SOUNDS = mapOf(
     "chime_3" to R.raw.chime_3,
 )
 
+/**
+ * The notification category: short, played once.
+ *
+ * Empty until the four sounds are bundled. Until then every notification
+ * sound but "off" plays the start of chime_1 — a stopgap the design record
+ * names as one, not the intended result.
+ */
+val NOTIFICATION_SOUNDS: Map<String, Int> = emptyMap()
+
+/** How much of chime_1 stands in for a notification sound. */
+const val NOTIFICATION_STOPGAP_MS = 1_200L
+
+/** A notification sound to play: a resource, and where to cut it, if anywhere. */
+data class OneShot(val resource: Int, val limitMs: Long?)
+
+/** What a notification named [sound] plays, or null for silence. */
+fun notificationSound(sound: String): OneShot? = when {
+    sound == "off" || sound.isBlank() -> null
+    sound in NOTIFICATION_SOUNDS -> OneShot(NOTIFICATION_SOUNDS.getValue(sound), null)
+    // A sound this build does not carry. A known notification name is the
+    // stopgap; anything else, from an editor newer than this panel, is too:
+    // a notification someone asked to hear should not arrive silently.
+    else -> OneShot(R.raw.chime_1, NOTIFICATION_STOPGAP_MS)
+}
+
 /** Whether a sound should be made at all. */
 fun shouldPlay(sound: String, quiet: Boolean): Boolean =
     !quiet && sound in RING_SOUNDS

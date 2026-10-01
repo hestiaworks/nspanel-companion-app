@@ -24,6 +24,7 @@ class PanelApiClient(
     private val onDoorbellEvent: (DoorbellEvent) -> Unit,
     private val onRestart: () -> Unit = {},
     private val onCommand: (String, JSONObject) -> Unit = { _, _ -> },
+    private val onNotification: (JSONObject) -> Unit = {},
     private val onRevoked: () -> Unit = {},
     private val onHistory: (HistorySeries) -> Unit = {},
     private val onRoster: (List<IntercomPeer>) -> Unit = {},
@@ -203,6 +204,9 @@ class PanelApiClient(
                 "restart" -> handler.post { onRestart() }
                 // What the panel's device entities in Home Assistant ask of
                 // it: the screen, a restart, a fresh layout, a page.
+                // From the notify action: shown, heard, or only listed,
+                // as this panel's quiet hours decide.
+                "notification" -> message.optJSONObject("data")?.let { data -> handler.post { onNotification(data) } }
                 "command" -> message.optString("command").takeIf(String::isNotBlank)?.let { name ->
                     handler.post { onCommand(name, message) }
                 }

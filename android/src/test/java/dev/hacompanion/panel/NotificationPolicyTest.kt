@@ -130,3 +130,49 @@ class NotificationPolicyTest {
         )
     }
 }
+
+/** The block as Home Assistant publishes it, read the way the panel reads it. */
+class NotificationSettingsParseTest {
+
+    @Test
+    fun `a layout without the block gets the defaults`() {
+        val settings = NotificationSettings.parse(null)
+        assertEquals(false, settings.dnd.enabled)
+        assertEquals("silent", settings.normalDnd)
+        assertEquals("notify_alert", settings.importantSound)
+    }
+
+    @Test
+    fun `the block is read`() {
+        val settings = NotificationSettings.parse(org.json.JSONObject("""
+            {"doorbell": {"sound": "chime_1", "volume": 70, "dnd": "silent"},
+             "intercom": {"sound": "off", "volume": 70, "dnd": "suppress"},
+             "normal": {"sound": "notify_ping", "volume": 40, "dnd": "ring"},
+             "important": {"sound": "notify_chime", "volume": 90},
+             "dnd": {"enabled": true, "from": "22:30", "to": "06:45"}}
+        """))
+        assertEquals(DndWindow(true, 22 * 60 + 30, 6 * 60 + 45), settings.dnd)
+        assertEquals("silent", settings.doorbellDnd)
+        assertEquals("suppress", settings.intercomDnd)
+        assertEquals("ring", settings.normalDnd)
+        assertEquals("notify_ping", settings.normalSound)
+        assertEquals(40, settings.normalVolume)
+        assertEquals("notify_chime", settings.importantSound)
+        assertEquals(90, settings.importantVolume)
+    }
+
+    @Test
+    fun `an unreadable time disables the window rather than guessing`() {
+        val settings = NotificationSettings.parse(org.json.JSONObject(
+            """{"dnd": {"enabled": true, "from": "late", "to": "07:00"}}"""))
+        assertEquals(false, settings.dnd.enabled)
+    }
+
+    @Test
+    fun `it survives the layout store`() {
+        val settings = NotificationSettings.parse(org.json.JSONObject(
+            """{"normal": {"sound": "notify_ping", "volume": 40, "dnd": "suppress"},
+                "dnd": {"enabled": true, "from": "22:00", "to": "07:00"}}"""))
+        assertEquals(settings, NotificationSettings.parse(settings.toJson()))
+    }
+}

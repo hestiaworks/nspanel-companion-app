@@ -1,5 +1,14 @@
 package dev.hacompanion.panel.ui
 
+import dev.hacompanion.panel.NotificationBadge
+import dev.hacompanion.panel.NotificationScreen
+import dev.hacompanion.panel.NotificationTime
+import dev.hacompanion.panel.PanelNotification
+import dev.hacompanion.panel.Showing
+import dev.hacompanion.panel.ui.notify.NotificationActions
+import dev.hacompanion.panel.ui.notify.NotificationDetailScreen
+import dev.hacompanion.panel.ui.notify.NotificationLayer
+import dev.hacompanion.panel.ui.notify.NotificationListScreen
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -122,10 +131,17 @@ class DashboardUiState {
      * as the rail adjusting whichever setpoint you had selected before.
      */
     val selectedTargets = mutableStateMapOf<String, String>()
+
+    /** The last twenty, newest first; what the strip's badge counts. */
+    var notifications by mutableStateOf<List<PanelNotification>>(emptyList())
+    /** The banner or sheet on screen, if any. */
+    var notificationShowing by mutableStateOf<Showing?>(null)
+    /** The list, or one notification, open in place of the page. */
+    var notificationScreen by mutableStateOf<NotificationScreen?>(null)
 }
 
 /** Everything the dashboard's pages call back into. */
-interface DashboardActions : ControlActions {
+interface DashboardActions : ControlActions, NotificationActions {
     fun openAdmin()
 
     /** A stream URL warmed while this camera was one swipe away, if any. */
@@ -161,14 +177,25 @@ fun DashboardRoot(
     actions: DashboardActions,
 ) {
     PanelThemeProvider(ui.dark) {
+        val zone = ui.timezone
+        val now = ui.serverTimeMs + (SystemClock.elapsedRealtime() - ui.syncedAtElapsedMs)
+        Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().background(LocalPanelColors.current.canvas)) {
             // The strip is on every page, which is what makes it the place
             // for administration now that a grid page has no header to press.
-            if (ui.showClock || ui.showMic) {
-                PanelStatusStrip(ui, actions::openAdmin)
+            // It is also the way to the notification list, so it stays while
+            // there is anything in it even on a panel set to show neither.
+            if (ui.showClock || ui.showMic || ui.notifications.isNotEmpty()) {
+                PanelStatusStrip(ui, actions::openAdmin, actions::openNotifications)
             }
             Box(Modifier.fillMaxWidth().weight(1f)) {
-            if (ui.callPhase != CallPhase.IDLE) {
+            val screen = ui.notificationScreen
+            val opened = (screen as? NotificationScreen.Detail)?.let { open -> ui.notifications.firstOrNull { it.id == open.id } }
+            if (opened != null) {
+                NotificationDetailScreen(opened, NotificationTime.detail(opened.at, now, zone), actions)
+            } else if (screen != null) {
+                NotificationListScreen(ui.notifications, { NotificationTime.list(it, now, zone) }, actions)
+            } else if (ui.callPhase != CallPhase.IDLE) {
                 // A call takes the panel the way a doorbell ring does. A
                 // call you cannot see is a call you miss, and a page you
                 // were reading is not more urgent than someone speaking.
@@ -205,6 +232,8 @@ fun DashboardRoot(
             }
             }
         }
+        NotificationLayer(ui.notificationShowing, { NotificationTime.clock(it, zone) }, actions)
+        }
     }
 }
 
@@ -213,7 +242,7 @@ fun DashboardRoot(
  * whole strip is one recomposition a second and nothing is laid out twice.
  */
 @Composable
-private fun PanelStatusStrip(ui: DashboardUiState, onLongPress: () -> Unit) {
+private fun PanelStatusStrip(ui: DashboardUiState, onLongPress: () -> Unit, onOpenList: () -> Unit) {
     val context = LocalContext.current
     var elapsed by remember { mutableStateOf(SystemClock.elapsedRealtime()) }
     var micActive by remember { mutableStateOf(false) }
@@ -232,6 +261,9 @@ private fun PanelStatusStrip(ui: DashboardUiState, onLongPress: () -> Unit) {
         pages = ui.layout.pages.size,
         current = ui.pageIndex,
         onLongPress = onLongPress,
+        badge = NotificationBadge.of(ui.notifications),
+        onOpenList = onOpenList,
+        pageBar = ui.notificationScreen == null,
     )
 }
 
