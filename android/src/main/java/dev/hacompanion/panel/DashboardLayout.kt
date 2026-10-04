@@ -78,6 +78,8 @@ data class DashboardLayout(
      */
     val intercomNoiseSuppression: Boolean = true,
     val intercomAutoGain: Boolean = true,
+    /** Quiet hours and notification sounds; see [NotificationSettings]. */
+    val notifications: NotificationSettings = NotificationSettings.DEFAULT,
 
 ) {
     fun toJson(): JSONObject = JSONObject()
@@ -98,6 +100,7 @@ data class DashboardLayout(
         .put("intercom", JSONObject()
             .put("noise_suppression", intercomNoiseSuppression)
             .put("auto_gain", intercomAutoGain))
+        .put("notifications", notifications.toJson())
         .put("show_clock", showClock)
         .put("show_mic_indicator", showMicIndicator)
         .put("mic_indicator_linger_seconds", micIndicatorLingerSeconds)
@@ -211,6 +214,7 @@ data class DashboardLayout(
                 wifiReconnectBelowDbm = wifiReconnectBelowDbm,
                 intercomNoiseSuppression = noiseSuppression,
                 intercomAutoGain = autoGain,
+                notifications = NotificationSettings.parse(json.optJSONObject("notifications")),
             )
         }
 

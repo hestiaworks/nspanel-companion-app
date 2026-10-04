@@ -107,6 +107,8 @@ class PanelDashboardView(
     private val intercom: (IntercomCommand) -> Unit = {},
     private val upsertSchedule: (ControlSchedule) -> Boolean = { false },
     private val deleteSchedule: (String) -> Boolean = { false },
+    /** The notification layer, the list, and the strip's way into it. */
+    private val notificationActions: dev.hacompanion.panel.ui.notify.NotificationActions = NoNotifications,
 ) : LinearLayout(context) {
     // Snapshot-backed so Compose pages recompose from it directly. The pages
     // still built as views keep using the binding registry below.
@@ -174,7 +176,8 @@ class PanelDashboardView(
      * properties initialise in declaration order and init installs the root
      * that reads this.
      */
-    private val dashboardActions = object : DashboardActions {
+    private val dashboardActions = object : DashboardActions,
+        dev.hacompanion.panel.ui.notify.NotificationActions by notificationActions {
         override fun openAdmin() = this@PanelDashboardView.openAdmin()
 
         override fun claimWarmedStream(widget: DashboardWidget): String? =
@@ -444,6 +447,25 @@ class PanelDashboardView(
         warmNeighbouringCameras()
         scheduleRender()
         scheduleDefaultPageReturn()
+    }
+
+    /** The page on screen, as Home Assistant names it; null before a layout. */
+    fun currentPageId(): String? =
+        if (configured) layout.pages.getOrNull(pageIndex)?.id else null
+
+    /** Show the page Home Assistant asked for; false if this layout lacks it. */
+    fun showPage(id: String): Boolean {
+        val index = layout.pages.indexOfFirst { it.id == id }
+        if (!configured || index < 0) return false
+        setPage(index)
+        return true
+    }
+
+    /** What the notification layer and the strip's badge show. */
+    fun setNotifications(items: List<PanelNotification>, showing: Showing?, screen: NotificationScreen?) {
+        ui.notifications = items
+        ui.notificationShowing = showing
+        ui.notificationScreen = screen
     }
 
     fun setDashboardActive(value: Boolean) {
@@ -1248,4 +1270,19 @@ class PanelDashboardView(
         private const val ENTITY_REFRESH_DELAY_MS = 50L
         private const val RENDER_LOG_TAG = "PanelRender"
     }
+}
+
+
+/** For a dashboard built without notifications, as in tests and previews. */
+private object NoNotifications : dev.hacompanion.panel.ui.notify.NotificationActions {
+    override fun openNotifications() = Unit
+    override fun openNotification(id: String) = Unit
+    override fun closeBanner(id: String) = Unit
+    override fun answerSheet(id: String, read: Boolean) = Unit
+    override fun closeNotifications() = Unit
+    override fun backToList() = Unit
+    override fun markAllRead() = Unit
+    override fun clearAll() = Unit
+    override fun markUnread(id: String) = Unit
+    override fun deleteNotification(id: String) = Unit
 }

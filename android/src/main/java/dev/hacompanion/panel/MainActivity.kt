@@ -125,6 +125,36 @@ class MainActivity : Activity() {
     /** Watches the WiFi link and makes the panel choose again when it stays poor. */
     private val linkWatch by lazy { LinkWatch(this) }
     private var lastLinkReport = 0L
+    private var lastReading: PanelStateReport.Reading? = null
+    /**
+     * Home Assistant asked for the screen to go dark.
+     *
+     * Android gives an app no way to switch a screen off, so this lets go of
+     * the keep-on flag and shortens the display timeout until it does. Held
+     * until the screen next comes back on, by a touch, an approach, a call or
+     * Home Assistant again — not until the schedule next looks, which would
+     * light it straight back up inside an always-on window.
+     */
+    private var sleepRequested = false
+    private var sleptSinceRequest = false
+    /** A brightness Home Assistant set, held until the screen next goes off. */
+    private var commandedBrightness: Float? = null
+    private val screenReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                Intent.ACTION_SCREEN_OFF -> {
+                    commandedBrightness = null
+                    if (sleepRequested) sleptSinceRequest = true
+                }
+                Intent.ACTION_SCREEN_ON -> if (sleptSinceRequest) {
+                    sleepRequested = false
+                    sleptSinceRequest = false
+                    applyDisplayPolicy()
+                }
+            }
+            reportStateNow()
+        }
+    }
     /**
      * Re-check the hour.
      *
@@ -144,6 +174,7 @@ class MainActivity : Activity() {
         override fun onAccuracyChanged(sensor: android.hardware.Sensor?, accuracy: Int) = Unit
         override fun onSensorChanged(event: android.hardware.SensorEvent) {
             LightReading.latest = event.values.firstOrNull()
+            reportStateNow()
             // Follow the room as it changes rather than waiting for the next
             // tick: turning the lights off should dim the panel now, not in
             // half a minute. The work is two comparisons, and the window is
@@ -204,6 +235,17 @@ class MainActivity : Activity() {
         startPanelSync()
         watchdogHandler.postDelayed(watchdog, WATCHDOG_INTERVAL_MS)
         watchdogHandler.postDelayed(displayTick, DISPLAY_TICK_MS)
+        proximityWake.onApproach = {
+            reportStateNow()
+            // The hold ends silently; look again just after, so the entity
+            // reads empty when it does rather than at the next tick.
+            watchdogHandler.postDelayed({ reportStateNow() }, ProximityWake.NEARBY_MS + 500)
+        }
+        proximityWake.start()
+        registerReceiver(screenReceiver, android.content.IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+        })
         (getSystemService(SENSOR_SERVICE) as? android.hardware.SensorManager)?.let { sensors ->
             sensors.getDefaultSensor(android.hardware.Sensor.TYPE_LIGHT)?.let { sensor ->
                 sensors.registerListener(
@@ -252,6 +294,8 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         if (live === this) live = null
         proximityWake.setEnabled(false)
+        proximityWake.stop()
+        runCatching { unregisterReceiver(screenReceiver) }
         watchAccessibilityButton(false)
         haClient?.stop()
         haClient = null
@@ -312,7 +356,9 @@ class MainActivity : Activity() {
             ::runIntercom,
             { schedule -> panelApiClient?.upsertSchedule(schedule) == true },
             { scheduleId -> panelApiClient?.deleteSchedule(scheduleId) == true },
+            notifications,
         )
+        notifications.refresh()
         val demo = DemoHarness.apply(intent, dashboardView)
         demoMode = demo
         if (demo) {
@@ -702,16 +748,26 @@ class MainActivity : Activity() {
                 onEntityChanged = ::activateEntityState,
                 onDoorbellEvent = ::showDoorbellEvent,
                 onRestart = ::restartPanel,
+                onCommand = ::runCommand,
+                onNotification = ::receiveNotification,
                 onRevoked = ::handlePairingRevoked,
                 onRoster = dashboardView::setRoster,
                 onRing = { callId, name, ring, volume ->
-                    intercomCallId = callId
-                    // A call arrives at a dark panel more often than a lit
-                    // one. The doorbell has always lit the screen for its
-                    // ring; this rings behind one and was never seen.
-                    wakeForCall()
-                    dashboardView.setCall(CallPhase.RINGING, peer = name)
-                    ringer.start(ring, volume)
+                    val treatment = alertTreatment(Kind.INTERCOM)
+                    if (treatment == Treatment.SUPPRESS) {
+                        // Declined rather than ignored, so the caller is told
+                        // instead of ringing into silence until they give up.
+                        panelApiClient?.declineCall(callId)
+                        recordMissed("Missed call", "$name called during quiet hours.")
+                    } else {
+                        intercomCallId = callId
+                        // A call arrives at a dark panel more often than a lit
+                        // one. The doorbell has always lit the screen for its
+                        // ring; this rings behind one and was never seen.
+                        wakeForCall()
+                        dashboardView.setCall(CallPhase.RINGING, peer = name)
+                        ringer.start(if (treatment == Treatment.SILENT) "off" else ring, volume)
+                    }
                 },
                 onCalling = { callId -> intercomCallId = callId },
                 onCallAnswered = {
@@ -896,8 +952,9 @@ class MainActivity : Activity() {
         roomLight = DisplayPolicy.roomLight(
             LightReading.latest, layout.darkBelow, layout.brightAbove, roomLight,
         )
-        applyBrightness(DisplayPolicy.brightness(layout, callActive, roomLight))
-        val keepOn = DisplayPolicy.keepScreenOn(layout, callActive, minute)
+        applyBrightness(commandedBrightness ?: DisplayPolicy.brightness(layout, callActive, roomLight))
+        val asleep = sleepRequested && !callActive
+        val keepOn = !asleep && DisplayPolicy.keepScreenOn(layout, callActive, minute)
         // Crossing into the window is what lights a dark panel; the flag only
         // keeps a lit one from timing out.
         if (DisplayPolicy.shouldWake(holdingScreenOn, keepOn, layout)) lightTheScreen()
@@ -906,7 +963,9 @@ class MainActivity : Activity() {
         // Re-asserted on every look rather than once at the boundary: the
         // vendor's app moves this setting under us, and half a minute of a
         // lit bedroom is the worst this can then cost.
-        applyScreenOffTimeout(DisplayPolicy.screenOffTimeoutMs(layout, callActive, minute))
+        applyScreenOffTimeout(
+            if (asleep) SLEEP_TIMEOUT_MS else DisplayPolicy.screenOffTimeoutMs(layout, callActive, minute),
+        )
         proximityWake.setEnabled(
             DisplayPolicy.wakeOnApproach(layout, callActive, minute),
             layout.wakeSensitivity,
@@ -1064,6 +1123,75 @@ class MainActivity : Activity() {
 
     private val intercomHandshake = IntercomHandshake()
     private val ringer by lazy { PanelRinger(this) }
+    private val notificationSound by lazy { NotificationSoundPlayer(this) }
+    /** The last twenty, the queue on screen, and the list. */
+    private val notifications by lazy {
+        NotificationCenter(
+            NotificationStore(this),
+            publish = { items, showing, screen ->
+                if (::dashboardView.isInitialized) dashboardView.setNotifications(items, showing, screen)
+            },
+            play = ::playNotificationSound,
+            repeatPlan = { item ->
+                NotificationPolicy.repeatPlan(item, layoutStore.loadOrNull()?.notifications ?: NotificationSettings.DEFAULT)
+            },
+            schedule = { delayMs, run ->
+                val task = Runnable(run)
+                watchdogHandler.postDelayed(task, delayMs)
+                ({ watchdogHandler.removeCallbacks(task) })
+            },
+            treat = { item -> alertTreatment(Kind.NOTIFICATION, item.important) },
+        )
+    }
+
+    /** The settings that decide what an alert does at this hour. */
+    private fun alertTreatment(kind: Kind, important: Boolean = false): Treatment {
+        val settings = layoutStore.loadOrNull()?.notifications ?: NotificationSettings.DEFAULT
+        val minute = DisplayPolicy.minuteOfDay(currentServerTimeMs(), currentTimezone())
+        return NotificationPolicy.treatment(kind, important, settings, minute)
+    }
+
+    /**
+     * A notification from an automation. Lands in the list whatever the
+     * hour; whether it is shown and heard is the policy's decision.
+     */
+    private fun receiveNotification(data: org.json.JSONObject) {
+        val message = data.optString("message").takeIf(String::isNotBlank) ?: return
+        val item = PanelNotification(
+            id = data.optString("id").ifBlank { java.util.UUID.randomUUID().toString() },
+            title = data.optString("title"),
+            message = message,
+            important = data.optString("importance") == "important",
+            at = currentServerTimeMs(),
+            sound = data.optString("sound").takeIf(String::isNotBlank),
+            durationSeconds = data.optInt("duration").takeIf { data.has("duration") && it > 0 },
+            repeatEverySeconds = data.optInt("repeat_every").takeIf { data.has("repeat_every") },
+            repeatTimes = data.optInt("repeat_times").takeIf { data.has("repeat_times") },
+        )
+        val treatment = alertTreatment(Kind.NOTIFICATION, item.important)
+        if (treatment != Treatment.SUPPRESS) lightTheScreen("nspanel:notification")
+        notifications.receive(item, treatment)
+    }
+
+    /** Never over a call: a sound into an open microphone is the far end's problem. */
+    private fun playNotificationSound(item: PanelNotification) {
+        if (callActive) return
+        val settings = layoutStore.loadOrNull()?.notifications ?: NotificationSettings.DEFAULT
+        val name = item.sound ?: if (item.important) settings.importantSound else settings.normalSound
+        val volume = if (item.important) settings.importantVolume else settings.normalVolume
+        notificationSound(name)?.let { notificationSound.play(it, volume) }
+    }
+
+    /** A ring quiet hours suppressed: not shown, not heard, but in the list. */
+    private fun recordMissed(title: String, message: String) {
+        notifications.receive(
+            PanelNotification(
+                id = java.util.UUID.randomUUID().toString(), title = title, message = message,
+                important = false, at = currentServerTimeMs(),
+            ),
+            Treatment.SUPPRESS,
+        )
+    }
 
     private fun openIntercomSession(): IntercomSession {
         intercomSession?.let { return it }
@@ -1153,9 +1281,14 @@ class MainActivity : Activity() {
     }
 
     private fun showDoorbellEvent(event: DoorbellEvent) {
+        val treatment = alertTreatment(Kind.DOORBELL)
+        if (treatment == Treatment.SUPPRESS) {
+            recordMissed("Front door", "Someone rang the doorbell during quiet hours.")
+            return
+        }
         val intent = rtspDoorbellIntent()
             .putExtra(DoorbellIntent.EXTRA_QUIET_MODE, event.quietMode)
-            .putExtra(DoorbellIntent.EXTRA_CHIME, event.chime)
+            .putExtra(DoorbellIntent.EXTRA_CHIME, if (treatment == Treatment.SILENT) "off" else event.chime)
             .putExtra(DoorbellIntent.EXTRA_CHIME_VOLUME, event.chimeVolume)
             .putExtra(DoorbellIntent.EXTRA_TALKBACK_GAIN, event.talkbackGain)
         event.streamBaseUrl?.let {
@@ -1262,6 +1395,10 @@ class MainActivity : Activity() {
             connectionPhase = status.phase
             if (status.phase == ConnectionPhase.ONLINE || status.phase == ConnectionPhase.NOT_CONFIGURED) {
                 offlineSinceMs = 0L
+                // Home Assistant forgets a panel's state when it restarts.
+                // Without this its entities read unknown until the next
+                // five-minute tick or a change worth reporting.
+                if (status.phase == ConnectionPhase.ONLINE) sendState()
             } else if (offlineSinceMs == 0L) {
                 offlineSinceMs = android.os.SystemClock.elapsedRealtime()
             }
@@ -1320,8 +1457,93 @@ class MainActivity : Activity() {
     private fun reportLinkOccasionally() {
         val now = SystemClock.elapsedRealtime()
         if (now - lastLinkReport < LINK_REPORT_INTERVAL_MS) return
-        val reading = linkWatch.reading() ?: return
-        if (panelApiClient?.reportLink(reading) == true) lastLinkReport = now
+        sendState()
+    }
+
+    /** The panel as it is right now, for [PanelStateReport] to judge. */
+    private fun currentReading(): PanelStateReport.Reading = PanelStateReport.Reading(
+        rssi = linkWatch.rssi,
+        light = LightReading.latest?.toInt(),
+        approach = proximityWake.nearby,
+        screenOn = (getSystemService(POWER_SERVICE) as? android.os.PowerManager)
+            ?.isInteractive ?: true,
+    )
+
+    /**
+     * Report if something has changed enough to be worth a message.
+     *
+     * Called from the light sensor and from an approach, both of which fire
+     * far more often than anyone wants to hear about.
+     */
+    private fun reportStateNow() {
+        val next = currentReading()
+        val since = SystemClock.elapsedRealtime() - lastLinkReport
+        if (!PanelStateReport.shouldSend(lastReading, next, since)) return
+        sendState()
+    }
+
+    private fun sendState() {
+        val reading = currentReading()
+        val fields = mutableMapOf<String, Any>(
+            "approach" to reading.approach,
+            "screen_on" to reading.screenOn,
+            "app_version" to BuildConfig.VERSION_NAME,
+        )
+        reading.rssi?.let { fields["rssi"] = it }
+        reading.light?.let { fields["ambient_light"] = it }
+        dashboardView.currentPageId()?.let { fields["page_id"] = it }
+        currentBrightnessPercent()?.let { fields["brightness"] = it }
+        linkWatch.reading()?.forEach { (key, value) -> fields.putIfAbsent(key, value) }
+        if (panelApiClient?.reportState(fields) == true) {
+            lastLinkReport = SystemClock.elapsedRealtime()
+            lastReading = reading
+        }
+    }
+
+    /**
+     * The brightness this window holds, in percent; null while Android's
+     * own curve is in charge, because then the panel does not know it.
+     */
+    private fun currentBrightnessPercent(): Int? =
+        window.attributes.screenBrightness.takeIf { it >= 0f }?.let { Math.round(it * 100) }
+
+    /**
+     * Do what one of this panel's entities in Home Assistant asked.
+     *
+     * Only ever while the socket is up: Home Assistant does not queue these,
+     * so nothing here can arrive late into an empty room.
+     */
+    private fun runCommand(name: String, message: org.json.JSONObject) {
+        when (name) {
+            "set_screen" -> {
+                if (message.optBoolean("on", true)) {
+                    sleepRequested = false
+                    if (message.has("brightness")) {
+                        commandedBrightness = message.optInt("brightness").coerceIn(1, 100) / 100f
+                    }
+                    lightTheScreen("nspanel:command")
+                } else {
+                    sleepRequested = true
+                    commandedBrightness = null
+                }
+                applyDisplayPolicy()
+            }
+            "restart" -> restartPanel()
+            "reload_layout" -> startPanelSync()
+            // The editor's "On panel" button: one sound, once, at the volume
+            // beside its picker, so a choice is heard on this speaker.
+            "play_sound" -> {
+                if (callActive) return
+                val sound = message.optString("sound")
+                val resource = RING_SOUNDS[sound] ?: NOTIFICATION_SOUNDS[sound] ?: return
+                notificationSound.play(OneShot(resource, null), message.optInt("volume", 70))
+            }
+            "show_page" -> {
+                val page = message.optString("page_id")
+                if (page.isNotBlank() && dashboardView.showPage(page)) sendState()
+            }
+            else -> Log.i(TAG, "Ignoring unknown command $name")
+        }
     }
 
     private fun checkWatchdog() {
@@ -1437,6 +1659,8 @@ class MainActivity : Activity() {
         private const val DISPLAY_TICK_MS = 30_000L
         /** Long enough to light the screen and hand it to the call. */
         private const val CALL_WAKE_MS = 30_000L
+        /** The display timeout while Home Assistant wants the screen dark. */
+        private const val SLEEP_TIMEOUT_MS = 5_000
         private const val WATCHDOG_OFFLINE_MS = 120_000L
         private const val WATCHDOG_COOLDOWN_MS = 300_000L
         private val BACKGROUND = Color.rgb(16, 20, 22)

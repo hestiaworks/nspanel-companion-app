@@ -23,6 +23,8 @@ class PanelApiClient(
     private val onEntityChanged: (EntityState) -> Unit,
     private val onDoorbellEvent: (DoorbellEvent) -> Unit,
     private val onRestart: () -> Unit = {},
+    private val onCommand: (String, JSONObject) -> Unit = { _, _ -> },
+    private val onNotification: (JSONObject) -> Unit = {},
     private val onRevoked: () -> Unit = {},
     private val onHistory: (HistorySeries) -> Unit = {},
     private val onRoster: (List<IntercomPeer>) -> Unit = {},
@@ -69,6 +71,13 @@ class PanelApiClient(
      * nobody reads. This lands in the panel's event list, which the interface
      * already shows.
      */
+    /** Everything the panel can say about itself, for its entities. */
+    fun reportState(fields: Map<String, Any>): Boolean {
+        val body = JSONObject().put("type", "panel_state")
+        fields.forEach { (key, value) -> body.put(key, value) }
+        return socket?.send(body.toString()) ?: false
+    }
+
     /** What this panel's radio currently sees. Shown in the admin list. */
     fun reportLink(reading: Map<String, Any>): Boolean {
         val body = JSONObject().put("type", "panel_link")
@@ -193,6 +202,14 @@ class PanelApiClient(
                     onCallBusy(message.optString("name").ifBlank { message.optString("panel_id") })
                 }
                 "restart" -> handler.post { onRestart() }
+                // What the panel's device entities in Home Assistant ask of
+                // it: the screen, a restart, a fresh layout, a page.
+                // From the notify action: shown, heard, or only listed,
+                // as this panel's quiet hours decide.
+                "notification" -> message.optJSONObject("data")?.let { data -> handler.post { onNotification(data) } }
+                "command" -> message.optString("command").takeIf(String::isNotBlank)?.let { name ->
+                    handler.post { onCommand(name, message) }
+                }
                 // Unpaired from Home Assistant, said while the panel is
                 // still listening. Without this it carries on showing a
                 // dashboard it is no longer entitled to until something

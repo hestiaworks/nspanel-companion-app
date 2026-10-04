@@ -34,24 +34,62 @@ class ProximityWake(context: Context) : SensorEventListener {
      */
     private val sensor: Sensor? = sensors.getDefaultSensor(Sensor.TYPE_PROXIMITY)
     private var listening = false
+    private var waking = false
     private var baseline = Float.NaN
     private var margin = marginFor("medium")
+
+    /**
+     * Called when someone arrives, whether or not the screen is woken.
+     *
+     * An approach is an approach even on a panel that is already lit, and
+     * Home Assistant wants to know either way.
+     */
+    var onApproach: (() -> Unit)? = null
+
+    /** When the last approach was, so [nearby] can decay. */
+    private var approachedAt = 0L
+
+    /**
+     * Whether someone is at the panel now.
+     *
+     * The sensor reports an arrival, not a presence, so this holds for a
+     * while afterwards — an occupancy entity that was true for one sampling
+     * interval would be unusable as a trigger.
+     */
+    val nearby: Boolean
+        get() = approachedAt != 0L &&
+            android.os.SystemClock.elapsedRealtime() - approachedAt < NEARBY_MS
 
     /** Whether this panel has a proximity sensor to listen to at all. */
     val available: Boolean get() = sensor != null
 
+    /**
+     * Whether an approach should light the screen.
+     *
+     * Separate from listening: the panel watches the sensor whenever it is
+     * running, because Home Assistant's approach entity is worth having on
+     * a panel that is configured not to wake. Fifteen comparisons a second
+     * is not a cost worth a setting.
+     */
     fun setEnabled(enabled: Boolean, sensitivity: String = "medium") {
         margin = marginFor(sensitivity)
-        if (enabled == listening) return
+        waking = enabled
+    }
+
+    /** Begin watching. Safe to call twice. */
+    fun start() {
+        if (listening) return
         val target = sensor ?: return
-        listening = enabled
-        if (enabled) {
-            baseline = Float.NaN
-            sensors.registerListener(this, target, SensorManager.SENSOR_DELAY_NORMAL)
-            Log.i(TAG, "Waking on approach, margin $margin")
-        } else {
-            sensors.unregisterListener(this)
-        }
+        listening = true
+        baseline = Float.NaN
+        sensors.registerListener(this, target, SensorManager.SENSOR_DELAY_NORMAL)
+        Log.i(TAG, "Watching for approach, margin $margin")
+    }
+
+    fun stop() {
+        if (!listening) return
+        listening = false
+        sensors.unregisterListener(this)
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
@@ -62,6 +100,10 @@ class ProximityWake(context: Context) : SensorEventListener {
         baseline = updatedBaseline(previous, value)
         // Nothing to compare against on the very first reading.
         if (previous.isNaN() || !approached(value, previous, margin)) return
+        approachedAt = android.os.SystemClock.elapsedRealtime()
+        onApproach?.invoke()
+        // Waking is a separate question from noticing.
+        if (!waking) return
         // Already awake: nothing to do, and taking a wake lock would only
         // fight the display timeout the panel is configured with.
         if (power.isInteractive) return
@@ -80,6 +122,15 @@ class ProximityWake(context: Context) : SensorEventListener {
          * timeout, short enough that a passer-by does not pin it on.
          */
         const val WAKE_MS = 3_000L
+
+        /**
+         * How long after an arrival the panel still counts as occupied.
+         *
+         * The sensor reports arrivals, not presence. Thirty seconds is long
+         * enough to be a usable trigger and short enough that a room reads
+         * empty soon after someone walks away.
+         */
+        const val NEARBY_MS = 30_000L
 
         /**
          * How far above the ambient reading counts as someone arriving.

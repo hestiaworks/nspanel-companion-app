@@ -64,3 +64,46 @@ class PanelRinger(private val context: Context) {
         playing.release()
     }
 }
+
+/**
+ * A notification's sound: played once, never looped, and never over a call.
+ *
+ * Separate from [PanelRinger] so a notification arriving while the doorbell
+ * rings does not stop the ring.
+ */
+class NotificationSoundPlayer(private val context: Context) {
+
+    private var player: MediaPlayer? = null
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    fun play(sound: OneShot, volumePercent: Int) {
+        stop()
+        try {
+            val attributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
+            val session = (context.getSystemService(Context.AUDIO_SERVICE) as AudioManager)
+                .generateAudioSessionId()
+            player = MediaPlayer.create(context, sound.resource, attributes, session)?.apply {
+                val level = volumeOf(volumePercent)
+                setVolume(level, level)
+                setOnCompletionListener { stop() }
+                start()
+            }
+            sound.limitMs?.let { handler.postDelayed(::stop, it) }
+        } catch (error: Exception) {
+            // The notification is still shown; only its sound is lost.
+            Log.w("NotificationSound", "Could not play notification sound", error)
+            player = null
+        }
+    }
+
+    fun stop() {
+        handler.removeCallbacksAndMessages(null)
+        val playing = player ?: return
+        player = null
+        runCatching { playing.stop() }
+        playing.release()
+    }
+}

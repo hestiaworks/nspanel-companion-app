@@ -12,7 +12,60 @@ val RING_SOUNDS = mapOf(
     "chime_1" to R.raw.chime_1,
     "chime_2" to R.raw.chime_2,
     "chime_3" to R.raw.chime_3,
+    "ding_dong" to R.raw.ding_dong,
+    "three_tone" to R.raw.three_tone,
+    "westminster" to R.raw.westminster,
+    "marimba" to R.raw.marimba,
+    "tubular" to R.raw.tubular,
+    "vibraphone" to R.raw.vibraphone,
+    "shop_door" to R.raw.shop_door,
+    "music_box" to R.raw.music_box,
+    "kalimba" to R.raw.kalimba,
+    "bell_chords" to R.raw.bell_chords,
 )
+
+/**
+ * The notification category: short, played once.
+ *
+ * Synthesised for this project, or from Kenney's Interface Sounds (CC0), so
+ * none of them carries licence terms. Mixed to the same loudness as the
+ * rings, so one volume setting means the same thing across both.
+ */
+val NOTIFICATION_SOUNDS: Map<String, Int> = mapOf(
+    "notify_soft" to R.raw.notify_soft,
+    "notify_chime" to R.raw.notify_chime,
+    "notify_ping" to R.raw.notify_ping,
+    "notify_bright" to R.raw.notify_bright,
+    "notify_confirm" to R.raw.notify_confirm,
+    "notify_query" to R.raw.notify_query,
+    "notify_glass" to R.raw.notify_glass,
+    "notify_kalimba" to R.raw.notify_kalimba,
+    "notify_knock" to R.raw.notify_knock,
+    "notify_vibraphone" to R.raw.notify_vibraphone,
+    "notify_drop" to R.raw.notify_drop,
+    "notify_music_box" to R.raw.notify_music_box,
+    "notify_alert" to R.raw.notify_alert,
+    "notify_double" to R.raw.notify_double,
+    "notify_rise" to R.raw.notify_rise,
+    "notify_confirm_long" to R.raw.notify_confirm_long,
+    "notify_triple" to R.raw.notify_triple,
+    "notify_kalimba_run" to R.raw.notify_kalimba_run,
+    "notify_bell_chord" to R.raw.notify_bell_chord,
+)
+
+/** What plays when a notification names a sound this build does not carry. */
+const val FALLBACK_NOTIFICATION_SOUND = "notify_soft"
+
+/** A notification sound to play: a resource, and where to cut it, if anywhere. */
+data class OneShot(val resource: Int, val limitMs: Long?)
+
+/** What a notification named [sound] plays, or null for silence. */
+fun notificationSound(sound: String): OneShot? = when {
+    sound == "off" || sound.isBlank() -> null
+    // A name from an editor newer than this panel: a notification someone
+    // asked to hear should not arrive silently, so it gets the default.
+    else -> OneShot(NOTIFICATION_SOUNDS[sound] ?: NOTIFICATION_SOUNDS.getValue(FALLBACK_NOTIFICATION_SOUND), null)
+}
 
 /** Whether a sound should be made at all. */
 fun shouldPlay(sound: String, quiet: Boolean): Boolean =

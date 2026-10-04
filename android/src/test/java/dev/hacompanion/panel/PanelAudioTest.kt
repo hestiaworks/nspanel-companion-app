@@ -98,4 +98,24 @@ class PanelAudioTest {
         // Anything the panel is handed out of range is pulled back in.
         assertEquals(1f, volumeOf(140), 0.001f)
     }
+
+    @Test
+    fun `a silent notification plays nothing`() {
+        assertEquals(null, notificationSound("off"))
+    }
+
+    @Test
+    fun `a bundled notification sound plays in full`() {
+        assertEquals(OneShot(R.raw.notify_ping, null), notificationSound("notify_ping"))
+    }
+
+    @Test
+    fun `an unknown notification sound plays the default rather than nothing`() {
+        assertEquals(OneShot(R.raw.notify_soft, null), notificationSound("notify_from_the_future"))
+    }
+
+    @Test
+    fun `a doorbell sound is never offered as a notification`() {
+        assertTrue(RING_SOUNDS.keys.none { it in NOTIFICATION_SOUNDS })
+    }
 }
