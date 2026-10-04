@@ -51,7 +51,7 @@ import dev.hacompanion.panel.ui.theme.LocalPanelColors
  * waits. Every measurement is from Panel Notifications.dc.html.
  */
 
-/** How long a banner stays, while nobody is touching it. */
+/** How long a banner stays, while nobody is touching it, unless the panel is set otherwise. */
 const val BANNER_MS = 6_000L
 
 private val BannerHeight = 116.dp
@@ -65,11 +65,17 @@ interface NotificationLayerActions {
 
 /** Whatever [showing] says, over everything else on the screen. */
 @Composable
-fun BoxScope.NotificationLayer(showing: Showing?, time: (Long) -> String, actions: NotificationLayerActions) {
+fun BoxScope.NotificationLayer(
+    showing: Showing?,
+    time: (Long) -> String,
+    actions: NotificationLayerActions,
+    /** How long this banner stays: its own duration, or the panel's setting. */
+    bannerMs: (PanelNotification) -> Long = { BANNER_MS },
+) {
     when (showing) {
         null -> Unit
         is Showing.Banner -> key(showing.item.id) {
-            NotificationBanner(showing.item, showing.more, actions)
+            NotificationBanner(showing.item, showing.more, actions, bannerMs(showing.item))
         }
         is Showing.Sheet -> key(showing.item.id) {
             ImportantSheet(showing.item, showing.position, showing.of, time(showing.item.at), actions)
@@ -95,7 +101,7 @@ fun Bell(tint: Color, size: Dp) {
  * a strip repaint costs. The countdown pauses while a finger is on it.
  */
 @Composable
-private fun BoxScope.NotificationBanner(item: PanelNotification, more: Int, actions: NotificationLayerActions) {
+private fun BoxScope.NotificationBanner(item: PanelNotification, more: Int, actions: NotificationLayerActions, durationMs: Long) {
     val colors = LocalPanelColors.current
     val offset = remember { Animatable(-BannerHeight.value) }
     var remaining by remember { mutableStateOf(1f) }
@@ -107,7 +113,7 @@ private fun BoxScope.NotificationBanner(item: PanelNotification, more: Int, acti
         var last = withFrameMillis { it }
         while (remaining > 0f) {
             val now = withFrameMillis { it }
-            if (!pressed) remaining -= (now - last) / BANNER_MS.toFloat()
+            if (!pressed) remaining -= (now - last) / durationMs.toFloat()
             last = now
         }
         offset.animateTo(-BannerHeight.value, tween(180))

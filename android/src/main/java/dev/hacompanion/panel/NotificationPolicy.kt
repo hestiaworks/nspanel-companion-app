@@ -32,12 +32,20 @@ data class NotificationSettings(
     val normalVolume: Int = 60,
     val importantSound: String = "notify_alert",
     val importantVolume: Int = 80,
+    /** How long a normal notification's banner stays: 3–30 s, the design's 6 by default. */
+    val bannerSeconds: Int = 6,
+    /** How often an unanswered important notification rings again; 0 is never. */
+    val repeatEverySeconds: Int = 0,
+    /** How many times it rings again; 0 is until it is answered. */
+    val repeatTimes: Int = 3,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("doorbell", JSONObject().put("dnd", doorbellDnd))
         .put("intercom", JSONObject().put("dnd", intercomDnd))
-        .put("normal", JSONObject().put("sound", normalSound).put("volume", normalVolume).put("dnd", normalDnd))
-        .put("important", JSONObject().put("sound", importantSound).put("volume", importantVolume))
+        .put("normal", JSONObject().put("sound", normalSound).put("volume", normalVolume).put("dnd", normalDnd)
+            .put("duration", bannerSeconds))
+        .put("important", JSONObject().put("sound", importantSound).put("volume", importantVolume)
+            .put("repeat_every", repeatEverySeconds).put("repeat_times", repeatTimes))
         .put("dnd", JSONObject().put("enabled", dnd.enabled)
             .put("from", clock(dnd.fromMinute)).put("to", clock(dnd.toMinute)))
 
@@ -68,6 +76,11 @@ data class NotificationSettings(
                 normalVolume = (normal?.optInt("volume", DEFAULT.normalVolume) ?: DEFAULT.normalVolume).coerceIn(0, 100),
                 importantSound = important?.optString("sound", DEFAULT.importantSound) ?: DEFAULT.importantSound,
                 importantVolume = (important?.optInt("volume", DEFAULT.importantVolume) ?: DEFAULT.importantVolume).coerceIn(0, 100),
+                // Clamped as well as validated in Home Assistant: a layout from
+                // a newer editor must not hold a banner up for a minute.
+                bannerSeconds = (normal?.optInt("duration", DEFAULT.bannerSeconds) ?: DEFAULT.bannerSeconds).coerceIn(3, 30),
+                repeatEverySeconds = (important?.optInt("repeat_every", 0) ?: 0).coerceAtLeast(0),
+                repeatTimes = (important?.optInt("repeat_times", DEFAULT.repeatTimes) ?: DEFAULT.repeatTimes).coerceAtLeast(0),
             )
         }
 
@@ -80,7 +93,22 @@ data class NotificationSettings(
  *
  * Pure, so the whole table is tested away from any sound or screen.
  */
+/** How an unanswered important notification rings again: every [everyMs], [times] times (0 is until answered). */
+data class RepeatPlan(val everyMs: Long, val times: Int)
+
 object NotificationPolicy {
+
+    /** How long this notification's banner stays: its own duration, or the panel's. */
+    fun bannerMs(item: PanelNotification, settings: NotificationSettings): Long =
+        (item.durationSeconds ?: settings.bannerSeconds).coerceIn(3, 30) * 1000L
+
+    /** Whether, and how, this notification rings again while unanswered. */
+    fun repeatPlan(item: PanelNotification, settings: NotificationSettings): RepeatPlan? {
+        if (!item.important) return null
+        val every = item.repeatEverySeconds ?: settings.repeatEverySeconds
+        if (every <= 0) return null
+        return RepeatPlan(everyMs = every * 1000L, times = (item.repeatTimes ?: settings.repeatTimes).coerceAtLeast(0))
+    }
 
     fun treatment(kind: Kind, important: Boolean, settings: NotificationSettings, minuteOfDay: Int): Treatment {
         // The one rule above the table: otherwise "quiet at night" eventually

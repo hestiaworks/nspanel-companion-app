@@ -176,3 +176,57 @@ class NotificationSettingsParseTest {
         assertEquals(settings, NotificationSettings.parse(settings.toJson()))
     }
 }
+
+/** How long a banner stays, and whether an important notification rings again. */
+class NotificationTimingTest {
+
+    private fun note(important: Boolean = true, duration: Int? = null, every: Int? = null, times: Int? = null) =
+        PanelNotification(id = "a", title = "t", message = "m", important = important, at = 0L,
+            durationSeconds = duration, repeatEverySeconds = every, repeatTimes = times)
+
+    @Test
+    fun `the settings carry the banner duration and the repeats`() {
+        val settings = NotificationSettings.parse(org.json.JSONObject(
+            """{"normal": {"duration": 20}, "important": {"repeat_every": 60, "repeat_times": 0}}"""))
+        assertEquals(20, settings.bannerSeconds)
+        assertEquals(60, settings.repeatEverySeconds)
+        assertEquals(0, settings.repeatTimes)
+        assertEquals(settings, NotificationSettings.parse(settings.toJson()))
+    }
+
+    @Test
+    fun `without settings a banner stays six seconds and nothing repeats`() {
+        val settings = NotificationSettings.parse(null)
+        assertEquals(6_000L, NotificationPolicy.bannerMs(note(important = false), settings))
+        assertEquals(null, NotificationPolicy.repeatPlan(note(), settings))
+    }
+
+    @Test
+    fun `a duration out of range is clamped rather than trusted`() {
+        val settings = NotificationSettings.parse(org.json.JSONObject("""{"normal": {"duration": 900}}"""))
+        assertEquals(30, settings.bannerSeconds)
+    }
+
+    @Test
+    fun `one notification may stay longer than the setting`() {
+        assertEquals(20_000L, NotificationPolicy.bannerMs(note(important = false, duration = 20), NotificationSettings.DEFAULT))
+    }
+
+    @Test
+    fun `an important notification repeats as the settings say`() {
+        val settings = NotificationSettings.DEFAULT.copy(repeatEverySeconds = 30, repeatTimes = 5)
+        assertEquals(RepeatPlan(everyMs = 30_000L, times = 5), NotificationPolicy.repeatPlan(note(), settings))
+    }
+
+    @Test
+    fun `one notification may override the repeats`() {
+        assertEquals(RepeatPlan(everyMs = 120_000L, times = 0),
+            NotificationPolicy.repeatPlan(note(every = 120, times = 0), NotificationSettings.DEFAULT))
+    }
+
+    @Test
+    fun `a normal notification never repeats`() {
+        val settings = NotificationSettings.DEFAULT.copy(repeatEverySeconds = 30)
+        assertEquals(null, NotificationPolicy.repeatPlan(note(important = false), settings))
+    }
+}

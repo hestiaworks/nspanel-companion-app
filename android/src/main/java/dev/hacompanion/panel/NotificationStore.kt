@@ -15,6 +15,15 @@ data class PanelNotification(
     val read: Boolean = false,
     /** A sound named by the sender for this one, overriding the panel's. */
     val sound: String? = null,
+    /**
+     * The sender's own timing for this one, overriding the panel's: how long
+     * its banner stays, and how an important one repeats. Not stored — they
+     * matter only while it is on screen, and the screen does not survive a
+     * restart.
+     */
+    val durationSeconds: Int? = null,
+    val repeatEverySeconds: Int? = null,
+    val repeatTimes: Int? = null,
 )
 
 /** Where the store's JSON lives. A file on the panel; a field in a test. */

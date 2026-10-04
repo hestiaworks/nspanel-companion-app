@@ -20,10 +20,19 @@ class NotificationCenter(
     private val store: NotificationStore,
     private val publish: (items: List<PanelNotification>, showing: Showing?, screen: NotificationScreen?) -> Unit,
     private val play: (PanelNotification) -> Unit = {},
+    /** How an important notification repeats, from its own fields and the panel's settings. */
+    private val repeatPlan: (PanelNotification) -> RepeatPlan? = { null },
+    /** Run something later; returns how to cancel it. A Handler on the panel, a list in tests. */
+    private val schedule: (Long, () -> Unit) -> (() -> Unit) = { _, _ -> {} },
 ) : NotificationActions {
 
     private val queue = NotificationQueue()
     private var screen: NotificationScreen? = null
+
+    /** The sheet whose sound is repeating, how many times it has, and how to stop it. */
+    private var repeating: String? = null
+    private var repeatsDone = 0
+    private var cancelRepeat: (() -> Unit)? = null
 
     fun items(): List<PanelNotification> = store.items()
 
@@ -32,6 +41,9 @@ class NotificationCenter(
         if (treatment != Treatment.SUPPRESS) queue.arrive(item)
         if (treatment == Treatment.RING) play(item)
         changed()
+        // Another important one arriving restarts the count for the sheet on
+        // screen: the room has just been told again that something waits.
+        if (item.important && treatment != Treatment.SUPPRESS) syncRepeats(restart = true)
     }
 
     /** Redraw from what is stored, as after a restart. */
@@ -101,5 +113,35 @@ class NotificationCenter(
         val open = screen
         if (open is NotificationScreen.Detail && store.find(open.id) == null) screen = NotificationScreen.List
         publish(store.items(), queue.showing(), screen)
+        syncRepeats()
+    }
+
+    /**
+     * Keep the repeat cycle on whichever sheet is showing.
+     *
+     * A sheet that leaves the screen — GOT IT, LATER, deleted — takes its
+     * cycle with it; the next sheet starts its own.
+     */
+    private fun syncRepeats(restart: Boolean = false) {
+        val sheet = queue.showing() as? Showing.Sheet
+        val id = sheet?.item?.id
+        if (!restart && id == repeating) return
+        cancelRepeat?.invoke()
+        cancelRepeat = null
+        repeating = id
+        repeatsDone = 0
+        val item = sheet?.item ?: return
+        val plan = repeatPlan(item) ?: return
+        if (plan.everyMs > 0) repeatLater(item, plan)
+    }
+
+    private fun repeatLater(item: PanelNotification, plan: RepeatPlan) {
+        cancelRepeat = schedule(plan.everyMs) {
+            cancelRepeat = null
+            if (repeating != item.id) return@schedule
+            play(item)
+            repeatsDone += 1
+            if (plan.times == 0 || repeatsDone < plan.times) repeatLater(item, plan)
+        }
     }
 }

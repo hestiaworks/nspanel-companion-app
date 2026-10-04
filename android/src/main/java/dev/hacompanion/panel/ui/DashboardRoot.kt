@@ -1,6 +1,7 @@
 package dev.hacompanion.panel.ui
 
 import dev.hacompanion.panel.NotificationBadge
+import dev.hacompanion.panel.NotificationPolicy
 import dev.hacompanion.panel.NotificationScreen
 import dev.hacompanion.panel.NotificationTime
 import dev.hacompanion.panel.PanelNotification
@@ -232,7 +233,10 @@ fun DashboardRoot(
             }
             }
         }
-        NotificationLayer(ui.notificationShowing, { NotificationTime.clock(it, zone) }, actions)
+        NotificationLayer(
+            ui.notificationShowing, { NotificationTime.clock(it, zone) }, actions,
+            bannerMs = { NotificationPolicy.bannerMs(it, ui.layout.notifications) },
+        )
         }
     }
 }

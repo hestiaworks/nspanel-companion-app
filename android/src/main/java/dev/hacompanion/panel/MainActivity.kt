@@ -1132,6 +1132,14 @@ class MainActivity : Activity() {
                 if (::dashboardView.isInitialized) dashboardView.setNotifications(items, showing, screen)
             },
             play = ::playNotificationSound,
+            repeatPlan = { item ->
+                NotificationPolicy.repeatPlan(item, layoutStore.loadOrNull()?.notifications ?: NotificationSettings.DEFAULT)
+            },
+            schedule = { delayMs, run ->
+                val task = Runnable(run)
+                watchdogHandler.postDelayed(task, delayMs)
+                ({ watchdogHandler.removeCallbacks(task) })
+            },
         )
     }
 
@@ -1155,6 +1163,9 @@ class MainActivity : Activity() {
             important = data.optString("importance") == "important",
             at = currentServerTimeMs(),
             sound = data.optString("sound").takeIf(String::isNotBlank),
+            durationSeconds = data.optInt("duration").takeIf { data.has("duration") && it > 0 },
+            repeatEverySeconds = data.optInt("repeat_every").takeIf { data.has("repeat_every") },
+            repeatTimes = data.optInt("repeat_times").takeIf { data.has("repeat_times") },
         )
         val treatment = alertTreatment(Kind.NOTIFICATION, item.important)
         if (treatment != Treatment.SUPPRESS) lightTheScreen("nspanel:notification")
