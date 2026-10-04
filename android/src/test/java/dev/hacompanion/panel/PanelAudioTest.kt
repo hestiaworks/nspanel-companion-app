@@ -105,7 +105,17 @@ class PanelAudioTest {
     }
 
     @Test
-    fun `a notification sound not yet bundled plays the cut-short chime`() {
-        assertEquals(OneShot(R.raw.chime_1, NOTIFICATION_STOPGAP_MS), notificationSound("notify_soft"))
+    fun `a bundled notification sound plays in full`() {
+        assertEquals(OneShot(R.raw.notify_ping, null), notificationSound("notify_ping"))
+    }
+
+    @Test
+    fun `an unknown notification sound plays the default rather than nothing`() {
+        assertEquals(OneShot(R.raw.notify_soft, null), notificationSound("notify_from_the_future"))
+    }
+
+    @Test
+    fun `a doorbell sound is never offered as a notification`() {
+        assertTrue(RING_SOUNDS.keys.none { it in NOTIFICATION_SOUNDS })
     }
 }
