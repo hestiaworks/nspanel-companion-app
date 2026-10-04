@@ -1518,6 +1518,14 @@ class MainActivity : Activity() {
             }
             "restart" -> restartPanel()
             "reload_layout" -> startPanelSync()
+            // The editor's "On panel" button: one sound, once, at the volume
+            // beside its picker, so a choice is heard on this speaker.
+            "play_sound" -> {
+                if (callActive) return
+                val sound = message.optString("sound")
+                val resource = RING_SOUNDS[sound] ?: NOTIFICATION_SOUNDS[sound] ?: return
+                notificationSound.play(OneShot(resource, null), message.optInt("volume", 70))
+            }
             "show_page" -> {
                 val page = message.optString("page_id")
                 if (page.isNotBlank() && dashboardView.showPage(page)) sendState()
