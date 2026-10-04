@@ -1310,6 +1310,10 @@ class MainActivity : Activity() {
             connectionPhase = status.phase
             if (status.phase == ConnectionPhase.ONLINE || status.phase == ConnectionPhase.NOT_CONFIGURED) {
                 offlineSinceMs = 0L
+                // Home Assistant forgets a panel's state when it restarts.
+                // Without this its entities read unknown until the next
+                // five-minute tick or a change worth reporting.
+                if (status.phase == ConnectionPhase.ONLINE) sendState()
             } else if (offlineSinceMs == 0L) {
                 offlineSinceMs = android.os.SystemClock.elapsedRealtime()
             }
