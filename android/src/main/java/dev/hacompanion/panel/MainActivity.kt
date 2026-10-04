@@ -1140,6 +1140,7 @@ class MainActivity : Activity() {
                 watchdogHandler.postDelayed(task, delayMs)
                 ({ watchdogHandler.removeCallbacks(task) })
             },
+            treat = { item -> alertTreatment(Kind.NOTIFICATION, item.important) },
         )
     }
 

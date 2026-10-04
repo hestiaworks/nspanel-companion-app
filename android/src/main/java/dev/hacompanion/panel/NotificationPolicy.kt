@@ -38,12 +38,17 @@ data class NotificationSettings(
     val repeatEverySeconds: Int = 0,
     /** How many times it rings again; 0 is until it is answered. */
     val repeatTimes: Int = 3,
+    /** How often an unread regular notification's banner comes back; 0 is never. */
+    val normalRepeatEverySeconds: Int = 0,
+    /** How many times it comes back; 0 is until it is read. */
+    val normalRepeatTimes: Int = 3,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("doorbell", JSONObject().put("dnd", doorbellDnd))
         .put("intercom", JSONObject().put("dnd", intercomDnd))
         .put("normal", JSONObject().put("sound", normalSound).put("volume", normalVolume).put("dnd", normalDnd)
-            .put("duration", bannerSeconds))
+            .put("duration", bannerSeconds)
+            .put("repeat_every", normalRepeatEverySeconds).put("repeat_times", normalRepeatTimes))
         .put("important", JSONObject().put("sound", importantSound).put("volume", importantVolume)
             .put("repeat_every", repeatEverySeconds).put("repeat_times", repeatTimes))
         .put("dnd", JSONObject().put("enabled", dnd.enabled)
@@ -81,6 +86,8 @@ data class NotificationSettings(
                 bannerSeconds = (normal?.optInt("duration", DEFAULT.bannerSeconds) ?: DEFAULT.bannerSeconds).coerceIn(3, 30),
                 repeatEverySeconds = (important?.optInt("repeat_every", 0) ?: 0).coerceAtLeast(0),
                 repeatTimes = (important?.optInt("repeat_times", DEFAULT.repeatTimes) ?: DEFAULT.repeatTimes).coerceAtLeast(0),
+                normalRepeatEverySeconds = (normal?.optInt("repeat_every", 0) ?: 0).coerceAtLeast(0),
+                normalRepeatTimes = (normal?.optInt("repeat_times", DEFAULT.normalRepeatTimes) ?: DEFAULT.normalRepeatTimes).coerceAtLeast(0),
             )
         }
 
@@ -102,12 +109,18 @@ object NotificationPolicy {
     fun bannerMs(item: PanelNotification, settings: NotificationSettings): Long =
         (item.durationSeconds ?: settings.bannerSeconds).coerceIn(3, 30) * 1000L
 
-    /** Whether, and how, this notification rings again while unanswered. */
+    /**
+     * Whether, and how, this notification comes back: an important one rings
+     * again while unanswered, a regular one shows its banner again while
+     * unread. Each by its own settings, unless the sender gave its own.
+     */
     fun repeatPlan(item: PanelNotification, settings: NotificationSettings): RepeatPlan? {
-        if (!item.important) return null
-        val every = item.repeatEverySeconds ?: settings.repeatEverySeconds
+        val every = item.repeatEverySeconds
+            ?: if (item.important) settings.repeatEverySeconds else settings.normalRepeatEverySeconds
         if (every <= 0) return null
-        return RepeatPlan(everyMs = every * 1000L, times = (item.repeatTimes ?: settings.repeatTimes).coerceAtLeast(0))
+        val times = item.repeatTimes
+            ?: if (item.important) settings.repeatTimes else settings.normalRepeatTimes
+        return RepeatPlan(everyMs = every * 1000L, times = times.coerceAtLeast(0))
     }
 
     fun treatment(kind: Kind, important: Boolean, settings: NotificationSettings, minuteOfDay: Int): Treatment {

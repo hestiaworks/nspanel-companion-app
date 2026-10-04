@@ -171,3 +171,90 @@ class NotificationRepeatTest {
         assertTrue(timers.isEmpty())
     }
 }
+
+/** A regular notification coming back, banner and all, while it is unread. */
+class NormalRepeatTest {
+
+    private class Memory : NotificationStorage {
+        var text: String? = null
+        override fun read(): String? = text
+        override fun write(text: String) { this.text = text }
+    }
+
+    private val timers = mutableListOf<Pair<Long, () -> Unit>>()
+    private fun tick() { timers.removeAt(0).second() }
+    private val played = mutableListOf<String>()
+    private var showing: Showing? = null
+    private var quiet = Treatment.RING
+    private val store = NotificationStore(Memory())
+
+    private fun center(plan: RepeatPlan?) = NotificationCenter(
+        store, { _, s, _ -> showing = s }, { played += it.id },
+        repeatPlan = { if (!it.important) plan else null },
+        schedule = { delay, run ->
+            val entry = delay to run
+            timers += entry
+            ({ timers.remove(entry) })
+        },
+        treat = { quiet },
+    )
+
+    private fun normal(id: String) = PanelNotification(id = id, title = id, message = "m", important = false, at = 0L)
+
+    @Test
+    fun `an unread banner comes back with its sound`() {
+        val center = center(RepeatPlan(everyMs = 60_000, times = 2))
+        center.receive(normal("a"), Treatment.RING)
+        center.closeBanner("a")
+        tick()
+        assertEquals(Showing.Banner(normal("a"), more = 0), showing)
+        assertEquals(listOf("a", "a"), played)
+        center.closeBanner("a")
+        tick()
+        assertEquals(listOf("a", "a", "a"), played)
+        assertTrue(timers.isEmpty())
+    }
+
+    @Test
+    fun `reading it stops the repeats`() {
+        val center = center(RepeatPlan(everyMs = 60_000, times = 0))
+        center.receive(normal("a"), Treatment.RING)
+        center.openNotification("a")
+        assertTrue(timers.isEmpty())
+    }
+
+    @Test
+    fun `deleting or clearing stops them too`() {
+        val center = center(RepeatPlan(everyMs = 60_000, times = 0))
+        center.receive(normal("a"), Treatment.RING)
+        center.receive(normal("b"), Treatment.RING)
+        center.deleteNotification("a")
+        assertEquals(1, timers.size)
+        center.clearAll()
+        assertTrue(timers.isEmpty())
+    }
+
+    @Test
+    fun `in quiet hours a repeat shows without sound, or not at all`() {
+        val center = center(RepeatPlan(everyMs = 60_000, times = 0))
+        center.receive(normal("a"), Treatment.RING)
+        center.closeBanner("a")
+        quiet = Treatment.SILENT
+        tick()
+        assertEquals(Showing.Banner(normal("a"), more = 0), showing)
+        assertEquals(listOf("a"), played)
+        center.closeBanner("a")
+        quiet = Treatment.SUPPRESS
+        tick()
+        assertNull(showing)
+        assertEquals(listOf("a"), played)
+        assertEquals(1, timers.size)
+    }
+
+    @Test
+    fun `one that arrived suppressed does not start repeating`() {
+        val center = center(RepeatPlan(everyMs = 60_000, times = 0))
+        center.receive(normal("a"), Treatment.SUPPRESS)
+        assertTrue(timers.isEmpty())
+    }
+}

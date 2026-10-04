@@ -24,6 +24,8 @@ class NotificationCenter(
     private val repeatPlan: (PanelNotification) -> RepeatPlan? = { null },
     /** Run something later; returns how to cancel it. A Handler on the panel, a list in tests. */
     private val schedule: (Long, () -> Unit) -> (() -> Unit) = { _, _ -> {} },
+    /** What a regular notification's repeat does at this hour: quiet hours apply to each one. */
+    private val treat: (PanelNotification) -> Treatment = { Treatment.RING },
 ) : NotificationActions {
 
     private val queue = NotificationQueue()
@@ -33,6 +35,9 @@ class NotificationCenter(
     private var repeating: String? = null
     private var repeatsDone = 0
     private var cancelRepeat: (() -> Unit)? = null
+
+    /** Unread regular notifications that will come back, by id, and how to stop each. */
+    private val comingBack = mutableMapOf<String, () -> Unit>()
 
     fun items(): List<PanelNotification> = store.items()
 
@@ -44,6 +49,37 @@ class NotificationCenter(
         // Another important one arriving restarts the count for the sheet on
         // screen: the room has just been told again that something waits.
         if (item.important && treatment != Treatment.SUPPRESS) syncRepeats(restart = true)
+        // One that arrived straight to the list stays there: it was not shown,
+        // so there is nothing to show again.
+        if (!item.important && treatment != Treatment.SUPPRESS) comeBackLater(item, done = 0)
+    }
+
+    /** Bring an unread regular notification's banner back, as its plan says. */
+    private fun comeBackLater(item: PanelNotification, done: Int) {
+        val plan = repeatPlan(item) ?: return
+        if (plan.everyMs <= 0) return
+        comingBack.remove(item.id)?.invoke()
+        comingBack[item.id] = schedule(plan.everyMs) {
+            comingBack.remove(item.id)
+            if (store.find(item.id)?.read != false) return@schedule
+            // Quiet hours are judged at each return, not at arrival.
+            when (treat(item)) {
+                Treatment.RING -> { queue.arrive(item); play(item) }
+                Treatment.SILENT -> queue.arrive(item)
+                Treatment.SUPPRESS -> Unit
+            }
+            changed()
+            if (plan.times == 0 || done + 1 < plan.times) comeBackLater(item, done + 1)
+        }
+    }
+
+    private fun stopComingBack(id: String? = null) {
+        if (id == null) {
+            comingBack.values.forEach { it() }
+            comingBack.clear()
+        } else {
+            comingBack.remove(id)?.invoke()
+        }
     }
 
     /** Redraw from what is stored, as after a restart. */
@@ -62,6 +98,7 @@ class NotificationCenter(
 
     override fun openNotification(id: String) {
         store.markRead(id)
+        stopComingBack(id)
         queue.forget(id)
         screen = NotificationScreen.Detail(id)
         changed()
@@ -86,11 +123,13 @@ class NotificationCenter(
 
     override fun markAllRead() {
         store.markAllRead()
+        stopComingBack()
         changed()
     }
 
     override fun clearAll() {
         store.clearAll()
+        stopComingBack()
         queue.forgetAll()
         changed()
     }
@@ -103,6 +142,7 @@ class NotificationCenter(
 
     override fun deleteNotification(id: String) {
         store.delete(id)
+        stopComingBack(id)
         queue.forget(id)
         screen = NotificationScreen.List
         changed()

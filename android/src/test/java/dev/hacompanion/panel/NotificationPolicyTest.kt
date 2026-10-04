@@ -225,8 +225,18 @@ class NotificationTimingTest {
     }
 
     @Test
-    fun `a normal notification never repeats`() {
-        val settings = NotificationSettings.DEFAULT.copy(repeatEverySeconds = 30)
-        assertEquals(null, NotificationPolicy.repeatPlan(note(important = false), settings))
+    fun `a regular notification repeats by its own setting, not the important one`() {
+        val settings = NotificationSettings.DEFAULT.copy(repeatEverySeconds = 30, normalRepeatEverySeconds = 300, normalRepeatTimes = 0)
+        assertEquals(RepeatPlan(everyMs = 300_000L, times = 0), NotificationPolicy.repeatPlan(note(important = false), settings))
+        assertEquals(null, NotificationPolicy.repeatPlan(note(important = false), NotificationSettings.DEFAULT.copy(repeatEverySeconds = 30)))
+    }
+
+    @Test
+    fun `the regular repeats survive the layout store`() {
+        val settings = NotificationSettings.parse(org.json.JSONObject(
+            """{"normal": {"repeat_every": 120, "repeat_times": 5}}"""))
+        assertEquals(120, settings.normalRepeatEverySeconds)
+        assertEquals(5, settings.normalRepeatTimes)
+        assertEquals(settings, NotificationSettings.parse(settings.toJson()))
     }
 }
