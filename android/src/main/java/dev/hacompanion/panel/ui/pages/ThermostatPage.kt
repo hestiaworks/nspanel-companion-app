@@ -77,6 +77,10 @@ fun ThermostatPage(
                 else -> null
             },
             onLongPress = onLongPressTitle,
+            // WINTER beside IDLE is the reason a room above target is not
+            // cooling: the house permits only the radiators.
+            note = model.season?.label,
+            noteIcon = model.season?.icon,
         )
 
         Row(Modifier.fillMaxWidth().weight(1f)) {
