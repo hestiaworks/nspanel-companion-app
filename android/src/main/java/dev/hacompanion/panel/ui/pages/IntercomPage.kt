@@ -22,6 +22,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import dev.hacompanion.panel.ui.components.PanelText
 import dev.hacompanion.panel.ui.model.CallPhase
+import dev.hacompanion.panel.ui.model.ringTimesOut
+import dev.hacompanion.panel.ui.model.callLabel
 import dev.hacompanion.panel.ui.model.IntercomPeer
 import dev.hacompanion.panel.ui.slab.Band
 import dev.hacompanion.panel.ui.slab.CellRule
@@ -57,7 +59,8 @@ fun IntercomPage(
     // already closed the call.
     val ringSeconds = LocalPanelSize.current.intercomRingSeconds
     LaunchedEffect(phase, peerName) {
-        if (phase != CallPhase.IDLE && phase != CallPhase.CONNECTED) {
+        // Not a listening message or its linger: those have their own timers.
+        if (ringTimesOut(phase)) {
             delay(ringSeconds * 1000L)
             if (phase == CallPhase.RINGING) onDecline() else onEnd()
         }
@@ -153,24 +156,27 @@ private fun Call(
                 ),
             ) {
                 PanelText(
-                    when (phase) {
-                        CallPhase.CONNECTED -> "CONNECTED"
-                        // Answered, and negotiating. Neither end is calling
-                        // any more, and saying so is what tells the person
-                        // who just pressed answer that it took.
-                        CallPhase.CONNECTING -> "CONNECTING"
-                        else -> "CALLING"
-                    },
+                    // CONNECTING is answered and negotiating: saying so tells
+                    // the person who just pressed answer that it took.
+                    callLabel(phase),
                     type.label,
                     semibold = true, muted = true,
                     letterSpacing = type.labelTrackingWide, maxLines = 1,
                 )
                 PanelText(
-                    peerName, type.callName,
+                    if (phase == CallPhase.ENDED) "Message from $peerName" else peerName, type.callName,
                     Modifier.padding(top = 10.dp),
                     bold = true, maxLines = 1,
                 )
-                if (phase == CallPhase.CONNECTED) {
+                if (phase == CallPhase.LISTENING) {
+                    // This microphone is off; Talk is the reply.
+                    PanelText(
+                        "Tap Talk to reply", type.subtitle,
+                        Modifier.padding(top = 6.dp),
+                        muted = true, maxLines = 1,
+                    )
+                }
+                if (phase == CallPhase.CONNECTED || phase == CallPhase.LISTENING) {
                     PanelText(
                         clock(seconds), type.subtitle,
                         Modifier.padding(top = 6.dp),
@@ -179,12 +185,30 @@ private fun Call(
                 }
             }
         }
-        Meter(level, phase == CallPhase.CONNECTED)
-        Spacer(Modifier.weight(1f))
+        Meter(level, phase == CallPhase.CONNECTED || phase == CallPhase.LISTENING)
+        // A finished message: the whole screen returns to the page on a tap.
+        Spacer(
+            Modifier.weight(1f).fillMaxWidth().then(
+                if (phase == CallPhase.ENDED) Modifier.clickable(onClick = onEnd) else Modifier,
+            ),
+        )
         Row(Modifier.fillMaxWidth().height(size.intercomActions)) {
-            Secondary("⊘", if (muted) "UNMUTE" else "MUTE", danger = false, onTap = onMute)
-            CellRule()
-            Secondary("✕", "END", danger = true, onTap = onEnd)
+            if (phase == CallPhase.ENDED) {
+                Secondary("✕", "CLOSE", danger = false, onTap = onEnd)
+            } else {
+                Secondary(
+                    "⊘",
+                    when {
+                        phase == CallPhase.LISTENING -> "TALK"
+                        muted -> "UNMUTE"
+                        else -> "MUTE"
+                    },
+                    danger = false,
+                    onTap = onMute,
+                )
+                CellRule()
+                Secondary("✕", "END", danger = true, onTap = onEnd)
+            }
         }
     }
 }
