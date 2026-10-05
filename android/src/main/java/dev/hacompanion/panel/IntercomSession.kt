@@ -45,6 +45,8 @@ class IntercomSession(
     private val noiseSuppression: Boolean = true,
     private val autoGain: Boolean = true,
     private val onLevel: (Float) -> Unit,
+    /** Auto-answer: the microphone is off before anything is sent. */
+    startMuted: Boolean = false,
 ) {
     private val appContext = context.applicationContext
     private val handler = Handler(Looper.getMainLooper())
@@ -87,6 +89,9 @@ class IntercomSession(
             )
         })
         microphone = factory.createAudioTrack("intercom_microphone", audioSource)
+        // Before open() adds the track and before any offer or answer: an
+        // auto-answered panel must never send a sample nobody chose to send.
+        microphone.setEnabled(!startMuted)
     }
 
     /** Ring the other end: we make the offer. */

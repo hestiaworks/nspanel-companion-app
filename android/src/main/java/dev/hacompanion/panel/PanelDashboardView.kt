@@ -385,6 +385,11 @@ class PanelDashboardView(
         }
     }
 
+    /** The mute state the call screen shows, when the activity sets it. */
+    fun setCallMuted(muted: Boolean) {
+        ui.callMuted = muted
+    }
+
     fun setCallLevel(level: Float) {
         ui.callLevel = level
     }
