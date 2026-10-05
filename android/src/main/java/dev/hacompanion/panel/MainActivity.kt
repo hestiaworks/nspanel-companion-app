@@ -258,6 +258,8 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        // Back in front: whatever doorbell screen was up has closed.
+        dashboardBackAt = SystemClock.elapsedRealtime()
         applyBarVisibility()
         if (::dashboardView.isInitialized) dashboardView.setDashboardActive(true)
     }
@@ -762,7 +764,13 @@ class MainActivity : Activity() {
                     } else {
                         autoAnswer.newRing()
                         val settings = AutoAnswerSettings.of(layoutStore.loadOrNull())
-                        val busy = intercomCallId != null || SystemClock.elapsedRealtime() < doorbellBusyUntil
+                        val busy = IntercomPolicy.busy(
+                            callId = intercomCallId,
+                            sessionOpen = intercomSession != null,
+                            doorbellOnScreen = IntercomPolicy.doorbellOnScreen(
+                                doorbellLaunchedAt, SystemClock.elapsedRealtime(), dashboardBackAt,
+                            ),
+                        )
                         intercomCallId = callId
                         // A call arrives at a dark panel more often than a lit
                         // one. The doorbell has always lit the screen for its
@@ -808,7 +816,7 @@ class MainActivity : Activity() {
                     // closes the call screen as before.
                     val wasMessage = autoAnswer.listening
                     closeIntercom()
-                    if (wasMessage) autoAnswer.remoteEnded()
+                    if (wasMessage) autoAnswer.messageEnded()
                 },
                 onCallBusy = { name ->
                     // The roster said this panel was free, which it no longer
@@ -1156,8 +1164,9 @@ class MainActivity : Activity() {
     }
 
     private val intercomHandshake = IntercomHandshake()
-    /** Until a doorbell ring's own auto-close passes, the panel is busy. */
-    private var doorbellBusyUntil = 0L
+    /** When the doorbell screen was opened, and when the dashboard was next back in front. */
+    private var doorbellLaunchedAt = 0L
+    private var dashboardBackAt = 0L
     /** An auto-answered call, from answering to the screen going back. */
     private val autoAnswer by lazy {
         AutoAnswerFlow(
@@ -1170,8 +1179,20 @@ class MainActivity : Activity() {
                 intercomCallId?.let { panelApiClient?.endCall(it) }
                 closeIntercom()
             },
-            showEnded = { peer -> dashboardView.setCall(CallPhase.ENDED, peer = peer) },
-            close = { dashboardView.setCall(CallPhase.IDLE) },
+            showEnded = { peer ->
+                // Held lit like a call: closing the call released the screen,
+                // and at night it would otherwise go dark before anyone read it.
+                callActive = true
+                applyDisplayPolicy()
+                dashboardView.setCall(CallPhase.ENDED, peer = peer)
+            },
+            close = {
+                dashboardView.setCall(CallPhase.IDLE)
+                if (intercomCallId == null) {
+                    callActive = false
+                    applyDisplayPolicy()
+                }
+            },
         )
     }
     private val ringer by lazy { PanelRinger(this) }
@@ -1281,6 +1302,8 @@ class MainActivity : Activity() {
     }
 
     private fun closeIntercom() {
+        // Every way a call closes, including the session dying on its own.
+        autoAnswer.abandoned()
         callActive = false
         window.clearFlags(
             android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
@@ -1343,7 +1366,7 @@ class MainActivity : Activity() {
             return
         }
         // A doorbell ring on screen is not something to start a call over.
-        doorbellBusyUntil = SystemClock.elapsedRealtime() + (event.autoCloseMs ?: 60_000L)
+        doorbellLaunchedAt = SystemClock.elapsedRealtime()
         val intent = rtspDoorbellIntent()
             .putExtra(DoorbellIntent.EXTRA_QUIET_MODE, event.quietMode)
             .putExtra(DoorbellIntent.EXTRA_CHIME, if (treatment == Treatment.SILENT) "off" else event.chime)

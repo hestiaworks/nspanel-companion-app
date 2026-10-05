@@ -21,6 +21,27 @@ object IntercomPolicy {
      */
     fun autoAnswer(settings: AutoAnswerSettings, treatment: Treatment, busy: Boolean): Boolean =
         settings.enabled && treatment == Treatment.RING && !busy
+
+    /**
+     * Whether something else has the panel's audio.
+     *
+     * A session open without a call id is a call being placed: answering a
+     * ring on it would accept the offer on that open, unmuted microphone.
+     */
+    fun busy(callId: String?, sessionOpen: Boolean, doorbellOnScreen: Boolean): Boolean =
+        callId != null || sessionOpen || doorbellOnScreen
+
+    /** The longest a doorbell conversation can last, talk extensions included. */
+    const val DOORBELL_LONGEST_MS = 300_000L
+
+    /**
+     * Whether the doorbell screen is still up.
+     *
+     * It runs in its own process, so the dashboard cannot ask it; but the
+     * dashboard is paused while it is in front and resumes when it closes.
+     */
+    fun doorbellOnScreen(launchedAt: Long, now: Long, dashboardBackAt: Long): Boolean =
+        launchedAt > 0 && dashboardBackAt < launchedAt && now - launchedAt < DOORBELL_LONGEST_MS
 }
 
 /**
@@ -69,13 +90,26 @@ class AutoAnswerFlow(
         stopTimer()
     }
 
-    /** The caller hung up. True if this was a message, now lingering. */
-    fun remoteEnded(): Boolean {
-        if (!listening) return false
+    /**
+     * The call is closing for any reason: drop the listening state and its
+     * limit. A call that dies on its own — the caller's panel lost its wifi —
+     * leaves nothing behind to mute the next call or end it. A linger, if one
+     * is showing, is left alone.
+     */
+    fun abandoned() {
+        if (!listening) return
+        listening = false
+        stopTimer()
+    }
+
+    /**
+     * The caller finished a message. The activity checks [listening] before
+     * closing the call, since closing abandons it, and then calls this.
+     */
+    fun messageEnded() {
         listening = false
         stopTimer()
         linger()
-        return true
     }
 
     /** Ended here with End; nothing lingers. */
