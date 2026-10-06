@@ -18,6 +18,8 @@ WebView.
   and takes screen, page, restart and reload commands from it
 - Shows the heating or cooling season on the thermostat page when the
   climate entity is a Room Thermostat one
+- Intercom between panels, optionally answered by itself: the caller is heard
+  like a voice message while this panel's microphone stays off until Talk
 
 ## Requirements
 
