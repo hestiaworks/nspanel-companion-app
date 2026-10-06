@@ -258,6 +258,8 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        // Back in front: whatever doorbell screen was up has closed.
+        dashboardBackAt = SystemClock.elapsedRealtime()
         applyBarVisibility()
         if (::dashboardView.isInitialized) dashboardView.setDashboardActive(true)
     }
@@ -760,13 +762,34 @@ class MainActivity : Activity() {
                         panelApiClient?.declineCall(callId)
                         recordMissed("Missed call", "$name called during quiet hours.")
                     } else {
+                        autoAnswer.newRing()
+                        val settings = AutoAnswerSettings.of(layoutStore.loadOrNull())
+                        val busy = IntercomPolicy.busy(
+                            callId = intercomCallId,
+                            sessionOpen = intercomSession != null,
+                            doorbellOnScreen = IntercomPolicy.doorbellOnScreen(
+                                doorbellLaunchedAt, SystemClock.elapsedRealtime(), dashboardBackAt,
+                            ),
+                        )
                         intercomCallId = callId
                         // A call arrives at a dark panel more often than a lit
                         // one. The doorbell has always lit the screen for its
                         // ring; this rings behind one and was never seen.
                         wakeForCall()
-                        dashboardView.setCall(CallPhase.RINGING, peer = name)
-                        ringer.start(if (treatment == Treatment.SILENT) "off" else ring, volume)
+                        if (IntercomPolicy.autoAnswer(settings, treatment, busy)) {
+                            // Heard at once, like a voice message: the ring
+                            // plays once so a voice does not start from nowhere,
+                            // and this microphone stays off until Talk.
+                            RING_SOUNDS[ring]?.let { notificationSound.play(OneShot(it, null), volume) }
+                            dashboardView.setCall(CallPhase.LISTENING, peer = name)
+                            dashboardView.setCallMuted(true)
+                            autoAnswer.started(name, settings)
+                            panelApiClient?.answerCall(callId)
+                            intercomHandshake.answered()?.let { openIntercomSession().accept(it) }
+                        } else {
+                            dashboardView.setCall(CallPhase.RINGING, peer = name)
+                            ringer.start(if (treatment == Treatment.SILENT) "off" else ring, volume)
+                        }
                     }
                 },
                 onCalling = { callId -> intercomCallId = callId },
@@ -788,7 +811,13 @@ class MainActivity : Activity() {
                         intercomHandshake.offered(sdp)?.let { openIntercomSession().accept(it) }
                     }
                 },
-                onCallEnded = ::closeIntercom,
+                onCallEnded = {
+                    // A message the caller has finished lingers; any other end
+                    // closes the call screen as before.
+                    val wasMessage = autoAnswer.listening
+                    closeIntercom()
+                    if (wasMessage) autoAnswer.messageEnded()
+                },
                 onCallBusy = { name ->
                     // The roster said this panel was free, which it no longer
                     // is. Closing without a word looked like a dead button.
@@ -1113,8 +1142,21 @@ class MainActivity : Activity() {
                 intercomCallId?.let { panelApiClient?.declineCall(it) }
                 closeIntercom()
             }
-            is IntercomCommand.Mute -> intercomSession?.setMuted(command.muted)
+            is IntercomCommand.Mute -> {
+                // Talk on a listening call is the response: it becomes an
+                // ordinary call, with no limit, until someone ends it.
+                if (autoAnswer.listening && !command.muted) {
+                    autoAnswer.responded()
+                    dashboardView.setCall(CallPhase.CONNECTED)
+                }
+                intercomSession?.setMuted(command.muted)
+            }
             is IntercomCommand.End -> {
+                if (autoAnswer.lingering) {
+                    autoAnswer.dismissed()
+                    return
+                }
+                autoAnswer.localEnded()
                 intercomCallId?.let { panelApiClient?.endCall(it) }
                 closeIntercom()
             }
@@ -1122,6 +1164,37 @@ class MainActivity : Activity() {
     }
 
     private val intercomHandshake = IntercomHandshake()
+    /** When the doorbell screen was opened, and when the dashboard was next back in front. */
+    private var doorbellLaunchedAt = 0L
+    private var dashboardBackAt = 0L
+    /** An auto-answered call, from answering to the screen going back. */
+    private val autoAnswer by lazy {
+        AutoAnswerFlow(
+            schedule = { delayMs, run ->
+                val task = Runnable(run)
+                watchdogHandler.postDelayed(task, delayMs)
+                ({ watchdogHandler.removeCallbacks(task) })
+            },
+            endCall = {
+                intercomCallId?.let { panelApiClient?.endCall(it) }
+                closeIntercom()
+            },
+            showEnded = { peer ->
+                // Held lit like a call: closing the call released the screen,
+                // and at night it would otherwise go dark before anyone read it.
+                callActive = true
+                applyDisplayPolicy()
+                dashboardView.setCall(CallPhase.ENDED, peer = peer)
+            },
+            close = {
+                dashboardView.setCall(CallPhase.IDLE)
+                if (intercomCallId == null) {
+                    callActive = false
+                    applyDisplayPolicy()
+                }
+            },
+        )
+    }
     private val ringer by lazy { PanelRinger(this) }
     private val notificationSound by lazy { NotificationSoundPlayer(this) }
     /** The last twenty, the queue on screen, and the list. */
@@ -1203,7 +1276,10 @@ class MainActivity : Activity() {
             this,
             onSignal = { signal -> intercomCallId?.let { panelApiClient?.sendCallSignal(it, signal) } },
             onPhase = { phase ->
-                dashboardView.setCall(phase)
+                // Connected but nobody here has tapped Talk: still listening.
+                dashboardView.setCall(
+                    if (phase == CallPhase.CONNECTED && autoAnswer.listening) CallPhase.LISTENING else phase,
+                )
                 if (phase == CallPhase.CONNECTED) {
                     // Once per call, not once per recovery: a connection
                     // that blips and comes back is the same conversation,
@@ -1218,6 +1294,7 @@ class MainActivity : Activity() {
             onLevel = dashboardView::setCallLevel,
             noiseSuppression = layoutStore.loadOrNull()?.intercomNoiseSuppression ?: true,
             autoGain = layoutStore.loadOrNull()?.intercomAutoGain ?: true,
+            startMuted = autoAnswer.listening,
         )
         intercomSession = session
         MicUsageTracker.setActive(this, true)
@@ -1225,6 +1302,8 @@ class MainActivity : Activity() {
     }
 
     private fun closeIntercom() {
+        // Every way a call closes, including the session dying on its own.
+        autoAnswer.abandoned()
         callActive = false
         window.clearFlags(
             android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
@@ -1286,6 +1365,8 @@ class MainActivity : Activity() {
             recordMissed("Front door", "Someone rang the doorbell during quiet hours.")
             return
         }
+        // A doorbell ring on screen is not something to start a call over.
+        doorbellLaunchedAt = SystemClock.elapsedRealtime()
         val intent = rtspDoorbellIntent()
             .putExtra(DoorbellIntent.EXTRA_QUIET_MODE, event.quietMode)
             .putExtra(DoorbellIntent.EXTRA_CHIME, if (treatment == Treatment.SILENT) "off" else event.chime)

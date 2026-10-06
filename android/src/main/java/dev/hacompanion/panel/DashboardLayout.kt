@@ -78,6 +78,10 @@ data class DashboardLayout(
      */
     val intercomNoiseSuppression: Boolean = true,
     val intercomAutoGain: Boolean = true,
+    /** Answer intercom calls by themselves, microphone muted; see AutoAnswerSettings. */
+    val intercomAutoAnswer: Boolean = false,
+    val intercomAutoAnswerLingerSeconds: Int = 10,
+    val intercomAutoAnswerMaxSeconds: Int = 60,
     /** Quiet hours and notification sounds; see [NotificationSettings]. */
     val notifications: NotificationSettings = NotificationSettings.DEFAULT,
 
@@ -99,7 +103,10 @@ data class DashboardLayout(
         .put("bright_above", brightAbove)
         .put("intercom", JSONObject()
             .put("noise_suppression", intercomNoiseSuppression)
-            .put("auto_gain", intercomAutoGain))
+            .put("auto_gain", intercomAutoGain)
+            .put("auto_answer", intercomAutoAnswer)
+            .put("auto_answer_linger_seconds", intercomAutoAnswerLingerSeconds)
+            .put("auto_answer_max_seconds", intercomAutoAnswerMaxSeconds))
         .put("notifications", notifications.toJson())
         .put("show_clock", showClock)
         .put("show_mic_indicator", showMicIndicator)
@@ -163,6 +170,10 @@ data class DashboardLayout(
             val intercom = json.optJSONObject("intercom")
             val noiseSuppression = intercom?.optBoolean("noise_suppression", true) ?: true
             val autoGain = intercom?.optBoolean("auto_gain", true) ?: true
+            val autoAnswer = intercom?.optBoolean("auto_answer", false) ?: false
+            val autoAnswerLinger = (intercom?.optInt("auto_answer_linger_seconds", 10) ?: 10).coerceIn(0, 60)
+            val autoAnswerMax = (intercom?.optInt("auto_answer_max_seconds", 60) ?: 60)
+                .takeIf { it in setOf(30, 60, 120, 300) } ?: 60
             val showClock = json.optBoolean("show_clock", true)
             val showMicIndicator = json.optBoolean("show_mic_indicator", true)
             val micIndicatorLingerSeconds = json.optInt("mic_indicator_linger_seconds", 15)
@@ -214,6 +225,9 @@ data class DashboardLayout(
                 wifiReconnectBelowDbm = wifiReconnectBelowDbm,
                 intercomNoiseSuppression = noiseSuppression,
                 intercomAutoGain = autoGain,
+                intercomAutoAnswer = autoAnswer,
+                intercomAutoAnswerLingerSeconds = autoAnswerLinger,
+                intercomAutoAnswerMaxSeconds = autoAnswerMax,
                 notifications = NotificationSettings.parse(json.optJSONObject("notifications")),
             )
         }

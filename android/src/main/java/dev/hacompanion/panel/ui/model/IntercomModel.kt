@@ -11,7 +11,24 @@ data class IntercomPeer(val panelId: String, val name: String, val busy: Boolean
  * The panel holds this; Home Assistant holds only who is in a call with
  * whom, which is the least it can know and still route a signal.
  */
-enum class CallPhase { IDLE, CALLING, RINGING, CONNECTING, CONNECTED }
+/**
+ * LISTENING is an auto-answered call nobody here has responded to: the
+ * caller is heard, this microphone is muted. ENDED is that message over,
+ * lingering before the panel returns to its page.
+ */
+enum class CallPhase { IDLE, CALLING, RINGING, CONNECTING, CONNECTED, LISTENING, ENDED }
+
+/** Phases the ring timeout applies to; a message and its linger have their own timers. */
+fun ringTimesOut(phase: CallPhase): Boolean =
+    phase == CallPhase.RINGING || phase == CallPhase.CALLING || phase == CallPhase.CONNECTING
+
+fun callLabel(phase: CallPhase): String = when (phase) {
+    CallPhase.CONNECTED -> "CONNECTED"
+    CallPhase.CONNECTING -> "CONNECTING"
+    CallPhase.LISTENING -> "LISTENING"
+    CallPhase.ENDED -> "MESSAGE ENDED"
+    else -> "CALLING"
+}
 
 /**
  * The roster, in the order it arrived.
