@@ -45,7 +45,7 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:lockTaskMode="if_whitelisted"
-            android:screenOrientation="reversePortrait">
+            android:screenOrientation="portrait">
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -65,7 +65,7 @@
             android:exported="false"
             android:launchMode="singleTop"
             android:process=":doorbell"
-            android:screenOrientation="reversePortrait"
+            android:screenOrientation="portrait"
             android:theme="@style/AppTheme" />
 
         <receiver
