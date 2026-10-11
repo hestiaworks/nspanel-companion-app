@@ -377,6 +377,21 @@ class NotificationIdleCloseTest {
     }
 
     @Test
+    fun `a touch does not read the settings again`() {
+        val clock = Clock()
+        var reads = 0
+        val center = NotificationCenter(
+            store, { _, s, sc -> showing = s; screen = sc }, { played += it.id },
+            schedule = clock::schedule, idleCloseMs = { reads++; 60_000L },
+        )
+        center.openNotifications()
+        repeat(5) { center.touched() }
+        assertEquals(1, reads)
+        clock.advance(59_999); assertEquals(NotificationScreen.List, screen)
+        clock.advance(1); assertNull(screen)
+    }
+
+    @Test
     fun `closing by hand leaves no stray close behind`() {
         val clock = Clock(); val center = idleCenter(clock)
         center.openNotifications()

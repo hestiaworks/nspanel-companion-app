@@ -52,6 +52,8 @@ class NotificationCenter(
     private var cancelIdle: (() -> Unit)? = null
     /** What the running countdown is for: the open screen and the sheet on top. */
     private var idleFor: Pair<NotificationScreen?, String?>? = null
+    /** The time the running countdown was given; a touch reuses it rather than reading settings again. */
+    private var idleMs: Long? = null
 
     fun items(): List<PanelNotification> = store.items()
 
@@ -224,9 +226,13 @@ class NotificationCenter(
         }
         val showingNow = screen to sheet
         if (cancelIdle != null && !restart && showingNow == idleFor) return
+        val sameScreen = cancelIdle != null && showingNow == idleFor
         idleFor = showingNow
         cancelIdle?.invoke(); cancelIdle = null
-        val ms = idleCloseMs() ?: return
+        // Settings are read when something comes on screen; every tap on an
+        // open list would otherwise parse the whole layout again.
+        val ms = (if (sameScreen) idleMs else null) ?: idleCloseMs() ?: return
+        idleMs = ms
         cancelIdle = schedule(ms) {
             cancelIdle = null
             closeWhenIdle()

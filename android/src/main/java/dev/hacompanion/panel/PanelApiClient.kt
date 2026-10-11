@@ -25,7 +25,7 @@ class PanelApiClient(
     private val onRestart: () -> Unit = {},
     private val onCommand: (String, JSONObject) -> Unit = { _, _ -> },
     private val onNotification: (JSONObject) -> Unit = {},
-    private val onNotificationSync: (String, List<String>) -> Unit = { _, _ -> },
+    private val onNotificationSync: (List<Pair<String, List<String>>>, Boolean) -> Unit = { _, _ -> },
     private val onRevoked: () -> Unit = {},
     private val onHistory: (HistorySeries) -> Unit = {},
     private val onRoster: (List<IntercomPeer>) -> Unit = {},
@@ -213,9 +213,13 @@ class PanelApiClient(
                 // as this panel's quiet hours decide.
                 "notification" -> message.optJSONObject("data")?.let { data -> handler.post { onNotification(data) } }
                 // Read, unread or deleted on another panel, or what was
-                // missed while this one was offline.
-                "notification_sync", "notification_sync_replay" -> NotificationSync.actions(message).let { actions ->
-                    if (actions.isNotEmpty()) handler.post { actions.forEach { (action, ids) -> onNotificationSync(action, ids) } }
+                // missed while this one was offline. The replay is passed on
+                // even when empty: it is what releases what this panel did
+                // while it was offline.
+                "notification_sync", "notification_sync_replay" -> {
+                    val actions = NotificationSync.actions(message)
+                    val replay = NotificationSync.isReplay(message)
+                    if (actions.isNotEmpty() || replay) handler.post { onNotificationSync(actions, replay) }
                 }
                 "command" -> message.optString("command").takeIf(String::isNotBlank)?.let { name ->
                     handler.post { onCommand(name, message) }

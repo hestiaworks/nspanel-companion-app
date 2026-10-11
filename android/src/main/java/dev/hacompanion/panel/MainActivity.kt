@@ -752,7 +752,9 @@ class MainActivity : Activity() {
                 onRestart = ::restartPanel,
                 onCommand = ::runCommand,
                 onNotification = ::receiveNotification,
-                onNotificationSync = notifications::applyShared,
+                onNotificationSync = { actions, replay ->
+                    notificationOutbox.received(actions, replay, notifications::applyShared)
+                },
                 onRevoked = ::handlePairingRevoked,
                 onRoster = dashboardView::setRoster,
                 onRing = { callId, name, ring, volume ->
@@ -1198,6 +1200,10 @@ class MainActivity : Activity() {
     }
     private val ringer by lazy { PanelRinger(this) }
     private val notificationSound by lazy { NotificationSoundPlayer(this) }
+    /** What this panel has told the others, held while it is offline. */
+    private val notificationOutbox = SyncOutbox { action, ids ->
+        panelApiClient?.shareNotifications(action, ids) == true
+    }
     /** The last twenty, the queue on screen, and the list. */
     private val notifications by lazy {
         NotificationCenter(
@@ -1217,7 +1223,7 @@ class MainActivity : Activity() {
             treat = { item -> alertTreatment(Kind.NOTIFICATION, item.important) },
             idleCloseMs = { NotificationPolicy.idleCloseMs(layoutStore.loadOrNull()?.notifications ?: NotificationSettings.DEFAULT) },
             sharing = { (layoutStore.loadOrNull()?.notifications ?: NotificationSettings.DEFAULT).sync },
-            share = { action, ids -> panelApiClient?.shareNotifications(action, ids) },
+            share = notificationOutbox::share,
         )
     }
 
