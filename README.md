@@ -13,7 +13,9 @@ WebView.
 - Paired to Home Assistant with an expiring approval code; no user token is
   stored on the device
 - Notifications from Home Assistant: a banner, or a sheet for important ones,
-  a list behind a badge in the status strip, quiet hours, and bundled sounds
+  a list behind a badge in the status strip, quiet hours, and bundled sounds;
+  screens left untouched close themselves, and read or deleted on one panel is
+  read or deleted on the others
 - Reports its wifi signal, light level, presence and screen to Home Assistant,
   and takes screen, page, restart and reload commands from it
 - Shows the heating or cooling season on the thermostat page when the
