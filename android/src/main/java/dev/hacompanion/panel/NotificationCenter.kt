@@ -50,6 +50,8 @@ class NotificationCenter(
 
     /** How to stop the countdown that closes an untouched notification screen. */
     private var cancelIdle: (() -> Unit)? = null
+    /** What the running countdown is for: the open screen and the sheet on top. */
+    private var idleFor: Pair<NotificationScreen?, String?>? = null
 
     fun items(): List<PanelNotification> = store.items()
 
@@ -210,14 +212,19 @@ class NotificationCenter(
      * Keep a countdown running while the list, an opened notification or an
      * important sheet is on screen, and none while nothing is. A banner has
      * its own timer and is left to it.
+     *
+     * Whatever newly comes on screen gets the full time: a sheet that rang
+     * into a list left open must not be closed, as LATER, seconds later.
      */
     private fun syncIdle(restart: Boolean = false) {
-        val open = screen != null || queue.showing() is Showing.Sheet
-        if (!open) {
-            cancelIdle?.invoke(); cancelIdle = null
+        val sheet = (queue.showing() as? Showing.Sheet)?.item?.id
+        if (screen == null && sheet == null) {
+            cancelIdle?.invoke(); cancelIdle = null; idleFor = null
             return
         }
-        if (cancelIdle != null && !restart) return
+        val showingNow = screen to sheet
+        if (cancelIdle != null && !restart && showingNow == idleFor) return
+        idleFor = showingNow
         cancelIdle?.invoke(); cancelIdle = null
         val ms = idleCloseMs() ?: return
         cancelIdle = schedule(ms) {

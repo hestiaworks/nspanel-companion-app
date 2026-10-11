@@ -348,6 +348,35 @@ class NotificationIdleCloseTest {
     }
 
     @Test
+    fun `a sheet arriving while the list is open gets a full countdown`() {
+        val clock = Clock(); val center = idleCenter(clock)
+        center.openNotifications()
+        clock.advance(50_000)
+        center.receive(note("x", important = true), Treatment.RING)
+        clock.advance(59_999)
+        assertEquals("x", (showing as Showing.Sheet).item.id)
+        clock.advance(1)
+        assertNull(showing)
+    }
+
+    @Test
+    fun `a sheet revealed by another panel's read gets a full countdown`() {
+        val clock = Clock()
+        val center = NotificationCenter(
+            store, { _, s, sc -> showing = s; screen = sc }, { played += it.id },
+            schedule = clock::schedule, idleCloseMs = { 60_000L }, sharing = { true },
+        )
+        center.receive(note("x", important = true), Treatment.RING)
+        center.receive(note("y", important = true), Treatment.RING)
+        clock.advance(50_000)
+        center.applyShared("read", listOf("x"))
+        clock.advance(59_999)
+        assertEquals("y", (showing as Showing.Sheet).item.id)
+        clock.advance(1)
+        assertNull(showing)
+    }
+
+    @Test
     fun `closing by hand leaves no stray close behind`() {
         val clock = Clock(); val center = idleCenter(clock)
         center.openNotifications()
