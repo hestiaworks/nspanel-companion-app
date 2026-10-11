@@ -1,6 +1,10 @@
 package dev.hacompanion.panel
 
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -238,5 +242,35 @@ class NotificationTimingTest {
         assertEquals(120, settings.normalRepeatEverySeconds)
         assertEquals(5, settings.normalRepeatTimes)
         assertEquals(settings, NotificationSettings.parse(settings.toJson()))
+    }
+
+    @Test
+    fun `an older layout closes idle screens after a minute and syncs`() {
+        val settings = NotificationSettings.parse(JSONObject())
+        assertEquals(60_000L, NotificationPolicy.idleCloseMs(settings))
+        assertTrue(settings.sync)
+    }
+
+    @Test
+    fun `idle close and sync can be switched off`() {
+        val settings = NotificationSettings.parse(
+            JSONObject().put("idle_close", false).put("idle_close_seconds", 120).put("sync", false),
+        )
+        assertNull(NotificationPolicy.idleCloseMs(settings))
+        assertFalse(settings.sync)
+    }
+
+    @Test
+    fun `the idle time is clamped to what the editor allows`() {
+        assertEquals(15_000L, NotificationPolicy.idleCloseMs(
+            NotificationSettings.parse(JSONObject().put("idle_close_seconds", 1))))
+        assertEquals(300_000L, NotificationPolicy.idleCloseMs(
+            NotificationSettings.parse(JSONObject().put("idle_close_seconds", 9999))))
+    }
+
+    @Test
+    fun `the settings survive being written and read back`() {
+        val written = NotificationSettings.DEFAULT.copy(idleClose = false, idleCloseSeconds = 45, sync = false)
+        assertEquals(written, NotificationSettings.parse(written.toJson()))
     }
 }

@@ -42,6 +42,12 @@ data class NotificationSettings(
     val normalRepeatEverySeconds: Int = 0,
     /** How many times it comes back; 0 is until it is read. */
     val normalRepeatTimes: Int = 3,
+    /** Whether the list, an opened notification and an important sheet close when left alone. */
+    val idleClose: Boolean = true,
+    /** After how long: 15–300 s, a minute by default. */
+    val idleCloseSeconds: Int = 60,
+    /** Whether read, unread and deleted are shared with the other panels. */
+    val sync: Boolean = true,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("doorbell", JSONObject().put("dnd", doorbellDnd))
@@ -53,6 +59,7 @@ data class NotificationSettings(
             .put("repeat_every", repeatEverySeconds).put("repeat_times", repeatTimes))
         .put("dnd", JSONObject().put("enabled", dnd.enabled)
             .put("from", clock(dnd.fromMinute)).put("to", clock(dnd.toMinute)))
+        .put("idle_close", idleClose).put("idle_close_seconds", idleCloseSeconds).put("sync", sync)
 
     companion object {
         val DEFAULT = NotificationSettings(
@@ -88,6 +95,9 @@ data class NotificationSettings(
                 repeatTimes = (important?.optInt("repeat_times", DEFAULT.repeatTimes) ?: DEFAULT.repeatTimes).coerceAtLeast(0),
                 normalRepeatEverySeconds = (normal?.optInt("repeat_every", 0) ?: 0).coerceAtLeast(0),
                 normalRepeatTimes = (normal?.optInt("repeat_times", DEFAULT.normalRepeatTimes) ?: DEFAULT.normalRepeatTimes).coerceAtLeast(0),
+                idleClose = json.optBoolean("idle_close", true),
+                idleCloseSeconds = json.optInt("idle_close_seconds", 60).coerceIn(15, 300),
+                sync = json.optBoolean("sync", true),
             )
         }
 
@@ -104,6 +114,10 @@ data class NotificationSettings(
 data class RepeatPlan(val everyMs: Long, val times: Int)
 
 object NotificationPolicy {
+
+    /** How long a notification screen may stay untouched; null when it never closes by itself. */
+    fun idleCloseMs(settings: NotificationSettings): Long? =
+        if (settings.idleClose) settings.idleCloseSeconds.coerceIn(15, 300) * 1000L else null
 
     /** How long this notification's banner stays: its own duration, or the panel's. */
     fun bannerMs(item: PanelNotification, settings: NotificationSettings): Long =
