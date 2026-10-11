@@ -8,6 +8,9 @@ sealed interface NotificationScreen {
     data class Detail(val id: String) : NotificationScreen
 }
 
+/** Ids this panel made up itself — missed rings — which no other panel can know. */
+const val LOCAL_NOTIFICATION_PREFIX = "local-"
+
 /**
  * The store, the queue and the screen, kept in step.
  *
@@ -28,6 +31,10 @@ class NotificationCenter(
     private val treat: (PanelNotification) -> Treatment = { Treatment.RING },
     /** How long a notification screen may stay untouched; null when it never closes by itself. */
     private val idleCloseMs: () -> Long? = { null },
+    /** Whether this panel shares read, unread and deleted with the others. */
+    private val sharing: () -> Boolean = { false },
+    /** Tell the other panels; Home Assistant passes it on. */
+    private val share: (action: String, ids: List<String>) -> Unit = { _, _ -> },
 ) : NotificationActions {
 
     private val queue = NotificationQueue()
@@ -87,6 +94,30 @@ class NotificationCenter(
         }
     }
 
+    /** A person did this here: the other panels that share do the same. */
+    private fun tell(action: String, ids: List<String>) {
+        val known = ids.filterNot { it.startsWith(LOCAL_NOTIFICATION_PREFIX) }
+        if (known.isNotEmpty() && sharing()) share(action, known)
+    }
+
+    /**
+     * Another panel did this. Applied to the ids this panel has, and never
+     * told back: an action that echoed would bounce between panels forever.
+     */
+    fun applyShared(action: String, ids: List<String>) {
+        if (!sharing()) return
+        val here = ids.filter { store.find(it) != null }
+        if (here.isEmpty()) return
+        when (action) {
+            "read" -> here.forEach { store.markRead(it); stopComingBack(it); queue.forget(it) }
+            // Back in the list and on the badge; not shown or rung again.
+            "unread" -> here.forEach { store.markUnread(it) }
+            "delete" -> here.forEach { store.delete(it); stopComingBack(it); queue.forget(it) }
+            else -> return
+        }
+        changed()
+    }
+
     /** Redraw from what is stored, as after a restart. */
     fun refresh() = changed()
 
@@ -107,6 +138,7 @@ class NotificationCenter(
         queue.forget(id)
         screen = NotificationScreen.Detail(id)
         changed()
+        tell("read", listOf(id))
     }
 
     override fun backToList() {
@@ -124,25 +156,31 @@ class NotificationCenter(
         if (read) store.markRead(id)
         if ((queue.showing() as? Showing.Sheet)?.item?.id == id) queue.answerSheet() else queue.forget(id)
         changed()
+        if (read) tell("read", listOf(id))
     }
 
     override fun markAllRead() {
+        val unread = store.items().filterNot { it.read }.map { it.id }
         store.markAllRead()
         stopComingBack()
         changed()
+        tell("read", unread)
     }
 
     override fun clearAll() {
+        val all = store.items().map { it.id }
         store.clearAll()
         stopComingBack()
         queue.forgetAll()
         changed()
+        tell("delete", all)
     }
 
     override fun markUnread(id: String) {
         store.markUnread(id)
         screen = NotificationScreen.List
         changed()
+        tell("unread", listOf(id))
     }
 
     override fun deleteNotification(id: String) {
@@ -151,6 +189,7 @@ class NotificationCenter(
         queue.forget(id)
         screen = NotificationScreen.List
         changed()
+        tell("delete", listOf(id))
     }
 
     private fun changed() {
