@@ -752,6 +752,7 @@ class MainActivity : Activity() {
                 onRestart = ::restartPanel,
                 onCommand = ::runCommand,
                 onNotification = ::receiveNotification,
+                onNotificationSync = notifications::applyShared,
                 onRevoked = ::handlePairingRevoked,
                 onRoster = dashboardView::setRoster,
                 onRing = { callId, name, ring, volume ->
@@ -1214,6 +1215,9 @@ class MainActivity : Activity() {
                 ({ watchdogHandler.removeCallbacks(task) })
             },
             treat = { item -> alertTreatment(Kind.NOTIFICATION, item.important) },
+            idleCloseMs = { NotificationPolicy.idleCloseMs(layoutStore.loadOrNull()?.notifications ?: NotificationSettings.DEFAULT) },
+            sharing = { (layoutStore.loadOrNull()?.notifications ?: NotificationSettings.DEFAULT).sync },
+            share = { action, ids -> panelApiClient?.shareNotifications(action, ids) },
         )
     }
 
@@ -1255,11 +1259,17 @@ class MainActivity : Activity() {
         notificationSound(name)?.let { notificationSound.play(it, volume) }
     }
 
+    /** Any touch on the panel gives an open notification screen its full time again. */
+    override fun onUserInteraction() {
+        super.onUserInteraction()
+        notifications.touched()
+    }
+
     /** A ring quiet hours suppressed: not shown, not heard, but in the list. */
     private fun recordMissed(title: String, message: String) {
         notifications.receive(
             PanelNotification(
-                id = java.util.UUID.randomUUID().toString(), title = title, message = message,
+                id = LOCAL_NOTIFICATION_PREFIX + java.util.UUID.randomUUID().toString(), title = title, message = message,
                 important = false, at = currentServerTimeMs(),
             ),
             Treatment.SUPPRESS,

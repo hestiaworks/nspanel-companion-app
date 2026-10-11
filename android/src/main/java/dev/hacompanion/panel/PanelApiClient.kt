@@ -25,6 +25,7 @@ class PanelApiClient(
     private val onRestart: () -> Unit = {},
     private val onCommand: (String, JSONObject) -> Unit = { _, _ -> },
     private val onNotification: (JSONObject) -> Unit = {},
+    private val onNotificationSync: (String, List<String>) -> Unit = { _, _ -> },
     private val onRevoked: () -> Unit = {},
     private val onHistory: (HistorySeries) -> Unit = {},
     private val onRoster: (List<IntercomPeer>) -> Unit = {},
@@ -88,6 +89,10 @@ class PanelApiClient(
     fun reportEvent(message: String, level: String = "warn"): Boolean =
         socket?.send(JSONObject().put("type", "panel_event")
             .put("message", message).put("level", level).toString()) ?: false
+
+    /** Tell the other panels, through Home Assistant, what was done here. */
+    fun shareNotifications(action: String, ids: List<String>): Boolean =
+        socket?.send(NotificationSync.message(action, ids).toString()) == true
 
     fun callPanel(panelId: String) = sendIntercom("intercom_call", JSONObject().put("panel_id", panelId))
     fun answerCall(callId: String) = sendIntercom("intercom_answer", JSONObject().put("call_id", callId))
@@ -207,6 +212,11 @@ class PanelApiClient(
                 // From the notify action: shown, heard, or only listed,
                 // as this panel's quiet hours decide.
                 "notification" -> message.optJSONObject("data")?.let { data -> handler.post { onNotification(data) } }
+                // Read, unread or deleted on another panel, or what was
+                // missed while this one was offline.
+                "notification_sync", "notification_sync_replay" -> NotificationSync.actions(message).let { actions ->
+                    if (actions.isNotEmpty()) handler.post { actions.forEach { (action, ids) -> onNotificationSync(action, ids) } }
+                }
                 "command" -> message.optString("command").takeIf(String::isNotBlank)?.let { name ->
                     handler.post { onCommand(name, message) }
                 }
