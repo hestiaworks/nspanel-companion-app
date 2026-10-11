@@ -258,3 +258,118 @@ class NormalRepeatTest {
         assertTrue(timers.isEmpty())
     }
 }
+
+
+/** Notification screens that close when nobody touches them. */
+class NotificationIdleCloseTest {
+
+    private class Memory : NotificationStorage {
+        var text: String? = null
+        override fun read(): String? = text
+        override fun write(text: String) { this.text = text }
+    }
+
+    private var showing: Showing? = null
+    private var screen: NotificationScreen? = null
+    private val played = mutableListOf<String>()
+    private val store = NotificationStore(Memory())
+
+    private fun note(id: String, important: Boolean = false) =
+        PanelNotification(id = id, title = id, message = "m", important = important, at = 0L)
+
+    /** A clock the test turns by hand: what is due runs, in order. */
+    private class Clock {
+        var now = 0L
+        private val due = mutableListOf<Pair<Long, () -> Unit>>()
+        fun schedule(delay: Long, run: () -> Unit): () -> Unit {
+            val entry = now + delay to run
+            due += entry
+            return { due.remove(entry) }
+        }
+        fun advance(ms: Long) {
+            now += ms
+            while (true) {
+                val next = due.filter { it.first <= now }.minByOrNull { it.first } ?: return
+                due.remove(next); next.second()
+            }
+        }
+    }
+
+    private fun idleCenter(clock: Clock, ms: Long? = 60_000L) = NotificationCenter(
+        store, { _, s, sc -> showing = s; screen = sc }, { played += it.id },
+        schedule = clock::schedule, idleCloseMs = { ms },
+    )
+
+    @Test
+    fun `the list closes itself when left alone`() {
+        val clock = Clock(); val center = idleCenter(clock)
+        center.openNotifications()
+        clock.advance(59_999); assertEquals(NotificationScreen.List, screen)
+        clock.advance(1); assertNull(screen)
+    }
+
+    @Test
+    fun `a touch restarts the countdown`() {
+        val clock = Clock(); val center = idleCenter(clock)
+        center.openNotifications()
+        clock.advance(50_000); center.touched()
+        clock.advance(50_000); assertEquals(NotificationScreen.List, screen)
+        clock.advance(10_000); assertNull(screen)
+    }
+
+    @Test
+    fun `an opened notification closes and stays read`() {
+        val clock = Clock(); val center = idleCenter(clock)
+        center.receive(note("a"), Treatment.SILENT)
+        center.openNotification("a")
+        clock.advance(60_000)
+        assertNull(screen)
+        assertEquals(0, store.unreadCount())
+    }
+
+    @Test
+    fun `an important sheet is answered as LATER`() {
+        val clock = Clock(); val center = idleCenter(clock)
+        center.receive(note("x", important = true), Treatment.RING)
+        clock.advance(60_000)
+        assertNull(showing)
+        assertEquals(1, store.unreadCount())
+    }
+
+    @Test
+    fun `the next waiting sheet gets its own full countdown`() {
+        val clock = Clock(); val center = idleCenter(clock)
+        center.receive(note("x", important = true), Treatment.RING)
+        center.receive(note("y", important = true), Treatment.RING)
+        clock.advance(60_000)
+        assertEquals("y", (showing as Showing.Sheet).item.id)
+        clock.advance(59_999); assertEquals("y", (showing as Showing.Sheet).item.id)
+        clock.advance(1); assertNull(showing)
+    }
+
+    @Test
+    fun `closing by hand leaves no stray close behind`() {
+        val clock = Clock(); val center = idleCenter(clock)
+        center.openNotifications()
+        clock.advance(30_000); center.closeNotifications()
+        clock.advance(20_000); center.openNotifications()
+        clock.advance(40_000); assertEquals(NotificationScreen.List, screen)
+        clock.advance(20_000); assertNull(screen)
+    }
+
+    @Test
+    fun `nothing closes when idle close is off`() {
+        val clock = Clock(); val center = idleCenter(clock, ms = null)
+        center.openNotifications()
+        clock.advance(3_600_000)
+        assertEquals(NotificationScreen.List, screen)
+    }
+
+    @Test
+    fun `a banner alone is left to its own timer`() {
+        val clock = Clock(); val center = idleCenter(clock)
+        center.receive(note("a"), Treatment.SILENT)
+        clock.advance(60_000)
+        assertTrue(showing is Showing.Banner)
+    }
+}

@@ -26,6 +26,8 @@ class NotificationCenter(
     private val schedule: (Long, () -> Unit) -> (() -> Unit) = { _, _ -> {} },
     /** What a regular notification's repeat does at this hour: quiet hours apply to each one. */
     private val treat: (PanelNotification) -> Treatment = { Treatment.RING },
+    /** How long a notification screen may stay untouched; null when it never closes by itself. */
+    private val idleCloseMs: () -> Long? = { null },
 ) : NotificationActions {
 
     private val queue = NotificationQueue()
@@ -38,6 +40,9 @@ class NotificationCenter(
 
     /** Unread regular notifications that will come back, by id, and how to stop each. */
     private val comingBack = mutableMapOf<String, () -> Unit>()
+
+    /** How to stop the countdown that closes an untouched notification screen. */
+    private var cancelIdle: (() -> Unit)? = null
 
     fun items(): List<PanelNotification> = store.items()
 
@@ -154,6 +159,39 @@ class NotificationCenter(
         if (open is NotificationScreen.Detail && store.find(open.id) == null) screen = NotificationScreen.List
         publish(store.items(), queue.showing(), screen)
         syncRepeats()
+        syncIdle()
+    }
+
+    /** Someone touched the panel: whatever is open gets its full time again. */
+    fun touched() {
+        if (cancelIdle != null) syncIdle(restart = true)
+    }
+
+    /**
+     * Keep a countdown running while the list, an opened notification or an
+     * important sheet is on screen, and none while nothing is. A banner has
+     * its own timer and is left to it.
+     */
+    private fun syncIdle(restart: Boolean = false) {
+        val open = screen != null || queue.showing() is Showing.Sheet
+        if (!open) {
+            cancelIdle?.invoke(); cancelIdle = null
+            return
+        }
+        if (cancelIdle != null && !restart) return
+        cancelIdle?.invoke(); cancelIdle = null
+        val ms = idleCloseMs() ?: return
+        cancelIdle = schedule(ms) {
+            cancelIdle = null
+            closeWhenIdle()
+        }
+    }
+
+    /** As if X were tapped on the screen, and LATER on the sheet. */
+    private fun closeWhenIdle() {
+        screen = null
+        if (queue.showing() is Showing.Sheet) queue.answerSheet()
+        changed()
     }
 
     /**
